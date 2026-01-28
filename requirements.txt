@@ -1,0 +1,14 @@
+fastapi
+dotenv
+uvicorn
+sqlalchemy
+pdfplumber
+passlib
+psycopg2-binary
+asyncpg
+alembic
+pydantic
+jwt
+email-validator
+pgvector
+psycopg2-binary
