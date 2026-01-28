@@ -73,10 +73,10 @@ PORT=8000
 HOST=127.0.0.1
 
 # Database
-DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:5432/CareerAI
+DATABASE_URL=postgresql+asyncpg://postgres:YOUR_DB_PASSWORD@localhost:5432/CareerAI
 
 # JWT Configuration
-SECRET_KEY=your-secret-key-here
+SECRET_KEY=your-randomly-generated-secret-key  # Generate with: openssl rand -hex 32
 ALGORITHM=HS256
 EXPIRATION_MINUTES=300
 
@@ -89,7 +89,7 @@ OPENAI_API_KEY=your_openai_api_key
 GOOGLE_API_KEY=your_google_api_key
 
 # LangChain Tracking (optional)
-LANGHAIN_TRACKING_ENABLED=false
+LANGCHAIN_TRACKING_ENABLED=false
 LANGCHAIN_API_KEY=your_langchain_api_key
 ```
 
@@ -138,7 +138,7 @@ HR_Backend/
 ├── configs/                # Configuration files
 │   ├── env_config.py      # Environment variables
 │   ├── log_config.py      # Logging configuration
-│   └── postgress_db.py    # Database connection
+│   └── postgres_db.py     # Database connection
 ├── models/                 # SQLAlchemy models
 │   ├── user_model.py      # User model
 │   ├── organization_model.py
