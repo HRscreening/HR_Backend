@@ -20,7 +20,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL")  or "postgresql+asyncpg://postgres
 
 # EMAIL Configuration
 SENDER_EMAIL = os.getenv("SENDER_EMAIL", "your_email@gmail.com")
-SENDER_MAIL_PASSWORD = os.getenv("SENDER_MAIL_PASSWORD ", "your_app_password")  # Use Gmail App Password
+SENDER_MAIL_PASSWORD = os.getenv("SENDER_MAIL_PASSWORD", "your_app_password")  # Use Gmail App Password
 
 # JWT Configuration
 SECRET_KEY = os.environ.get("SECRET_KEY", "your-secret-key")

@@ -8,8 +8,8 @@ from utils.security import hash_password
 import random
 from utils.send_otp import send_otp_email
 from  configs.log_config import get_logger
-from schemas.auth_schemas import NewUserSchema
-from services.errors.auth_errors import EmailAlreadyExists
+from schemas.auth_schemas import NewUserSchema,OtpVerification,UserLogin
+from services.errors.auth_errors import EmailAlreadyExists,OTPVerificationFailed,UserLoginFailed,UserNotFound,DomainError
 
 
 from sqlalchemy import select
@@ -21,7 +21,8 @@ def generate_otp() -> str:
 
 logger = get_logger("AUTH_SERVICE")
 
-async def signup_user(user_data, db: AsyncSession):
+
+async def signup_user(user_data :NewUserSchema , db: AsyncSession):
     # 1️⃣ Check if user already exists
     result = await db.execute(
         select(User).where(User.email == user_data.email)
@@ -63,89 +64,70 @@ async def signup_user(user_data, db: AsyncSession):
 
     return {"message": "OTP sent to your email"}
 
-# async def verify_otp(otp_data: OtpVerification, db: AsyncSession):
-#     try:
-#         print("OTP verification data =", otp_data)
-#         users_collection = db.get_collection("users")
 
-#         # Find user with the given email and OTP
-#         existing_user = await users_collection.find_one({
-#             "email": otp_data.email,
-#             "otp": otp_data.otp
-#         })
+async def verify_otp(otp_data: OtpVerification, db: AsyncSession):
+    try:
+        result = await db.execute(
+            select(User).where(User.email == otp_data.email)
+        )
+        user = result.scalar_one_or_none()
 
-#         if not existing_user:
-#             return JSONResponse(
-#                 content={"message": "Invalid OTP or user not found"},
-#                 status_code=status.HTTP_400_BAD_REQUEST
-#             )
+        if not user:
+            raise UserNotFound("User not found", 404)
 
-#         # Update user to mark email as verified and remove OTP
-#         update_result = await users_collection.update_one(
-#             {"_id": existing_user["_id"]},
-#             {"$set": {"email_verified": True}, "$unset": {"otp": ""}}
-#         )
+        if not user.otp:
+            raise OTPVerificationFailed("OTP expired or used", 400)
 
-#         if update_result.modified_count == 0:
-#             return JSONResponse(
-#                 content={"message": "Failed to verify email"},
-#                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
-#             )
+        if user.otp != otp_data.otp:
+            raise OTPVerificationFailed("Invalid OTP", 400)
 
-#         # Generate JWT
-#         token = create_jwt(user_id=str(existing_user["_id"]), role="user")
-#         if not token:
-#             raise Exception("Failed to generate JWT token")
+        # # Generate JWT Token
+        # role = user.role
+        # if isinstance(role, str):
+        #     role_value = role
+        # elif hasattr(role, "value"):
+        #     role_value = role.value
+        # else:
+        #     role_value = str(role)
 
-#         return JSONResponse(
-#             content={
-#                 "message": "Email verified successfully",
-#                 "access_token": token,
-#                 "role": "user"
-#             },
-#             status_code=status.HTTP_200_OK
-#         )
+        token = create_jwt(
+            user_id=str(user.id),
+            role=user.role.value
+        )
+        
+        user.email_verified = True
+        user.otp = None
 
-#     except Exception as e:
-#         print(f"Error during OTP verification: {e}")
-#         return JSONResponse(
-#             content={"message": f"An error occurred: {str(e)}"},
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
-#         )
+        await db.commit()
+        await db.refresh(user)
+
+        return token
+
+    except Exception:
+        await db.rollback()
+        raise
 
 
-# async def login_user(user_data: UserLogin, db: AsyncIOMotorDatabase):
-#     try:
-#         users_collection = db.get_collection("users")
 
-#         # Find user by email
-#         user = await users_collection.find_one({"email": user_data.email, "email_verified": True})
+async def login_user(user_data: UserLogin, db: AsyncSession):
+    result = await db.execute(
+        select(User).where(User.email == user_data.email)
+        )
+    
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise UserNotFound("User Not Found", status_code=status.HTTP_404_NOT_FOUND)
 
-#         if not user:
-#             return JSONResponse(
-#                 content={"message": "User not found.SignUp please"},
-#                 status_code=status.HTTP_401_UNAUTHORIZED
-#             )
+    # Check password
+    if not verify_password(user_data.password, user.password):
+        raise UserLoginFailed("Invalid Credentials", status_code=status.HTTP_401_UNAUTHORIZED)
 
-#         # Check password
-#         if not verify_password(user_data.password, user["password"]):
-#             return JSONResponse(
-#                 content={"message": "Invalid username or password"},
-#                 status_code=status.HTTP_401_UNAUTHORIZED
-#             )
+    # Generate JWT
+    token = create_jwt(user_id=str(user.id), role=user.role.value)
+    if not token:
+        raise UserLoginFailed("Failed to generate JWT token")
 
-#         # Generate JWT
-#         token = create_jwt(user_id=str(user["_id"]), role="user")
-#         if not token:
-#             raise Exception("Failed to generate JWT token")
+    return token
 
-#         return JSONResponse(
-#             content={"message": "Login successful", "access_token": token, "role": "user"},
-#             status_code=status.HTTP_200_OK
-#         )
-
-#     except Exception as e:
-#         return JSONResponse(
-#             content={"message": f"An error occurred: {str(e)}"},
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR
-#         )
+   

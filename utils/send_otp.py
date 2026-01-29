@@ -6,6 +6,8 @@ from configs.env_config import SENDER_EMAIL, SENDER_MAIL_PASSWORD
 async def send_otp_email(receiver_email: str, otp: int) -> int:
     """Send OTP to the given email and return the generated OTP."""
     
+    
+    print(SENDER_EMAIL, SENDER_MAIL_PASSWORD)
     # Email Content
     subject = "Your OTP Code"
     body = f"Your OTP for signup is {otp}. It is valid for 5 minutes."

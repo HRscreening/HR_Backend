@@ -4,28 +4,30 @@ from sqlalchemy import (
     DateTime,
     func,
     Boolean,
-    ForeignKey,
+    ForeignKey
 )
-from sqlalchemy.dialects.postgresql import JSONB
+import uuid
+from sqlalchemy.dialects.postgresql import JSONB,UUID
 from sqlalchemy.orm import relationship
 from configs.postgress_db import Base
+
 
 class Rubric(Base):
     __tablename__ = "rubrics"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
 
     job_id = Column(
-        Integer,
+        UUID(as_uuid=True),
         ForeignKey("jobs.id", ondelete="CASCADE"),
-        nullable=False,          
+        nullable=False,
         index=True,
     )
 
     version = Column(Integer, nullable=False, default=1)
     is_active = Column(Boolean, default=True)
     criteria = Column(JSONB, nullable=False)
-    threshold_score = Column(Integer, nullable=True)
+    threshold_score = Column(Integer)
 
     created_at = Column(
         DateTime(timezone=True),
@@ -34,9 +36,9 @@ class Rubric(Base):
     )
 
     job = relationship("Job", back_populates="rubrics")
-    score = relationship(
+
+    scores = relationship(           # ✅ plural
         "Score",
         back_populates="rubric",
-        uselist=False,
         cascade="all, delete-orphan",
     )
