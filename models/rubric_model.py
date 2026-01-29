@@ -37,7 +37,7 @@ class Rubric(Base):
 
     job = relationship("Job", back_populates="rubrics")
 
-    scores = relationship(           # ✅ plural
+    scores = relationship(           
         "Score",
         back_populates="rubric",
         cascade="all, delete-orphan",

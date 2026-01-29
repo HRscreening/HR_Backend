@@ -31,5 +31,5 @@ class User(Base):
         nullable=True
     )
 
-    organization = relationship("Organization", back_populates="users")
+    organization = relationship("Organization", back_populates="users",foreign_keys=[organization_id])
     jobs = relationship("Job", back_populates="created_by")

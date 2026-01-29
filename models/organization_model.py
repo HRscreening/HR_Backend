@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, func
+from sqlalchemy import Column, Integer, String, DateTime, func,ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from configs.postgress_db import Base
@@ -15,6 +15,7 @@ class Organization(Base):
 
     created_by = Column(
         UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
         unique=True,        
         nullable=False
     )
@@ -22,7 +23,8 @@ class Organization(Base):
     users = relationship(
     "User",
     back_populates="organization",
-    cascade="all, delete-orphan"
+    cascade="all, delete-orphan",
+    foreign_keys="User.organization_id"
 )
 
     
@@ -36,4 +38,10 @@ class Organization(Base):
         "Candidate",
         back_populates="organization",
         cascade="all, delete-orphan",
+    )
+      
+    creator = relationship(
+        "User",
+        foreign_keys=[created_by],  
+        uselist=False,
     )

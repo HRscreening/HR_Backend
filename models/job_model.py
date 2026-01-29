@@ -31,9 +31,11 @@ class Job(Base):
     location = Column(String, nullable=True)
     salary = Column(String, nullable=True)
     target_headcount = Column(Integer, nullable=False)
+    
     voice_ai_enabled = Column(Boolean, default=False)
     manual_rounds_count = Column(Integer, default=0)
     is_confidential = Column(Boolean, default=False)
+    
     closing_reason = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True),server_default=func.now(),nullable=False)
     job_metadata = Column(JSONB, nullable=True)  

@@ -14,3 +14,6 @@ pgvector
 psycopg2-binary
 bcrypt==4.0.1
 passlib==1.7.4
+langchain
+langchain_google_genai
+python-multipart
