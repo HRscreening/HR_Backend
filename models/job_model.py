@@ -6,10 +6,11 @@ from sqlalchemy import (
     func,
     Boolean,
     ForeignKey,
-    Enum,
 )
+from sqlalchemy import Enum as SAEnum
+import uuid
 from sqlalchemy.orm import relationship
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB,UUID
 
 from configs.postgress_db import Base
 from .enums import JobStatus 
@@ -17,15 +18,24 @@ from .enums import JobStatus
 class Job(Base):
     __tablename__ = "jobs"
 
-    id = Column(Integer, primary_key=True, index=True)
-    organization_id = Column(Integer,ForeignKey("organizations.id", ondelete="CASCADE"),nullable=True,index=True)
-    created_by_id = Column(Integer,ForeignKey("users.id", ondelete="CASCADE"),nullable=False,index=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, index=True,default=uuid.uuid4)
+    organization_id = Column(UUID(as_uuid=True),ForeignKey("organizations.id", ondelete="CASCADE"),nullable=True,index=True)
+    created_by_id = Column(UUID(as_uuid=True),ForeignKey("users.id", ondelete="RESTRICT"),nullable=False,index=True)
     title = Column(String, nullable=False)
-    status = Enum(JobStatus, name="job_status_enum",nullable=False,default=JobStatus.OPEN,)
+    status = Column(
+    SAEnum(JobStatus, name="job_status_enum", native_enum=True),
+    nullable=False,
+    default=JobStatus.OPEN,
+)
+    description = Column(String, nullable=True)
+    location = Column(String, nullable=True)
+    salary = Column(String, nullable=True)
     target_headcount = Column(Integer, nullable=False)
+    
     voice_ai_enabled = Column(Boolean, default=False)
     manual_rounds_count = Column(Integer, default=0)
     is_confidential = Column(Boolean, default=False)
+    
     closing_reason = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True),server_default=func.now(),nullable=False)
     job_metadata = Column(JSONB, nullable=True)  

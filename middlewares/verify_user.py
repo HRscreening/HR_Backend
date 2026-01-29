@@ -1,55 +1,52 @@
-from fastapi import Request, Depends, HTTPException, WebSocket, status
-from motor.motor_asyncio import AsyncIOMotorDatabase
+from fastapi import Request, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from bson import ObjectId
+from sqlalchemy import select
+from uuid import UUID
+
 from utils.jwt import decode_jwt
-from configs.postgress_db import get_db  # Dependency that returns `AsyncIOMotorDatabase`
+from configs.postgress_db import get_db
+from models.user_model import User
 
 
 async def auth_required(
     request: Request,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
 ):
     auth_header = request.headers.get("Authorization")
 
     if not auth_header or not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid token",
+        )
 
-    token = auth_header.split(" ")[1]
+    token = auth_header.split(" ", 1)[1]
     payload = decode_jwt(token)
 
     if not payload or "user_id" not in payload:
-        raise HTTPException(status_code=403, detail="Token invalid or expired")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Token invalid or expired",
+        )
+        
+    try:
+        user_id = UUID(payload["user_id"])
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Invalid user ID in token",
+        )
 
-    user = await db["users"].find_one({"_id": ObjectId(payload["user_id"])})
-
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    # print(f"Authenticated user: {user}")
-    
-    request.state.user = user  # Optional: store for later use
-    return user
-
-
-async def websocket_auth(websocket: WebSocket, db: AsyncSession = Depends(get_db)):
-    # Extract token from query parameters
-    token = websocket.query_params.get("token")
-    print(f"WebSocket token: {token}")
-
-    if not token:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return None
-
-    payload = decode_jwt(token)
-    if not payload or "user_id" not in payload:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return None
-
-    user = await db["users"].find_one({"_id": ObjectId(payload["user_id"])})
+    result = await db.execute(
+        select(User).where(User.id == user_id)
+    )
+    user = result.scalar_one_or_none()
 
     if not user:
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-        return None
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
 
+    request.state.user = user
     return user

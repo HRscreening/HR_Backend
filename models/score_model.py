@@ -5,47 +5,57 @@ from sqlalchemy import (
     func,
     Boolean,
     ForeignKey,
-    DECIMAL
+    Numeric,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
+from sqlalchemy.schema import UniqueConstraint
+import uuid
+
 from configs.postgress_db import Base
+
 
 class Score(Base):
     __tablename__ = "scores"
 
-    id = Column(Integer, primary_key=True, index=True)
+    __table_args__ = (
+        UniqueConstraint("application_id", "rubric_id", name="uq_app_rubric"),
+    )
 
-    job_id = Column(
-        Integer,
-        ForeignKey("jobs.id", ondelete="CASCADE"),
-        nullable=False,          
+    id = Column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
         index=True,
     )
+
+
     application_id = Column(
-        Integer,
+        UUID(as_uuid=True),
         ForeignKey("applications.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
+
     rubric_id = Column(
-        Integer,
+        UUID(as_uuid=True),
         ForeignKey("rubrics.id", ondelete="CASCADE"),
         nullable=False,
-        unique=True,
         index=True,
     )
-    
-    overall_score = Column(DECIMAL, nullable=False)
-    ai_confidence = Column(DECIMAL, nullable=False)
-    grounding_data = Column(JSONB, nullable=True)
+
+    overall_score = Column(Numeric(5, 2), nullable=False)
+    ai_confidence = Column(Numeric(3, 2), nullable=False)
+
+    grounding_data = Column(JSONB)
+    breakdown = Column(JSONB)
+    criteria = Column(JSONB, nullable=False)
+
+    threshold_score = Column(Integer)
     is_overridden = Column(Boolean, default=False)
-    breakdown = Column(JSONB, nullable=True)
 
     version = Column(Integer, nullable=False, default=1)
     is_active = Column(Boolean, default=True)
-    criteria = Column(JSONB, nullable=False)
-    threshold_score = Column(Integer, nullable=True)
 
     created_at = Column(
         DateTime(timezone=True),
@@ -53,5 +63,5 @@ class Score(Base):
         nullable=False,
     )
 
-    rubric = relationship("Rubric", back_populates="score")
-
+    rubric = relationship("Rubric", back_populates="scores")
+    application = relationship("Application", back_populates="scores")

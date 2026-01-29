@@ -9,15 +9,18 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 from configs.postgress_db import Base
+from sqlalchemy.dialects.postgresql import UUID
 from pgvector.sqlalchemy import Vector
+import uuid
+
 
 class Resume(Base):
     __tablename__ = "resumes"
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(UUID(as_uuid=True), primary_key=True, index=True,default=uuid.uuid4)
 
     application_id = Column(
-        Integer,
+        UUID(as_uuid=True),
         ForeignKey("applications.id"),
         nullable=False,
         unique=True,
@@ -25,14 +28,12 @@ class Resume(Base):
     )
 
     candidate_id = Column(
-        Integer,
+        UUID(as_uuid=True),
         ForeignKey("candidates.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-
-    is_current = Column(Boolean, default=False)
-
+    
     raw_file_url = Column(String, nullable=False)
 
     parsed_text = Column(String, nullable=True)
