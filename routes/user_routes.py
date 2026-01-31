@@ -14,6 +14,15 @@ router = APIRouter(prefix="/api/user", tags=["User Management"])
 
 
 
+@router.get("/get-user",status_code=status.HTTP_200_OK)
+async def get_user(request: Request, db: AsyncSession = Depends(get_db)):
+    user_id = request.state.user.id
+    user =  await user_services.get_user_by_id(user_id,db)
+    return {
+        "status": "success",
+        "user": user
+    }
+
 @router.post("/create-organization",status_code=status.HTTP_201_CREATED)
 async def create_user(request: Request,org_data: NewOrgSchema, db: AsyncSession = Depends(get_db)):
     
@@ -26,40 +35,3 @@ async def create_user(request: Request,org_data: NewOrgSchema, db: AsyncSession 
             "organization_id": result
         }
 
-
-@router.post("/add-new-job",status_code=status.HTTP_201_CREATED)
-async def add_new_job(request: Request,job_data: NewJobSchema, db: AsyncSession = Depends(get_db)):
-    
-        user_id = request.state.user.id
-        
-        # have to think how to pass org id
-        # org_id = "0e001ed7-2aab-4e9b-a356-9e4c0179ac69"  
-        org_id = None  
-        
-        job_id = await user_services.add_new_job(job_data,user_id,org_id,db)
-        
-        return {
-            "status": "success",
-            "message": "Job created successfully",
-            "job_id": job_id
-        }
-        
-
-
-
-@router.post("/extract-jd/{job_id}",status_code=status.HTTP_200_OK)
-async def extract_jd(
-    request: Request,
-    job_id = str, 
-    file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db)
-    ):
-    
-    # user_id = request.state.user.id 
-
-    result = await user_services.extract_jd(file,job_id,db)
-    return {
-        "status": "success",
-        "message": "Rubric Generated successfully",
-        "rubric": result
-    }

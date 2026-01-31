@@ -6,31 +6,60 @@ class NewOrgSchema(BaseModel):
     address: str | None = None
 
 
-class NewJobSchema(BaseModel):  
-    title: str = Field(max_length=200)
-    description: str | None = None
-    location: str | None = None
-    target_headcount: int
-    
-    voice_ai_enabled: bool = False
-    manual_rounds_count: int = 0
-    is_confidential: bool = False
 
-    @field_validator('target_headcount')
-    def validate_target_headcount(cls, value):
-        if value <= 0:
-            raise ValueError('target_headcount must be a positive integer')
-        return value
-    
+
 from pydantic import BaseModel, field_validator
-from typing import Dict, Any
+from typing import Dict, Optional,Any
 
 
+class SubCriterionSchema(BaseModel):
+    weight: int
+    value: Optional[str] = None
+
+class CriterionSchema(BaseModel):
+    weight: int
+    value: Optional[str] = None
+    sub_criteria: Optional[Dict[str, SubCriterionSchema]] = None
+
+    @field_validator("weight")
+    @classmethod
+    def validate_weight(cls, v):
+        if v < 0:
+            raise ValueError("weight must be non-negative")
+        return v
 
 
-class RubricSchema(BaseModel):
+    @field_validator("sub_criteria")
+    @classmethod
+    def validate_sub_criteria(cls, sub, info):
+        if not sub:
+            return sub
+
+        total = sum(c.weight for c in sub.values())
+
+        if total != 100:
+            raise ValueError(
+                f"sub_criteria weights must sum to 100 (got {total})"
+            )
+
+        return sub
+
+
+class JobDataSchema(BaseModel):
+    title: str
+    description: str
+    location: str | None = None
+    salary: str | None = None
+    target_headcount: int
+    metadata: Dict[str, Any] | None = None
+    
+
+
+class ExtractedJDSchema(BaseModel):
+    job_data: JobDataSchema
     threshold_score: int
-    criteria: Dict[str, Dict[str, Any]]
+    mandatory_criteria: Dict[str, CriterionSchema]
+    screening_criteria: Dict[str, CriterionSchema]
 
     @field_validator("threshold_score")
     @classmethod
@@ -39,29 +68,19 @@ class RubricSchema(BaseModel):
             raise ValueError("threshold_score must be non-negative")
         return v
 
-    @field_validator("criteria")
-    @classmethod
-    def validate_criteria(cls, criteria):
-        for skill, data in criteria.items():
-            if "score" not in data:
-                raise ValueError(f"{skill} must have a score")
+class Criterion(BaseModel):
+    mandatory_criteria: Dict[str, CriterionSchema]
+    screening_criteria: Dict[str, CriterionSchema]
+    
 
-            if data["score"] < 0:
-                raise ValueError(f"{skill} score must be non-negative")
+class ExtendedJobDataSchema(JobDataSchema):
+    metadata: Dict[str, Any] | None = None
+    voice_ai_enabled: bool = False
+    manual_rounds_count: int = 0
+    is_confidential: bool = False
 
-            sub = data.get("sub_criteria")
-            if sub:
-                if not isinstance(sub, dict):
-                    raise ValueError(f"{skill}.sub_criteria must be a dict")
-
-                for k, v in sub.items():
-                    if v < 0:
-                        raise ValueError(f"{skill}.{k} must be non-negative")
-
-                # optional consistency check
-                if sum(sub.values()) != data["score"]:
-                    raise ValueError(
-                        f"{skill} score must equal sum of sub_criteria"
-                    )
-
-        return criteria
+class NewJobSchema(BaseModel):  
+    job_data:ExtendedJobDataSchema
+    threshold_score:int
+    criteria:Criterion
+    
