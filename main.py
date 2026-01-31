@@ -2,6 +2,7 @@ from fastapi import FastAPI,Depends
 # from configs.db import init_db
 from routes.auth_routes import router as auth_router
 from routes.user_routes import router as user_router
+from routes.job_routes import router as job_router
 from fastapi.middleware.cors import CORSMiddleware
 from middlewares.verify_user import auth_required 
 
@@ -38,4 +39,5 @@ async def root():
 
 app.include_router(auth_router)
 app.include_router(user_router,dependencies=[Depends(auth_required)])
+app.include_router(job_router,dependencies=[Depends(auth_required)])
 

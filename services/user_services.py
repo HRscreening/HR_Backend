@@ -14,7 +14,7 @@ import random
 from utils.send_otp import send_otp_email
 from  configs.log_config import get_logger
 
-from schemas.user_schemas import NewOrgSchema,NewJobSchema,RubricSchema
+from schemas.user_schemas import NewOrgSchema,NewJobSchema,ExtractedJDSchema
 
 from services.errors.user_errors import OrganizationAlreadyExists,JDExtractionFailed,JobNotFound
 from services.errors.auth_errors import UserNotFound
@@ -77,63 +77,13 @@ async def create_organization(
 
 
 
-async def add_new_job(job_data:NewJobSchema,user_id:str, org_id:str | None,db: AsyncSession):
-    try:
-        new_job = Job(
-            created_by_id=user_id,
-            title=job_data.title,
-            description=job_data.description,
-            location=job_data.location,
-            target_headcount=job_data.target_headcount,
-            voice_ai_enabled=job_data.voice_ai_enabled,
-            manual_rounds_count=job_data.manual_rounds_count,
-            is_confidential=job_data.is_confidential,
-        )
-        
-        if org_id:
-            result = await db.execute(select(Organization).where(Organization.id == org_id))
-            organization = result.scalar_one_or_none()
-            
-            if not organization:
-                raise Exception("Organization not found")
-            
-            new_job.organization = organization
-            
-        
-        db.add(new_job)
-        await db.commit()
-        await db.refresh(new_job)
-        
-        return new_job.id
-    
-    except Exception as e:
-        await db.rollback()
-        logger.error(f"Error adding job: {e}")
-        raise
-    
-    
-    
-
-
 async def extract_jd(
     file: UploadFile,
-    job_id: str,
     db: AsyncSession
 ) -> dict:
     try:
-        # 1. Fetch job
-        result = await db.execute(
-            select(Job).where(Job.id == job_id)
-        )
-        existing_job = result.scalar_one_or_none()
 
-        if not existing_job:
-            raise JobNotFound(
-                message="Job ID not found",
-                status_code=status.HTTP_404_NOT_FOUND
-            )
-
-        # 2. Extract JD text
+        # 1. Extract JD text
         jd_input = await extract_text_from_pdf(file)
 
         if len(jd_input) < 100:
@@ -146,41 +96,127 @@ async def extract_jd(
         rubric_data = await generate_rubric_from_jd(jd_input)
         rubric_dict = rubric_data.model_dump()
 
-        # 4. Fetch existing rubrics explicitly (NO lazy loading)
-        result = await db.execute(
-            select(Rubric).where(Rubric.job_id == job_id)
-        )
-        existing_rubrics = result.scalars().all()
-
-        # 5. Deactivate old rubrics & compute version
-        new_version = 1
-        for rubric in existing_rubrics:
-            rubric.is_active = False
-            new_version = max(new_version, rubric.version + 1)
-
-        # 6. Create new rubric
-        new_rubric = Rubric(
-            version=new_version,
-            threshold_score=rubric_dict["threshold_score"],
-            criteria=rubric_dict["criteria"],
-            job_id=job_id,          
-            is_active=True
-        )
-
-        db.add(new_rubric)
-        await db.commit()
-        await db.refresh(new_rubric)
-
+       
         # 7. Return clean response
         return {
-            "id": new_rubric.id,
-            "version": new_rubric.version,
-            "threshold_score": new_rubric.threshold_score,
-            "criteria": new_rubric.criteria,
-            "is_active": new_rubric.is_active
+            "job_data": rubric_dict["job_data"],
+            "threshold_score": rubric_dict["threshold_score"],
+            "criteria": {
+                "mandatory_criteria":rubric_dict["mandatory_criteria"],
+                "screening_criteria":rubric_dict["screening_criteria"]
+                }
         }
 
     except Exception as e:
         logger.exception(f"Error extracting JD: {e}")
         await db.rollback()
         raise
+
+
+
+async def add_new_job(
+    data: NewJobSchema,
+    user_id: str,
+    org_id: str | None,
+    db: AsyncSession
+):
+    try:
+        # 1. Create Job
+        new_job = Job(
+            created_by_id=user_id,
+            title=data.job_data.title,
+            description=data.job_data.description,
+            job_metadata=data.job_data.metadata,
+            location=data.job_data.location,
+            target_headcount=data.job_data.target_headcount,
+            voice_ai_enabled=data.job_data.voice_ai_enabled,
+            manual_rounds_count=data.job_data.manual_rounds_count,
+            is_confidential=data.job_data.is_confidential,
+        )
+
+        # 2. Attach organization if provided
+        if org_id:
+            result = await db.execute(
+                select(Organization).where(Organization.id == org_id)
+            )
+            organization = result.scalar_one_or_none()
+
+            if not organization:
+                raise ValueError("Organization not found")
+
+            new_job.organization = organization
+
+        # 3. Persist job to get ID
+        db.add(new_job)
+        await db.flush()  # ✅ ID is now generated
+
+        job_id = new_job.id
+
+        # 4. Determine rubric version (for safety / future updates)
+        result = await db.execute(
+            select(Rubric).where(Rubric.job_id == job_id)
+        )
+        existing_rubrics = result.scalars().all()
+
+        new_version = 1
+        for rubric in existing_rubrics:
+            rubric.is_active = False
+            new_version = max(new_version, rubric.version + 1)
+
+        # 5. Create rubric
+        new_rubric = Rubric(
+            version=new_version,
+            threshold_score=data.threshold_score,
+            criteria=data.criteria.model_dump(),
+            job_id=job_id,
+            is_active=True,
+        )
+
+        db.add(new_rubric)
+
+        # 6. Commit transaction
+        await db.commit()
+        await db.refresh(new_job)
+
+        return new_job.id
+
+    except Exception as e:
+        await db.rollback()
+        logger.exception("Error adding job")
+        raise
+
+    
+async def get_jobs(user_id : str,db: AsyncSession, organization_id: Optional[str] = None) -> list[dict]:
+    try:
+        query = select(Job)
+        
+        if organization_id:
+            query = query.where(Job.organization_id == organization_id ).order_by(Job.created_at.desc())
+        else:
+            query = query.where(Job.created_by_id == user_id, Job.organization_id == None).order_by(Job.created_at.desc())
+            
+        
+        
+        result = await db.execute(query)
+        jobs = result.scalars().all()
+        
+        job_list = []
+        for job in jobs:
+            job_list.append({
+                "id": job.id,
+                "title": job.title,
+                "location": job.location,
+                "status": job.status.value,
+                "target_headcount": job.target_headcount,
+                "jd_url":"null",
+                "created_at": job.created_at.isoformat(),
+            })
+        
+        return job_list
+    
+    except Exception as e:
+        logger.error(f"Error fetching jobs: {e}")
+        raise
+
+
+

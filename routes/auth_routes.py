@@ -14,16 +14,16 @@ router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 
 
-@router.post("/signup")
+@router.post("/signup",status_code=status.HTTP_201_CREATED)
 async def create_user(user_data: NewUserSchema, db: AsyncSession = Depends(get_db)):
 
         print("Received user data for signup:", user_data)
         result = await auth_services.signup_user(user_data, db)
         
-        return JSONResponse(
-            content=result,
-            status_code=status.HTTP_200_OK
-        )
+        return {
+            "status": "success",
+            "message": result["message"]
+        }
 
 
 
