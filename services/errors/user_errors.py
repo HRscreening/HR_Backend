@@ -21,3 +21,8 @@ class JobNotFound(DomainError):
     code = "JOB_NOT_FOUND"
     message = "Job not found"
     status_code = 404
+    
+class RubricNotFound(DomainError):
+    code = "RUBRIC_NOT_FOUND"
+    message = "Rubric not found for the job"
+    status_code = 404

@@ -22,12 +22,23 @@ class User(Base):
     password = Column(String, nullable=False)
     email_verified = Column(Boolean, default=False)
     otp = Column(String, nullable=True)
-    joined_at = Column(DateTime(timezone=True), server_default=func.now())
+    created_at = Column(DateTime(timezone=True), server_default=func.now())  # Timestamp when the user account was created
+    joined_at = Column(DateTime(timezone=True), server_default=func.now()) # Timestamp when the user joined/created organization
     user_metadata = Column(JSONB, nullable=True)
+    
+    
+    deleted_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(),onupdate=func.now(), nullable=False)
+    
+    preferences = Column(JSONB, nullable=True)  #  User's UI preferences — theme, timezone, notification settings.
+    permissions = Column(JSONB, nullable=True)  #  Granular permission flags beyond the base role. Allows finetuning access per user.
+    last_login_at = Column(DateTime(timezone=True), nullable=True)  # Timestamp of the user's last login.
+    login_count = Column(Integer, default=0)  # Total number of times the user has logged in.
 
     organization_id = Column(
         UUID(as_uuid=True),
         ForeignKey("organizations.id", ondelete="SET NULL"),
+        index=True,
         nullable=True
     )
 
