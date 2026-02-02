@@ -10,6 +10,7 @@ from middlewares.verify_user import auth_required
 import logging
 from exception_handlers import domain_exception_handler
 from services.errors.base import DomainError
+from configs.supabase_config import supabase
 import models
 from configs.env_config import LANGHAIN_TRACKING_ENABLED, LANGCHAIN_API_KEY
 

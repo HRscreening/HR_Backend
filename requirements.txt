@@ -17,3 +17,6 @@ passlib==1.7.4
 langchain
 langchain_google_genai
 python-multipart
+supabase
+aiofiles
+PyPDF2

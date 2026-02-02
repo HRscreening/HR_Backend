@@ -17,6 +17,9 @@ from models.application_model import Application
 from models.resume_model import Resume
 from models.rubric_model import Rubric
 from models.score_model import Score
+from models.ai_processing_log_model import AIProcessingLogs
+from models.bulk_upload_batches_model import BulkUploadBatches
+from models.document_model import Document
 from dotenv import load_dotenv
 
 load_dotenv()

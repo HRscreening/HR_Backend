@@ -37,3 +37,12 @@ GEMINI_API_KEY = os.environ["GOOGLE_API_KEY"]=os.getenv("GOOGLE_API_KEY")
 # Langmith tracking
 LANGHAIN_TRACKING_ENABLED = os.getenv("LANGHAIN_TRACKING_ENABLED", "true").lower() == "true"
 LANGCHAIN_API_KEY = os.getenv("LANGCHAIN_API_KEY", "")
+
+
+# Supabase Configuration
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "your-supabase-url")
+SUPABASE_API_KEY = os.environ.get("SUPABASE_API_KEY", "your-supabase-api-key")
+
+
+
+BASE_UPLOAD_DIR = os.environ.get("BASE_UPLOAD_DIR", "/data/uploads")
