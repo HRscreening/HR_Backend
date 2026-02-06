@@ -1,7 +1,7 @@
 # core/exception_handlers.py
 from fastapi import Request
 from fastapi.responses import JSONResponse
-from services.errors.base import DomainError
+from src.services.errors.base import DomainError
 from configs.log_config import get_logger 
 
 logger = get_logger(__name__)
