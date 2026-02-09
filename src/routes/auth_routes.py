@@ -1,13 +1,9 @@
-from fastapi import APIRouter,HTTPException,Depends,Request,Query,status
+from fastapi import APIRouter,Depends,Request,Query,status
 from fastapi.responses import JSONResponse
-from configs.postgress_db import get_db
-from sqlalchemy.ext.asyncio import AsyncSession
-from src.middlewares.verify_user import auth_required
-from src.utils.verify_token import verify_token
 
 from src.schemas.auth_schemas import NewUserSchema,OtpVerification,UserLogin
-from src.services import auth_services
-# from services.errors.auth_errors import EmailAlreadyExists
+from src.dependency import get_auth_service,AuthService
+
 
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
@@ -15,10 +11,10 @@ router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
 
 @router.post("/signup",status_code=status.HTTP_201_CREATED)
-async def create_user(user_data: NewUserSchema, db: AsyncSession = Depends(get_db)):
+async def create_user(user_data: NewUserSchema, auth_service: AuthService = Depends(get_auth_service)):
 
         print("Received user data for signup:", user_data)
-        result = await auth_services.signup_user(user_data, db)
+        result = await auth_service.signup_user(user_data)
         
         return {
             "status": "success",
@@ -28,9 +24,9 @@ async def create_user(user_data: NewUserSchema, db: AsyncSession = Depends(get_d
 
 
 @router.post("/verify-otp")
-async def check_otp(otp_data: OtpVerification, db: AsyncSession = Depends(get_db)):
+async def check_otp(otp_data: OtpVerification,auth_service: AuthService = Depends(get_auth_service)):
     
-    token =  await auth_services.verify_otp(otp_data, db)
+    token =  await auth_service.verify_otp(otp_data)
     
     return JSONResponse(
         content={
@@ -43,9 +39,9 @@ async def check_otp(otp_data: OtpVerification, db: AsyncSession = Depends(get_db
 
 
 @router.post("/login")
-async def userLogin(user_data: UserLogin, db: AsyncSession = Depends(get_db)):
+async def userLogin(user_data: UserLogin,auth_service: AuthService = Depends(get_auth_service)):
     
-    token =  await auth_services.login_user(user_data, db)
+    token =  await auth_service.login_user(user_data)
     
     return JSONResponse(
         content={

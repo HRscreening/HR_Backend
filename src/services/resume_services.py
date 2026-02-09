@@ -262,7 +262,7 @@ def score_resumes_service_sync(
             .where(
                 Application.job_id == db_job_id,
                 Resume.id.in_(resume_ids),
-                Resume.status == ResumeStatus.PARSED
+                Resume.status == ResumeStatus.QUEUED_FOR_SCORING
             )
         )
 

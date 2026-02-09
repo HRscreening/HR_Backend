@@ -3,6 +3,7 @@ import os
 import uuid
 from typing import List
 
+# TO be used for creating jsonl files for batch inference for resume scoring. Each line will contain a resume's parsed text and a system prompt, which will be fed to the LLM for scoring. The output JSONL file will then be used for batch processing of resume scores.   
 
 def write_resume_scoring_jsonl(
     resumes: List,

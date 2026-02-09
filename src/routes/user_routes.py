@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from configs.postgress_db import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.middlewares.verify_user import auth_required
-from src.utils.verify_token import verify_token
+# from src.utils.verify_token import verify_token
 
 from src.schemas.user_schemas import NewOrgSchema,NewJobSchema
 from src.services import user_services

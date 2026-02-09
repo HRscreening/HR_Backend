@@ -4,12 +4,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 from src.schemas.user_schemas import NewJobSchema
-from src.services import user_services
+# from src.services import user_services
 from  typing import Optional,List
 from uuid import UUID
 from src.schemas.job_schemas import JobOverviewResponse
 from src.services.resume_services import score_resumes_service
 from src.services.job_services import get_applications
+# from src.utils.extract_validate_files import validate_and_extract_files
+from src.dependency import get_job_service,JobService
+from src.utils.file_manager import fileManager
 
 
 router = APIRouter(prefix="/api/jobs", tags=["Job Management"])
@@ -18,27 +21,24 @@ router = APIRouter(prefix="/api/jobs", tags=["Job Management"])
 
 
 @router.post("/add-new-job",status_code=status.HTTP_201_CREATED)
-async def add_new_job(request: Request,data: NewJobSchema, db: AsyncSession = Depends(get_db)):
+async def add_new_job(request: Request,data: NewJobSchema, job_service: JobService = Depends(get_job_service)):
     
         user_id = request.state.user.id
         ctx_type = request.state.context.type
         
         if ctx_type == "org":
-            job_id = await user_services.add_new_job(
+            job_id = await job_service.add_new_job(
                 data=data,
                 user_id=user_id,
                 org_id=request.state.context.org_id,
-                db=db,
             )
 
         elif ctx_type == "personal":
-            job_id = await user_services.add_new_job(
+            job_id = await job_service.add_new_job(
                 data=data,
                 user_id=user_id,
                 org_id=None,
-                db=db,
             )
-
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -53,16 +53,16 @@ async def add_new_job(request: Request,data: NewJobSchema, db: AsyncSession = De
        
         
 @router.get("/get-jobs",status_code=status.HTTP_200_OK)
-async def get_jobs(request: Request,db: AsyncSession = Depends(get_db)):
+async def get_jobs(request: Request,job_service: JobService = Depends(get_job_service)):
     
         user_id = request.state.user.id
         ctx_type = request.state.context.type
         
         
         if ctx_type == "org":
-            jobs = await user_services.get_jobs(user_id,db,organization_id=request.state.context.org_id)
+            jobs = await job_service.get_jobs(user_id,organization_id=request.state.context.org_id)
         elif ctx_type == "personal":
-            jobs = await user_services.get_jobs(user_id,db,None)
+            jobs = await job_service.get_jobs(user_id,None)
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -78,12 +78,10 @@ async def get_jobs(request: Request,db: AsyncSession = Depends(get_db)):
 @router.post("/upload-jd",status_code=status.HTTP_200_OK)
 async def extract_jd(
     file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db)
+    job_service: JobService = Depends(get_job_service)
     ):
-    
-    # user_id = request.state.user.id 
 
-    result = await user_services.extract_jd(file,db)
+    result = await job_service.extract_jd(file)
     return result
 
 
@@ -97,7 +95,7 @@ async def extract_jd(
 async def get_job_overview_api(
     job_id: UUID,
     request: Request,
-    db: AsyncSession = Depends(get_db),
+    job_service: JobService = Depends(get_job_service)
 ):
     ctx = request.state.context
 
@@ -108,16 +106,14 @@ async def get_job_overview_api(
                 detail="Organization context missing org_id",
             )
 
-        return await user_services.get_job_overview(
+        return await job_service.get_job_overview(
             job_id=str(job_id),
-            db=db,
             organization_id=ctx.org_id,
         )
 
     if ctx.type == "personal":
-        return await user_services.get_job_overview(
+        return await job_service.get_job_overview(
             job_id=str(job_id),
-            db=db,
             organization_id=None,
         )
 
@@ -128,34 +124,38 @@ async def get_job_overview_api(
 
 
 
-@router.post("/process-applications/{job_id}",status_code=status.HTTP_202_ACCEPTED)
-async def process_applications(request: Request,job_id: UUID,
-                               background_tasks: BackgroundTasks,
-                               db: AsyncSession = Depends(get_db),
-                               files: List[UploadFile] = File(...)):
+@router.post("/process-applications-zip-file/{job_id}",status_code=status.HTTP_202_ACCEPTED)
+async def process_applications(
+    request: Request,
+    job_id: UUID,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    zip_file: UploadFile = File(...),
+    job_service: JobService = Depends(get_job_service)
+):
+
     
         user_id = request.state.user.id
         ctx_type = request.state.context.type
         
-
+        files = [zip_file]  # Wrap the single file in a list to reuse the validation function
+        extracted_files = await fileManager.validate_and_extract(files)
         
         if ctx_type == "org":
-            msg = await user_services.process_applications(
+            msg = await job_service.process_applications(
                 job_id=str(job_id),
-                db=db,
                 background_tasks=background_tasks,
                 user_id=str(user_id),
-                files=files,
+                files=extracted_files,
                 organization_id=request.state.context.org_id,
             )
             
         elif ctx_type == "personal":
-            msg = await user_services.process_applications(
+            msg = await job_service.process_applications(
                 job_id=str(job_id),
-                db=db,
                 background_tasks=background_tasks,
                 user_id=str(user_id),
-                files=files,
+                files=extracted_files,
                 organization_id=None,
             )
         else:
