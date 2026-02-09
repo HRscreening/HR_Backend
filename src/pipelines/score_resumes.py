@@ -169,77 +169,77 @@ async def score_resume_async(resumes: list[ResumeDataSchema], criteria: dict):
 
 
 # For synchronous calls (if uploaded resumes number is more than 5) | Will be used by workers 
-# def score_resume_sync(resumes: list[ResumeDataSchema], criteria: dict):
-#     try:
-#         inputs = []
-#         application_ids = []
-#         resume_ids = []
-        
-
-#         for resume in resumes:
-#             resume_ids.append(resume.resume_id)
-#             application_ids.append(resume.application_id)
-#             inputs.append({
-#                 "criteria": json.dumps(criteria),
-#                 "resume_text": resume.resume_text
-#             })
-
-#         # results = chain.batch(
-#         #     inputs,
-#         #     config={
-#         #         "max_concurrency": 5, # TODO: Can be made dynamic
-#         #         "return_exceptions": True
-#         #     }
-#         # )
-        
-#         # print("Raw results from chain.batch:\n\n\n", results,"\n\n\n\n")
-#         results = data
-
-#         response: list[ResumeScoreResult] = []
-
-#         for resume_id,application_id,result in zip(resume_ids,application_ids, results):
-#             if isinstance(result, Exception):
-#                 logger.error(f"Scoring failed for resume_id={resume_id}: {result}")
-#                 continue
-
-#             response.append(ResumeScoreResult(
-#                 resume_id=resume_id,
-#                 application_id=application_id,
-#                 score=result
-#             ))
-
-#         return response
-
-#     except Exception:
-#         logger.exception("Resume scoring batch failed")
-#         raise
-
-
-
 def score_resume_sync(resumes: list[ResumeDataSchema], criteria: dict):
     try:
-        # 🔥 MOCKED Gemini output (to save API key)
-        results = data  
+        inputs = []
+        application_ids = []
+        resume_ids = []
+        
 
-        if len(results) != len(resumes):
-            raise ValueError(
-                f"Mocked data length ({len(results)}) "
-                f"does not match resumes length ({len(resumes)})"
-            )
+        for resume in resumes:
+            resume_ids.append(resume.resume_id)
+            application_ids.append(resume.application_id)
+            inputs.append({
+                "criteria": json.dumps(criteria),
+                "resume_text": resume.resume_text
+            })
+
+        results = chain.batch(
+            inputs,
+            config={
+                "max_concurrency": 5, # TODO: Can be made dynamic
+                "return_exceptions": True
+            }
+        )
+        
+        print("\n\n\nLLM CALL DONE. Processing results...\n\n\n")
+        # print("Raw results from chain.batch:\n\n\n", results,"\n\n\n\n")
 
         response: list[ResumeScoreResult] = []
 
-        for resume, result in zip(resumes, results):
-            response.append(
-                ResumeScoreResult(
-                    resume_id=resume.resume_id,
-                    application_id=resume.application_id,
-                    score=result
-                )
-            )
+        for resume_id,application_id,result in zip(resume_ids,application_ids, results):
+            if isinstance(result, Exception):
+                logger.error(f"Scoring failed for resume_id={resume_id}: {result}")
+                continue
+
+            response.append(ResumeScoreResult(
+                resume_id=resume_id,
+                application_id=application_id,
+                score=result
+            ))
 
         return response
 
     except Exception:
         logger.exception("Resume scoring batch failed")
         raise
+
+
+
+# def score_resume_sync(resumes: list[ResumeDataSchema], criteria: dict):
+#     try:
+#         # 🔥 MOCKED Gemini output (to save API key)
+#         results = data  
+
+#         if len(results) != len(resumes):
+#             raise ValueError(
+#                 f"Mocked data length ({len(results)}) "
+#                 f"does not match resumes length ({len(resumes)})"
+#             )
+
+#         response: list[ResumeScoreResult] = []
+
+#         for resume, result in zip(resumes, results):
+#             response.append(
+#                 ResumeScoreResult(
+#                     resume_id=resume.resume_id,
+#                     application_id=resume.application_id,
+#                     score=result
+#                 )
+#             )
+
+#         return response
+
+#     except Exception:
+#         logger.exception("Resume scoring batch failed")
+#         raise
