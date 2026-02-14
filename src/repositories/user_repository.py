@@ -4,18 +4,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.models.user_model import User
 from src.utils.security import hash_password,verify_password
 # from src.utils.jwt import create_jwt
-from src.utils.security import hash_password
-import random
-from src.utils.send_otp import send_otp_email
 from  configs.log_config import get_logger
-from src.schemas.auth_schemas import NewUserSchema,OtpVerification,UserLogin
+from src.schemas.auth_schemas import NewUserSchema
 from src.services.errors.auth_errors import EmailAlreadyExists,OTPVerificationFailed,UserLoginFailed,UserNotFound,DomainError
 
 
 from sqlalchemy import select
-
-
-
 
 
 
@@ -83,3 +77,13 @@ class UserRepository:
             select(User).where(User.id == user_id)
         )
         return result.scalar_one_or_none()
+    
+    
+    async def commit(self):
+        await self.db.commit()
+
+    async def rollback(self):
+        await self.db.rollback()
+
+
+        

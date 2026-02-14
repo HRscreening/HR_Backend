@@ -47,6 +47,8 @@ SUPABASE_PUBLIC_URL = os.environ.get("SUPABASE_PUBLIC_URL", "your-supabase-file-
 
 BASE_UPLOAD_DIR = os.environ.get("BASE_UPLOAD_DIR", "/data/uploads")
 
+
+# TODO:FIX NAMES
 REDIS_HOST = os.environ.get('REDIS_HOST', None)
 REDIS_PORT = int(os.environ.get('REDIS_PORT', 6379))  # cast to int
 REDIS_USERNAME = os.environ.get('REDIS_USERNAME', None)

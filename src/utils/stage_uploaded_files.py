@@ -1,3 +1,5 @@
+# can be removed if file_manager file is working
+
 import os
 import shutil
 from typing import List

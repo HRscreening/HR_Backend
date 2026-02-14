@@ -87,6 +87,7 @@ async def auth_required(
         )
 
     # ---------- ORG MEMBERSHIP VALIDATION ----------
+    # TODO: Need to remove this db call
     result = await db.execute(
         select(User)
         .where(

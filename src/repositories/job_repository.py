@@ -1,45 +1,20 @@
-from fastapi import Depends, status
-from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.models.user_model import User
-from src.utils.security import hash_password,verify_password
-# from src.utils.jwt import create_jwt
-from src.utils.security import hash_password
-import random
-from src.utils.send_otp import send_otp_email
 from  configs.log_config import get_logger
-from src.schemas.auth_schemas import NewUserSchema,OtpVerification,UserLogin
-from src.services.errors.auth_errors import EmailAlreadyExists,OTPVerificationFailed,UserLoginFailed,UserNotFound,DomainError
-
 
 from sqlalchemy import select,func
+from sqlalchemy.orm import selectinload
 
 from fastapi import Depends, status,UploadFile,BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
 
-from src.models import Organization,User,Job,Rubric,Application,BulkUploadBatches
+from src.models import Organization,User,Job,Rubric,Application,BulkUploadBatches,Score,Resume
 
 from  configs.log_config import get_logger
 
-from src.schemas.user_schemas import NewOrgSchema,NewJobSchema
-from src.schemas.job_schemas import JobOverviewResponse
-
-from src.services.errors.user_errors import OrganizationAlreadyExists,JDExtractionFailed,JobNotFound,RubricNotFound
-from src.services.errors.auth_errors import UserNotFound
-from src.services.errors.base import DomainError
-
-
-from src.models.enums import UserRole
+from src.schemas.user_schemas import NewJobSchema
 from typing import Optional,List
-from src.utils.extract_pdf import extract_text_from_pdf
-from src.pipelines.generate_rubric import generate_rubric_from_jd
 
-
-from src.utils.manage_supabase_buckets import supabase_file_handler
-from src.utils.stage_uploaded_files import FileService
-
-from workers.producer import enqueue_resumes_parsing
 
 
 class JobRepository:
@@ -62,6 +37,7 @@ class JobRepository:
             created_by_id=user_id,
         )
         self.db.add(job)
+        await self.db.flush() 
         return job
     
     async def create_job_with_rubric(self, job_data: NewJobSchema):
@@ -77,23 +53,20 @@ class JobRepository:
         self.db.add(job)
         return job
         
-        
-        
+           
     async def get_job_by_id(self, job_id: str) -> Optional[Job]:
         result = await self.db.execute(
             select(Job).where(Job.id == job_id)
         )
         return result.scalar_one_or_none()
-    
-    
+        
     
     async def get_all_rubrics(self,job_id:str) -> List[Rubric]:
         result = await self.db.execute(
             select(Rubric).where(Rubric.job_id == job_id)
         )
         return result.scalars().all()
-    
-    
+      
     
     async def get_active_rubric(self,job_id:str) -> Optional[Rubric]:
         result = await self.db.execute(
@@ -118,15 +91,6 @@ class JobRepository:
         )
         return result.scalars().all() 
     
-    async def get_jobs_by_user_organization(self, user_id: int) -> List[Job]:
-        """Get jobs created by the user that are associated with an organization"""
-        
-        result = await self.db.execute(
-            select(Job).where(Job.created_by_id == user_id
-                              ,Job.organization_id != None).order_by(Job.created_at.desc())
-        )
-        return result.scalars().all()
-    
     async def get_applications_by_group(self, job_id: str) -> List[Application]:
         result = await self.db.execute(
             select(Application.status,func.count(Application.id)).where(Application.job_id == job_id).group_by(Application.status)
@@ -134,3 +98,44 @@ class JobRepository:
         
         return result.all()
     
+    # TODO: have been moved to application fontend needs to use from there
+    async def get_total_applications_count(self, job_id: str) -> int:
+        total_result = await self.db.execute(
+        select(func.count(Application.id))
+        .where(Application.job_id == job_id)
+    )
+        total = total_result.scalar_one()
+        
+        return total
+    
+    async def get_applications_of_job(self,job_id:str,current_rubric_id:str,page_size:int=15,offset:int=0):
+        stmt = (
+            select(Application, Score)
+            .join(
+                Score,
+                (Score.application_id == Application.id) &
+                (Score.rubric_id == current_rubric_id)
+            )
+            .where(Application.job_id == job_id)
+            .options(
+                selectinload(Application.candidate),
+                selectinload(Application.resume)
+            )
+            .order_by(Score.overall_score.desc())
+            .limit(page_size)
+            .offset(offset)
+        )
+
+        result = await self.db.execute(stmt)
+        rows = result.all()
+        return rows
+    
+    
+    async def commit(self):
+        await self.db.commit()
+
+    async def rollback(self):
+        await self.db.rollback()
+
+
+        

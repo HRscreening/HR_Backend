@@ -56,15 +56,6 @@ class Application(Base):
     uselist=False,
     )
     
-
-    # OPTIONAL
-    # resumes = relationship(
-    #     "Resume",
-    #     foreign_keys="Resume.application_id",
-    #     order_by="Resume.uploaded_at"
-    # )
-
-    
     scores = relationship(
         "Score",
         back_populates="application",

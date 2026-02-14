@@ -12,19 +12,22 @@ from src.schemas.job_schemas import JobOverviewResponse
 from src.services.errors.user_errors import JDExtractionFailed,JobNotFound,RubricNotFound
 from src.services.errors.base import DomainError
 from typing import Optional,List
+from src.repositories.batch_repositoy import BatchRepository 
 from src.utils.extract_pdf import extract_text_from_pdf
 from src.pipelines.generate_rubric import generate_rubric_from_jd
 from workers.producer import enqueue_resumes_parsing
 from src.repositories.job_repository import JobRepository
-from src.repositories.org_repository import OrganizationRepository
+from src.repositories.org_repository import OrganizationRepository 
 from src.utils.file_manager import FileManagerService
 from src.utils.file_manager import fileManager
-
+from configs.env_config import SUPABASE_PUBLIC_URL
 
 class JobService:
-    def __init__(self,job_repositoy:JobRepository,org_repository,db: AsyncSession):
+    def __init__(self,job_repositoy:JobRepository,batch_repository:BatchRepository,org_repository,db: AsyncSession):
         self.db = db
+        self.PUBLIC_URL = SUPABASE_PUBLIC_URL
         self.job_repository:JobRepository = job_repositoy
+        self.batch_repository:BatchRepository = batch_repository    
         self.organization_repository:OrganizationRepository = org_repository
         self.file_manager:FileManagerService = fileManager
         self.logger = get_logger("JOB_SERVICE")
@@ -44,9 +47,7 @@ class JobService:
                 if not organization:
                     raise ValueError("Organization not found")
                 new_job.organization = organization
-                
-            self.db.add(new_job)
-            await self.db.flush()  
+           
 
             job_id = new_job.id
 
@@ -56,7 +57,8 @@ class JobService:
             for rubric in existing_rubrics:
                 rubric.is_active = False
                 new_version = max(new_version, rubric.version + 1)
-
+            
+            # TODO: make a repo method to handle rubric versioning and creation in one transaction to avoid race conditions
             # 5. Create rubric
             new_rubric = Rubric(
                 version=new_version,
@@ -277,3 +279,97 @@ class JobService:
             await self.db.rollback()
             self.logger.exception(f"Error processing applications for job {job_id}: {e}")
             raise
+    
+    async def get_applications(
+        self,
+        job_id: str,
+        page: int = 1,
+        page_size: int = 20,
+    ):
+        if page < 1:
+            page = 1
+
+        offset = (page - 1) * page_size
+
+    
+        total = await self.job_repository.get_total_applications_count(job_id=job_id)
+        active_rubric = await self.job_repository.get_active_rubric(job_id=job_id)
+        
+        if not active_rubric:
+            raise RubricNotFound( message="Active rubric not found for the job", status_code=404 )
+        
+        applications = await self.job_repository.get_applications_of_job(job_id=job_id, current_rubric_id=active_rubric.id, page_size=page_size, offset=offset )
+        
+        response = []
+
+        for app,score in applications:
+            # 🔹 active score only
+            active_score =  score if score else None
+            # 🔹 fetch ONLY current resume
+            resume = app.resume if app.resume else None
+
+            app_data = {
+                "id": str(app.id),
+                "current_round": app.current_round,
+                "is_starred": app.is_starred,
+                "denormalized_rank": app.denormalized_rank,
+                "is_flagged": app.is_flagged,
+                "offer_letter_url": app.offer_letter_url,
+                "flag_reason": app.flag_reason,
+                "tags": app.tags,
+                "last_activity_at": (
+                    app.last_activity_at.isoformat()
+                    if app.last_activity_at else None
+                ),
+                "deleted_at": (
+                    app.deleted_at.isoformat()
+                    if app.deleted_at else None
+                ),
+                "status": app.status.value,
+                "created_at": app.created_at.isoformat(),
+                "updated_at": app.updated_at.isoformat(),
+                "ai_analysis": app.ai_analysis,
+            }
+
+            # ✅ candidate (minimal)
+            app_data["candidate"] = {
+                "id": str(app.candidate.id),
+                "full_name": app.candidate.full_name,
+                "email": app.candidate.email,
+                "phone": app.candidate.phone,
+            } if app.candidate else None
+
+            # ✅ resume (current only)
+            app_data["resume"] = {
+                "id": str(resume.id),
+                "raw_file_url": f"{self.PUBLIC_URL}/{resume.raw_file_url}",
+                "status": resume.status.value,
+                "page_count": resume.page_count,
+                "uploaded_at": resume.uploaded_at.isoformat(),
+            } if resume else None
+
+            # ✅ active score only
+            app_data["scores"] = [
+                {
+                    "is_active": active_score.is_active,
+                    "overall_score": active_score.overall_score,
+                    "ai_confidence": active_score.ai_confidence,
+                    "created_at": active_score.created_at.isoformat(),
+                    "grounding_data": active_score.grounding_data,
+                    "is_overridden": active_score.is_overridden,
+                    "version": active_score.version,
+                    "is_latest": active_score.is_latest,
+                }
+            ] if active_score else []
+
+            response.append(app_data)
+
+        return {
+            "applications": response,
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+                "total_pages": (total + page_size - 1) // page_size
+            }
+        }

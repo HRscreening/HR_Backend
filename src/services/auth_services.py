@@ -9,14 +9,17 @@ from src.schemas.auth_schemas import NewUserSchema,OtpVerification,UserLogin
 
 from src.services.errors.auth_errors import EmailAlreadyExists,OTPVerificationFailed,UserLoginFailed,UserNotFound,DomainError
 from src.repositories.user_repository import UserRepository
-
+from src.utils.email_service import EmailService
+from src.utils.security import PasswordService
 from src.utils.jwt import JWTService
 
 
 
 class AuthService:
-    def __init__(self, auth_repository: UserRepository, db: AsyncSession):
+    def __init__(self, auth_repository: UserRepository,email_service:EmailService,password_service:PasswordService,db: AsyncSession):
         self.auth_repository = auth_repository
+        self.email_service = email_service
+        self.password_service = password_service
         self.db = db
         self.logger = get_logger("AUTH_SERVICE")
         self.jwt_service = JWTService()
@@ -36,7 +39,7 @@ class AuthService:
                 raise EmailAlreadyExists("Email already exists")
 
             # 2️⃣ Prepare data
-            hashed_password = hash_password(user_data.password)
+            hashed_password = self.password_service.hash_password(user_data.password)
             otp = self.generate_otp()
 
             # 3️⃣ Update unverified user
@@ -62,7 +65,7 @@ class AuthService:
             await self.db.commit()
             await self.db.refresh(new_user)
 
-            await send_otp_email(new_user.email, otp)
+            await self.email_service.send_otp_email(new_user.email, otp)
 
             return {"message": "OTP sent to your email"}
 

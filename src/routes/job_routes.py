@@ -9,8 +9,6 @@ from  typing import Optional,List
 from uuid import UUID
 from src.schemas.job_schemas import JobOverviewResponse
 from src.services.resume_services import score_resumes_service
-from src.services.job_services import get_applications
-# from src.utils.extract_validate_files import validate_and_extract_files
 from src.dependency import get_job_service,JobService
 from src.utils.file_manager import fileManager
 
@@ -129,7 +127,6 @@ async def process_applications(
     request: Request,
     job_id: UUID,
     background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
     zip_file: UploadFile = File(...),
     job_service: JobService = Depends(get_job_service)
 ):
@@ -177,6 +174,7 @@ async def process_applications(
         
 
 
+# !INTERNAL - For testing only, not part of public API
 @router.post("/process-resumes/{job_id}",status_code=status.HTTP_202_ACCEPTED)
 async def process_applications(request: Request,job_id: UUID,
                                db: AsyncSession = Depends(get_db)):
@@ -197,18 +195,18 @@ async def process_applications(request: Request,job_id: UUID,
         
         return msg
     
+    
 @router.get("/get-applications/{job_id}", status_code=status.HTTP_200_OK)
 async def get_application(
     job_id: UUID,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    db: AsyncSession = Depends(get_db),
+    job_service: JobService = Depends(get_job_service)
 ):
-    applications = await get_applications(
+    applications = await job_service.get_applications(
         job_id=str(job_id),
         page=page,
         page_size=page_size,
-        db=db
     )
 
     return applications

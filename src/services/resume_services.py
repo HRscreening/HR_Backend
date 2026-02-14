@@ -1,4 +1,4 @@
-    # ! : This service uses synchronous DB session for workers.
+# ! : This service uses synchronous DB session for workers.
 
 from configs.postgress_db import get_sync_db,AsyncSession
 from src.models import Resume, Application,BulkUploadBatches,Document,Rubric,Candidate,Score,Job

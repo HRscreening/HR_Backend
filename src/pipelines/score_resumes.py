@@ -1,3 +1,5 @@
+# Makes a parallel call for resumes 
+
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import PromptTemplate
 from src.pipelines.models import llm

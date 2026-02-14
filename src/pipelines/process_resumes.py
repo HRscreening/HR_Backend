@@ -1,3 +1,5 @@
+# For resume processing, we will use Gemini batch inference to score resumes in bulk.
+
 import time
 import json
 from google import genai

@@ -43,6 +43,7 @@ def extract_text_from_pdf_sync(file_path: str) -> Tuple[str, int]:
 
     return parsed_text, page_count
 
+
 class PDFTextExtractor:
     def __init__(self):
         pass  # no state for now

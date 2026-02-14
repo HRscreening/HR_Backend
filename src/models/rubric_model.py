@@ -28,7 +28,7 @@ class Rubric(Base):
         index=True,
     )
 
-    version = Column(Integer, nullable=False, default=1)
+    version = Column(Integer, nullable=False, default=1) #TODO: MAke it unique per job_id and increment on update
     is_active = Column(Boolean, default=True)  # Only one active rubric per job at a time
     criteria = Column(JSONB, nullable=False)
     threshold_score = Column(Numeric(5,2), nullable=False, default=0)  # Minimum score required for passing
