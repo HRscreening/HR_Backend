@@ -21,7 +21,7 @@ from src.utils.jsonl_creator import write_resume_scoring_jsonl
 from langchain.messages import SystemMessage
 from src.pipelines.prompts import Prompts
 from src.pipelines.score_resumes import score_resume_async,score_resume_sync
-
+from src.dependency import  get_job_repository
 
     
 def parse_resume_service(
@@ -397,6 +397,7 @@ def extract_candidate_service(
 
         if not resume:
             raise Exception(f"Resume with id {resume_id} not found")
+        
 
         application = db.execute(
             select(Application).where(Application.id == resume.application_id)
