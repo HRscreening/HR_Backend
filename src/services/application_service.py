@@ -1,14 +1,17 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from  configs.log_config import get_logger
 from src.services.errors.base import DomainError
-from src.repositories.application_repository import ApplicationRepository
+from src.repositories.application_repository import ApplicationRepository  
+from src.repositories.candidiate_repository import CandidateRepository  
 from src.models.enums import ApplicationStatus
 from datetime import datetime, timezone
+from src.schemas.candidate_schema import CandidateCreateSchema
 
 
 class ApplicationService:
-    def __init__(self, application_repository:ApplicationRepository, db: AsyncSession):
+    def __init__(self, application_repository:ApplicationRepository,candidate_repository:CandidateRepository ,db: AsyncSession):
         self.db = db
+        self.candidate_repository = candidate_repository
         self.application_repository = application_repository
         self.logger = get_logger("APPLICATION_SERVICE")       
     
@@ -106,6 +109,53 @@ class ApplicationService:
             }
         }
 
+
+
+    async def attach_candidate_to_application(self,application_id: str,candidate_data: CandidateCreateSchema,org_id: str | None = None):
+        """ This method is used to attach a new candidate to application when candidate info is filled for the first time in application flow."""
+        try:
+            application = await self.application_repository.get_application_by_id(
+                application_id
+            )
+
+            if not application or application.deleted_at is not None:
+                raise DomainError("Application not found", 404)
+            
+            if application.candidate_id is not None:
+                raise DomainError("Candidate already attached to this application,Edit using candidateId", 400)
+            
+            
+            # TODO: Personal mode (org_id=None) currently shares candidate namespace globally.
+            # TODO: Add owner_user_id to isolate candidates per user and update uniqueness constraints.
+            if candidate_data.email and org_id is not None:
+                existing_candidate = await self.candidate_repository.get_candidate_by_email(candidate_data.email,org_id )
+                if existing_candidate:
+                    raise DomainError("Candidate with this email already exists", 400)
+                
+            if candidate_data.phone and org_id is not None:
+                existing_candidate = await self.candidate_repository.get_candidate_by_phone(candidate_data.phone,org_id)
+                if existing_candidate:
+                    raise DomainError("Candidate with this phone number already exists", 400)
+            
+            
+            # 1️⃣ Create candidate
+            candidate = await self.candidate_repository.create_candidate(
+                candidate_data,
+                org_id
+            )
+            
+            
+            application.candidate_id = candidate.id
+            candidate.total_applications += 1
+            await self.application_repository.commit()
+            return application
+
+        except:
+            await self.application_repository.rollback()
+            raise
+
+
+
     async def change_application_status(self,application_id:str,new_status:ApplicationStatus):
         try:
             application = await self.application_repository.get_application_by_id(application_id=application_id)
@@ -120,8 +170,10 @@ class ApplicationService:
         except Exception as e:
             self.logger.error(f"Failed to change application status for application_id={application_id} to new_status={new_status}: {str(e)}")
             raise DomainError(message="Failed to change application status", status_code=500)
+
+
     
-    async def delete_application(self,application_id:str):
+    async def delete_application(self,application_id:str,org_id:str=None):
         try:
             application = await self.application_repository.get_application_by_id(application_id=application_id)
             
@@ -140,13 +192,18 @@ class ApplicationService:
             self.logger.error(f"Failed to delete application for application_id={application_id}: {str(e)}")
             await self.application_repository.rollback()
             raise DomainError(message="Failed to delete application", status_code=500)
+
+
     
-    async def flag_application(self,application_id:str,flag_reason:str):
+    async def flag_application(self,application_id:str,flag_reason:str,org_id:str=None):
         try:
             application = await self.application_repository.get_application_by_id(application_id=application_id)
             
-            if not application:
+            if not application or application.deleted_at is not None:
                 raise DomainError(message="Application not found", status_code=404)
+            
+            if application.is_flagged == True:
+                raise DomainError(message="Application is already flagged", status_code=400)
             
             application.is_flagged = True
             application.flag_reason = flag_reason
@@ -158,3 +215,71 @@ class ApplicationService:
             self.logger.error(f"Failed to flag application for application_id={application_id}: {str(e)}")
             await self.application_repository.rollback()
             raise DomainError(message="Failed to flag application", status_code=500)
+
+
+                
+    async def unflag_application(self,application_id:str,org_id:str=None):
+        try:
+            application = await self.application_repository.get_application_by_id(application_id=application_id)
+            
+            if not application or application.deleted_at is not None:
+                raise DomainError(message="Application not found", status_code=404)
+            
+            if application.is_flagged == False:
+                raise DomainError(message="Application is not flagged", status_code=400)
+            
+            
+            application.is_flagged = False
+            application.flag_reason = None
+            application.last_activity_at = datetime.now(timezone.utc)
+            
+            await self.application_repository.commit()
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to flag application for application_id={application_id}: {str(e)}")
+            await self.application_repository.rollback()
+            raise DomainError(message="Failed to flag application", status_code=500)
+
+
+    
+    async def star_application(self,application_id:str,org_id:str=None):
+        try:
+            application = await self.application_repository.get_application_by_id(application_id=application_id)
+            
+            if not application or application.deleted_at is not None:
+                raise DomainError(message="Application not found", status_code=404)
+            
+            if application.is_starred == True:
+                raise DomainError(message="Application is already starred", status_code=400)
+            
+            application.is_starred = True
+            application.last_activity_at = datetime.now(timezone.utc)
+            
+            await self.application_repository.commit()
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to star application for application_id={application_id}: {str(e)}")
+            await self.application_repository.rollback()
+            raise DomainError(message="Failed to star application", status_code=500)
+
+
+                
+    async def unstar_application(self,application_id:str,org_id:str=None):
+        try:
+            application = await self.application_repository.get_application_by_id(application_id=application_id)
+            
+            if not application  or application.deleted_at is not None:
+                raise DomainError(message="Application not found", status_code=404)
+
+            if application.is_starred == False:
+                raise DomainError(message="Application is not starred", status_code=400)
+            
+            application.is_starred = False
+            application.last_activity_at = datetime.now(timezone.utc)
+            
+            await self.application_repository.commit()
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to star application for application_id={application_id}: {str(e)}")
+            await self.application_repository.rollback()
+            raise DomainError(message="Failed to star application", status_code=500)

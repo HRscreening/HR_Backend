@@ -7,7 +7,7 @@ from src.schemas.user_schemas import NewJobSchema
 # from src.services import user_services
 from  typing import Optional,List
 from uuid import UUID
-from src.schemas.job_schemas import JobOverviewResponse
+from src.schemas.job_schemas import JobOverviewResponse,JobOverviewResponseNew
 from src.services.resume_services import score_resumes_service
 from src.dependency import get_job_service,JobService
 from src.utils.file_manager import fileManager
@@ -87,7 +87,7 @@ async def extract_jd(
 
 @router.get(
     "/get-job/{job_id}",
-    response_model=JobOverviewResponse,
+    response_model=JobOverviewResponseNew,
     status_code=status.HTTP_200_OK,
 )
 async def get_job_overview_api(
@@ -104,13 +104,13 @@ async def get_job_overview_api(
                 detail="Organization context missing org_id",
             )
 
-        return await job_service.get_job_overview(
+        return await job_service.get_job_overview2(
             job_id=str(job_id),
             organization_id=ctx.org_id,
         )
 
     if ctx.type == "personal":
-        return await job_service.get_job_overview(
+        return await job_service.get_job_overview2(
             job_id=str(job_id),
             organization_id=None,
         )

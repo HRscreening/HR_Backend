@@ -7,7 +7,7 @@ from src.models import Job,Rubric,BulkUploadBatches
 from  configs.log_config import get_logger
 
 from src.schemas.user_schemas import NewJobSchema
-from src.schemas.job_schemas import JobOverviewResponse
+from src.schemas.job_schemas import JobOverviewResponse,JobOverviewResponseNew,JobOverviewInfo,DashboardInfo,CriteriaOverview,RubricVersionInfo
 
 from src.services.errors.user_errors import JDExtractionFailed,JobNotFound,RubricNotFound
 from src.services.errors.base import DomainError
@@ -18,15 +18,17 @@ from src.pipelines.generate_rubric import generate_rubric_from_jd
 from workers.producer import enqueue_resumes_parsing
 from src.repositories.job_repository import JobRepository
 from src.repositories.org_repository import OrganizationRepository 
+from src.repositories.application_repository import ApplicationRepository
 from src.utils.file_manager import FileManagerService
 from src.utils.file_manager import fileManager
 from configs.env_config import SUPABASE_PUBLIC_URL
 
 class JobService:
-    def __init__(self,job_repositoy:JobRepository,batch_repository:BatchRepository,org_repository,db: AsyncSession):
+    def __init__(self,job_repositoy:JobRepository,batch_repository:BatchRepository,org_repository,application_repository:ApplicationRepository,db: AsyncSession):
         self.db = db
         self.PUBLIC_URL = SUPABASE_PUBLIC_URL
         self.job_repository:JobRepository = job_repositoy
+        self.application_repository:ApplicationRepository = application_repository
         self.batch_repository:BatchRepository = batch_repository    
         self.organization_repository:OrganizationRepository = org_repository
         self.file_manager:FileManagerService = fileManager
@@ -147,13 +149,13 @@ class JobService:
         self,
         job_id: str,
         organization_id: Optional[str] = None
-        ) -> JobOverviewResponse:
+        ) :
         # ---------- Job ----------
         
         try:
             job:Job | None = await self.job_repository.get_job_by_id(job_id=job_id)
             
-            # should check orgid if job is org specific
+            #TODO: should check orgid if job is org specific
 
             if not job:
                 raise JobNotFound(status_code=404)
@@ -169,7 +171,7 @@ class JobService:
 
             # ---------- Dashboard Analytics ----------
 
-            analytics_result = await self.job_repository.get_applications_by_group(job_id=job_id)
+            analytics_result = await self.application_repository.get_applications_by_group(job_id=job_id)
             analytics = {
                 status.value: count
                 for status, count in analytics_result
@@ -188,6 +190,7 @@ class JobService:
                     "salary": job.salary,
                     "location": job.location,
                     "target_headcount": job.target_headcount,
+                    "current_batch_id": job.active_processing_queue_id,
                 },
                 "dashboard": {
                     "total_applications": total_applications,
@@ -207,6 +210,78 @@ class JobService:
                     "closing_reason": job.closing_reason,
                 }
             }
+        except Exception as e:
+            self.logger.exception(f"Error fetching job overview for job_id {job_id}: {e}")
+            raise
+        
+    async def get_job_overview2(
+        self,
+        job_id: str,
+        organization_id: Optional[str] = None
+        ) -> JobOverviewResponseNew:
+        # ---------- Job ----------
+        
+        try:
+            job:Job | None = await self.job_repository.get_job_by_id(job_id=job_id)
+            
+            #TODO: should check orgid if job is org specific
+
+            if not job:
+                raise JobNotFound(status_code=404)
+
+            # ---------- Active Rubric (Criteria) ----------
+            
+            active_rubric_version = await self.job_repository.get_active_rubric_version(job_id=job_id)
+            if not active_rubric_version:
+                raise RubricNotFound(
+                    message="No active rubric version found for the job",
+                    status_code=404
+                )
+                
+            rubric_versions = await self.job_repository.get_all_rubrics_versions(job_id=job_id)
+            
+            if not rubric_versions:
+                rubric_versions = []
+
+            # ---------- Dashboard Analytics ----------
+
+            analytics_result = await self.application_repository.get_applications_by_group(job_id=job_id)
+            analytics = {
+                status.value: count
+                for status, count in analytics_result
+            }
+            avg_match_score = await self.application_repository.get_avg_match_score(job_id=job_id)
+
+            total_applications = sum(analytics.values())
+
+            # ---------- Response ----------
+            return JobOverviewResponseNew(
+                    job=JobOverviewInfo(
+                        id=job.id,
+                        title=job.title,
+                        status=job.status,
+                        description=job.description,
+                        created_at=job.created_at,
+                        salary=job.salary,
+                        location=job.location,
+                        target_headcount=job.target_headcount,
+                        current_batch_id=job.active_processing_queue_id,
+                    ),
+                    dashboard=DashboardInfo(
+                        total_applications=total_applications,
+                        by_status=analytics,
+                        avg_score=float(avg_match_score or 0.0),
+                    ),
+                    criteria=CriteriaOverview(
+                        current_active_version=active_rubric_version["version"],
+                        active_rubric_id=active_rubric_version["id"],
+                        versions=[
+                            RubricVersionInfo(**rv)
+                            for rv in rubric_versions
+                        ]
+                    )
+                )
+
         except Exception as e:
             self.logger.exception(f"Error fetching job overview for job_id {job_id}: {e}")
             raise
@@ -292,13 +367,13 @@ class JobService:
         offset = (page - 1) * page_size
 
     
-        total = await self.job_repository.get_total_applications_count(job_id=job_id)
+        total = await self.application_repository.get_total_applications_count(job_id=job_id)
         active_rubric = await self.job_repository.get_active_rubric(job_id=job_id)
         
         if not active_rubric:
             raise RubricNotFound( message="Active rubric not found for the job", status_code=404 )
         
-        applications = await self.job_repository.get_applications_of_job(job_id=job_id, current_rubric_id=active_rubric.id, page_size=page_size, offset=offset )
+        applications = await self.application_repository.get_applications_of_job(job_id=job_id, current_rubric_id=active_rubric.id, page_size=page_size, offset=offset )
         
         response = []
 

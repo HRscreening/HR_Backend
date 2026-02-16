@@ -28,6 +28,7 @@ class Application(Base):
     id = Column(UUID(as_uuid=True), primary_key=True,index=True,default=uuid.uuid4)
 
     job_id = Column(UUID(as_uuid=True),ForeignKey("jobs.id", ondelete="CASCADE"),nullable=False)
+    # TODO: think onDelete cascade is required or not
     candidate_id = Column(UUID(as_uuid=True),ForeignKey("candidates.id", ondelete="CASCADE"),nullable=True) #Nullable b'coz first application can be created without candidate being there
     
     status = Column(SAEnum(ApplicationStatus,name="application_status_enum",native_enum=True), nullable=False, default=ApplicationStatus.APPLIED)
@@ -62,3 +63,5 @@ class Application(Base):
         cascade="all, delete-orphan"
     )
 
+
+    # owner_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)  # The user who created the application, used for personal mode to isolate applications per user

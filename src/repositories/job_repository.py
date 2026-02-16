@@ -60,19 +60,29 @@ class JobRepository:
         )
         return result.scalar_one_or_none()
         
-    
     async def get_all_rubrics(self,job_id:str) -> List[Rubric]:
         result = await self.db.execute(
             select(Rubric).where(Rubric.job_id == job_id)
         )
         return result.scalars().all()
       
+    async def get_all_rubrics_versions(self,job_id:str) -> List[Rubric]:
+        result = await self.db.execute(
+            select(Rubric.version,Rubric.id,Rubric.created_at).where(Rubric.job_id == job_id)
+        )
+        return result.mappings().all()
     
     async def get_active_rubric(self,job_id:str) -> Optional[Rubric]:
         result = await self.db.execute(
             select(Rubric).where(Rubric.job_id == job_id, Rubric.is_active == True)
         )
         return result.scalar_one_or_none()
+    
+    async def get_active_rubric_version(self,job_id:str):
+        result = await self.db.execute(
+            select(Rubric.version,Rubric.id).where(Rubric.job_id == job_id, Rubric.is_active == True)
+        )
+        return result.mappings().one_or_none()
         
         
     async def get_jobs_by_organization(self, org_id: str) -> List[Job]:
@@ -91,45 +101,7 @@ class JobRepository:
         )
         return result.scalars().all() 
     
-    async def get_applications_by_group(self, job_id: str) -> List[Application]:
-        result = await self.db.execute(
-            select(Application.status,func.count(Application.id)).where(Application.job_id == job_id).group_by(Application.status)
-        )
-        
-        return result.all()
-    
-    # TODO: have been moved to application fontend needs to use from there
-    async def get_total_applications_count(self, job_id: str) -> int:
-        total_result = await self.db.execute(
-        select(func.count(Application.id))
-        .where(Application.job_id == job_id)
-    )
-        total = total_result.scalar_one()
-        
-        return total
-    
-    async def get_applications_of_job(self,job_id:str,current_rubric_id:str,page_size:int=15,offset:int=0):
-        stmt = (
-            select(Application, Score)
-            .join(
-                Score,
-                (Score.application_id == Application.id) &
-                (Score.rubric_id == current_rubric_id)
-            )
-            .where(Application.job_id == job_id)
-            .options(
-                selectinload(Application.candidate),
-                selectinload(Application.resume)
-            )
-            .order_by(Score.overall_score.desc())
-            .limit(page_size)
-            .offset(offset)
-        )
 
-        result = await self.db.execute(stmt)
-        rows = result.all()
-        return rows
-    
     
     async def commit(self):
         await self.db.commit()

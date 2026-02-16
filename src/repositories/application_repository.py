@@ -44,22 +44,24 @@ class ApplicationRepository:
         return result.scalars().all()
         
     
+       
     async def get_applications_by_group(self, job_id: str) -> List[Application]:
         result = await self.db.execute(
-            select(Application.status,func.count(Application.id)).where(Application.job_id == job_id).group_by(Application.status)
+            select(Application.status,func.count(Application.id)).where(Application.job_id == job_id,Application.deleted_at == None).group_by(Application.status)
         )
         
         return result.all()
     
-    async def get_total_applications_count(self, job_id: str) -> int:
-        total_result = await self.db.execute(
-        select(func.count(Application.id))
-        .where(Application.job_id == job_id)
-    )
-        total = total_result.scalar_one()
-        
-        return total
     
+    async def get_total_applications_count(self, job_id: str) -> int:
+            total_result = await self.db.execute(
+            select(func.count(Application.id))
+            .where(Application.job_id == job_id, Application.deleted_at == None)
+        )
+            total = total_result.scalar_one()
+            
+            return total
+        
     async def get_applications_of_job(self,job_id:str,current_rubric_id:str,page_size:int=15,offset:int=0):
         stmt = (
             select(Application, Score)
@@ -68,7 +70,7 @@ class ApplicationRepository:
                 (Score.application_id == Application.id) &
                 (Score.rubric_id == current_rubric_id)
             )
-            .where(Application.job_id == job_id, Application.deleted_at == None)
+            .where(Application.job_id == job_id,Application.deleted_at == None)
             .options(
                 selectinload(Application.candidate),
                 selectinload(Application.resume)
@@ -81,6 +83,17 @@ class ApplicationRepository:
         result = await self.db.execute(stmt)
         rows = result.all()
         return rows
+    
+        
+    async def get_avg_match_score(self, job_id: str) -> Optional[float]:
+        result = await self.db.execute(
+            select(func.avg(Score.overall_score)).join(Application, Application.id == Score.application_id).where(Application.job_id == job_id)
+        )
+        avg_score = result.scalar_one_or_none()
+        return avg_score
+    
+
+    
     
     async def commit(self):
         await self.db.commit()

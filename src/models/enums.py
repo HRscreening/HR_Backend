@@ -19,6 +19,7 @@ class JobStatus(enum.Enum):
 
 class ApplicationStatus(enum.Enum):
     APPLIED = "applied"
+    SHORTLISTED = "shortlisted"
     IN_REVIEW = "in_review"
     INTERVIEW_SCHEDULED = "interview_scheduled"
     OFFER_EXTENDED = "offer_extended"
