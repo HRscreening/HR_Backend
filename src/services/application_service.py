@@ -91,6 +91,7 @@ class ApplicationService:
                     "ai_confidence": active_score.ai_confidence,
                     "created_at": active_score.created_at.isoformat(),
                     "grounding_data": active_score.grounding_data,
+                    "breakdown": active_score.breakdown,
                     "is_overridden": active_score.is_overridden,
                     "version": active_score.version,
                     "is_latest": active_score.is_latest,

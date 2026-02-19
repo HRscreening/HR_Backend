@@ -9,7 +9,7 @@ from src.repositories.org_repository import OrganizationRepository
 from src.repositories.batch_repositoy import BatchRepository
 from src.repositories.application_repository import ApplicationRepository
 from src.repositories.candidiate_repository import CandidateRepository 
-
+from src.repositories.resume_respositoy import ResumeRepository
 
 
 from src.services.auth_services import AuthService
@@ -87,9 +87,10 @@ def get_job_service(
     db: AsyncSession = Depends(get_db),
     batch_repository: BatchRepository = Depends(get_batch_repository),
     org_repository: OrganizationRepository = Depends(get_org_repository),
+    resume_repository: ResumeRepository = Depends(ResumeRepository),
     application_repository: ApplicationRepository = Depends(get_application_repository)
 ):
-    return JobService(db=db,  job_repositoy=jobRepo,batch_repository=batch_repository,org_repository=org_repository,application_repository=application_repository)
+    return JobService(db=db,  job_repositoy=jobRepo,batch_repository=batch_repository,org_repository=org_repository,application_repository=application_repository,resume_repository=resume_repository)
 
 def get_batch_service(
     batch_repository: BatchRepository = Depends(get_batch_repository),

@@ -1,7 +1,7 @@
 from fastapi import APIRouter,HTTPException,Depends,Request,status,File, UploadFile,BackgroundTasks,Query
 from configs.postgress_db import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
-
+from pydantic import BaseModel, Field
 
 from src.schemas.user_schemas import NewJobSchema
 # from src.services import user_services
@@ -210,3 +210,27 @@ async def get_application(
     )
 
     return applications
+
+
+class ScoreResumeRequest(BaseModel):
+    resume_url: List[str] = Field(..., description="URL of the resume image to be scored")
+
+@router.post("/score-resume-ocr/{job_id}",status_code=status.HTTP_200_OK)
+async def score_resume_ocr(
+    job_id: UUID,
+    data: ScoreResumeRequest,
+    job_service: JobService = Depends(get_job_service)
+):
+    try:
+        
+        
+        score = await job_service.score_resume_ocr(
+            job_id=str(job_id),
+            resume_url=data.resume_url
+        )
+        return score
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error scoring resume OCR: {str(e)}"
+        )

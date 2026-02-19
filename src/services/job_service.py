@@ -22,13 +22,17 @@ from src.repositories.application_repository import ApplicationRepository
 from src.utils.file_manager import FileManagerService
 from src.utils.file_manager import fileManager
 from configs.env_config import SUPABASE_PUBLIC_URL
+# from src.pipelines.score_resume_ocr import score_img_format_resume_files
+from src.pipelines.score_resume_ocr import score_image_resumes_async
+from src.repositories.resume_respositoy import ResumeRepository
 
 class JobService:
-    def __init__(self,job_repositoy:JobRepository,batch_repository:BatchRepository,org_repository,application_repository:ApplicationRepository,db: AsyncSession):
+    def __init__(self,job_repositoy:JobRepository,batch_repository:BatchRepository,org_repository,application_repository:ApplicationRepository,resume_repository:ResumeRepository,db: AsyncSession):
         self.db = db
         self.PUBLIC_URL = SUPABASE_PUBLIC_URL
         self.job_repository:JobRepository = job_repositoy
         self.application_repository:ApplicationRepository = application_repository
+        self.resume_repository:ResumeRepository = resume_repository
         self.batch_repository:BatchRepository = batch_repository    
         self.organization_repository:OrganizationRepository = org_repository
         self.file_manager:FileManagerService = fileManager
@@ -292,7 +296,7 @@ class JobService:
         user_id: str,
         files: List[UploadFile],
         background_tasks: BackgroundTasks = None,
-        organization_id: Optional[str] = None,
+        organization_id: Optional[str] = None, #TODO: add it
     ) -> dict:
 
         try:
@@ -431,6 +435,7 @@ class JobService:
                     "ai_confidence": active_score.ai_confidence,
                     "created_at": active_score.created_at.isoformat(),
                     "grounding_data": active_score.grounding_data,
+                    "breakdown": active_score.breakdown,
                     "is_overridden": active_score.is_overridden,
                     "version": active_score.version,
                     "is_latest": active_score.is_latest,
@@ -448,3 +453,23 @@ class JobService:
                 "total_pages": (total + page_size - 1) // page_size
             }
         }
+
+    async def score_resume_ocr(self,job_id:str,resume_url:List[str]):
+        try:
+            rubric = await self.job_repository.get_active_rubric(job_id=job_id)
+            # score = await score_img_format_resume_files(
+            #     resume_url=resume_url,
+            #     criteria=rubric.criteria if rubric else None
+            # )
+            
+            
+            score = await score_image_resumes_async(
+                resume_urls=resume_url,
+                criteria=rubric.criteria if rubric else None
+            )
+            
+            return score
+            
+        except Exception as e:
+            self.logger.exception(f"Error scoring resume OCR: {e}")
+            raise

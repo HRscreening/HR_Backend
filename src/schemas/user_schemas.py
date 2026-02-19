@@ -129,6 +129,12 @@ class ResumeDataSchema:
     application_id : str
     resume_id :str
     resume_text : str
+    
+@dataclass
+class ResumeDataSchemaURL:
+    application_id : str
+    resume_id :str
+    resume_url : str 
 
 @dataclass
 class BatchResumeDataSchema:

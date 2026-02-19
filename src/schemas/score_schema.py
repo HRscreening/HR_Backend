@@ -22,12 +22,12 @@ class CriterionScoreSchema(BaseModel):
     score: float
     reason: Optional[str] = None
     evidence: Optional[List[str]] = None
-    sub_criteria: Dict[str, float] = Field(default_factory=dict)
+    sub_criteria: Optional[SubCriterionScoreSchema] = Field(default_factory=dict)
 
 
 class BreakdownSchema(BaseModel):
-    mandatory_criteria: Dict[str, CriterionScoreSchema]
-    screening_criteria: Dict[str, CriterionScoreSchema]
+    mandatory_criteria: Dict[str, CriterionScoreSchema] = Field(default_factory=dict)
+    screening_criteria: Dict[str, CriterionScoreSchema] = Field(default_factory=dict)
 
 
 

@@ -7,7 +7,7 @@ from src.utils.manage_supabase_buckets import supabase_file_handler,save_file_fr
 import aiofiles
 import os
 from src.schemas.worker_task_schemas import ResumeParsingJobSchema
-from src.schemas.user_schemas import ResumeDataSchema,BatchResumeDataSchema,ScoreOutputSchema,CandidateInfoSchema
+from src.schemas.user_schemas import ResumeDataSchema,ResumeDataSchemaURL,CandidateInfoSchema
 from src.models.enums import ResumeStatus, DocumentProcessingStatus,BulkUploadStatus
 from configs.env_config import SUPABASE_PUBLIC_URL
 import os
@@ -292,21 +292,59 @@ def score_resumes_service_sync(
         
 
         # 3️⃣ Prepare LLM input
-        resume_payload = [
-            ResumeDataSchema(
-                application_id=r.application_id,  # derived here
-                resume_id=r.id,
-                resume_text=r.parsed_text
-            )
-            for r in resumes
-        ]
-
-        # 4️⃣ ONE batch LLM call
-        score_results = score_resume_sync(
-            resumes=resume_payload,
-            criteria=rubric.criteria
-        )
+        # resume_payload = [
+        #     ResumeDataSchema(
+        #         application_id=r.application_id,  # derived here
+        #         resume_id=r.id,
+        #         resume_text=r.parsed_text,
+        #         resume_url=r.raw_file_url
+        #     )
+        #     for r in resumes
+        # ]
         
+
+        no_parsed_text_resumes = []
+        parsed_txt_resumes = []
+
+        for r in resumes:
+            if not r.parsed_text or not r.parsed_text.strip():
+                no_parsed_text_resumes.append(
+                    ResumeDataSchema(
+                        application_id=r.application_id,
+                        resume_id=r.id,
+                        resume_text=r.parsed_text
+                    )
+                )
+            else:
+                parsed_txt_resumes.append(
+                    ResumeDataSchemaURL(
+                        application_id=r.application_id,
+                        resume_id=r.id,
+                        resume_url=f"{SUPABASE_PUBLIC_URL}/{r.raw_file_url}"
+                    )
+                )
+        score_results = []
+
+        if parsed_txt_resumes:
+            # 4️⃣ ONE batch LLM call
+            #  it can handle multiple resume at once 
+            score_results_1 = score_resume_sync(
+                resumes=parsed_txt_resumes,
+                criteria=rubric.criteria
+                
+            )
+            score_results.extend(score_results_1)
+            
+        if no_parsed_text_resumes:
+            # have to call separately as no langchain batch api call for it as it doen't support
+            score_results_2 = score_resume_sync(
+                resumes=no_parsed_text_resumes,
+                criteria=rubric.criteria
+            )
+            score_results.extend(score_results_2)
+            
+            
+            
         applications = {
             a.id: a
             for a in db.execute(
