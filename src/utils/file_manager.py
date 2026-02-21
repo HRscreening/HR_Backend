@@ -32,6 +32,8 @@ class FileManagerService:
     MAX_FILE_SIZE_MB = 5
     MAX_ZIP_FILES = 200
 
+
+    # This one is for Zip file validation and extraction, can be used in other places as well if needed
     async def validate_and_extract(
         self,
         files: List[UploadFile],
@@ -63,6 +65,12 @@ class FileManagerService:
 
         if not extracted_files:
             raise DomainError("No valid files found", status.HTTP_400_BAD_REQUEST)
+        
+        if len(extracted_files) > self.MAX_FILES:
+            raise DomainError(
+                f"Total files after extraction exceed {self.MAX_FILES}",
+                status.HTTP_400_BAD_REQUEST,
+            )
 
         return extracted_files
 

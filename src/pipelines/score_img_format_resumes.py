@@ -17,7 +17,7 @@ async def score_resume_with_url(
     successes: list[ResumeScoreResult] = []
     failures: list[ResumeScoreFailure] = []
 
-    async with httpx.AsyncClient(timeout=60) as http_client:
+    async with httpx.AsyncClient(timeout=90) as http_client:
 
         async def worker(r: ResumeDataSchemaURL):
             async with semaphore:
@@ -42,6 +42,7 @@ async def score_resume_with_url(
                         e,
                     )
 
+        logger.info(f"Starting scoring for {len(resumes)} resumes with max concurrency of {max_concurrency}.")
         tasks = [worker(r) for r in resumes]
 
         for coro in asyncio.as_completed(tasks):
@@ -67,5 +68,6 @@ async def score_resume_with_url(
                     score=result,
                 )
             )
-
+            
+    logger.info(f"Completed scoring. Successes: {len(successes)}, Failures: {len(failures)}")
     return successes, failures

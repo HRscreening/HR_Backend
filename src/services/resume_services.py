@@ -58,11 +58,33 @@ class ResumeService(BaseResumeService):
         self.logger = get_logger("ResumeService")
         
  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 # For Workers - can have worker specific methods here and use the common methods from BaseResumeService
 class ResumeService_ForWorker(BaseResumeService):
     def __init__(self, job_repository: JobRepository, resume_repository: ResumeRepository, application_repository: ApplicationRepository, batch_repository: BatchRepository, document_repository: DocumentRepository, job_producer: ARQProducer, score_repository: ScoreRepository, db: AsyncSession):
         super().__init__(job_repository, resume_repository, application_repository, batch_repository, document_repository, db, job_producer=job_producer, score_repository=score_repository)
-        self.logger = get_logger("Worker:ResumeService")
+        self.logger = get_logger("ResumeService_ForWorker")
+        self.parse_resume_logger = get_logger("Worker:ResumeService:ParseResume")
+        self.score_url_logger = get_logger("Worker:ResumeService:ScoreURL")
+        self.score_text_logger = get_logger("Worker:ResumeService:ScoreText")
         
         
     async def parse_resume(
@@ -102,7 +124,7 @@ class ResumeService_ForWorker(BaseResumeService):
             
             job_id = batch.job_id
 
-            self.logger.info(f"Parsing resume at {file_path} for batch_id={batch_id}, job_id={job_id} at {datetime.now().isoformat()}")
+            self.parse_resume_logger.info(f"Parsing resume at {file_path} for batch_id={batch_id}, job_id={job_id} at {datetime.now().isoformat()}")
            
             uploaded_file_url = self.supbase_file_manager.save_file_from_path(
                 local_path=file_path,
@@ -166,7 +188,7 @@ class ResumeService_ForWorker(BaseResumeService):
 
         except Exception:
             await self.db.rollback()
-            self.logger.exception(f"Error parsing resume at {file_path} for batch_id={batch_id}")
+            self.parse_resume_logger.exception(f"Error parsing resume at {file_path} for batch_id={batch_id}")
             raise
     
    
@@ -182,7 +204,7 @@ class ResumeService_ForWorker(BaseResumeService):
     ) -> Optional[dict]:
 
         if not resume_ids:
-            self.logger.warning(
+            self.score_text_logger.warning(
                 f"Empty resume batch for batch_id={batch_id}"
             )
             return None
@@ -195,6 +217,7 @@ class ResumeService_ForWorker(BaseResumeService):
             resumes = await self._fetch_resumes(
                 db_job_id, resume_ids
             )
+            
             if not resumes:
                 return None
 
@@ -204,9 +227,16 @@ class ResumeService_ForWorker(BaseResumeService):
             payload = self._build_payload_parsed_text(resumes)
 
             # 4️⃣ Score using LLM
+            # ! Currently no retrying to LLM for failed Jobs Directly marking them failed b'coz it's not part of this flow to retry LLM failures. We can have a separate flow to retry LLM failures if needed.
+            # Either use Langraph pipelines or have our own retry mechanism here. Langraph has built in retry mechanism which we can leverage if we use their pipelines.
             score_results, scoring_failed = await self._score_batch_parsed_text(
                 payload, rubric
             )
+            
+            
+            self.logger.warning(f"Score results count: {len(score_results)}")
+            self.logger.warning(f"Returned IDs: {[r.resume_id for r in score_results]}")
+            self.logger.warning(f"Expected IDs: {[r.id for r in resumes]}")
 
             # 5️⃣ Persist successes
             candidate_tasks, processing_failed_ids = (
@@ -226,9 +256,30 @@ class ResumeService_ForWorker(BaseResumeService):
 
             # 7️⃣ Handle processing failures
             if processing_failed_ids:
+                self.score_text_logger.warning(
+                    f"Processinng failed for resume_ids: {[f.resume_id for f in scoring_failed]}"
+                )
                 await self._mark_processing_failures(
                     processing_failed_ids, batch_id
                 )
+                
+            if scoring_failed:
+                self.score_text_logger.warning(
+                    f"Scoring failed for resume_ids: {[f.resume_id for f in scoring_failed]}"
+                )
+                scoring_failed_ids = [f.resume_id for f in scoring_failed]
+                await self._mark_processing_failures(
+                    scoring_failed_ids, batch_id
+                )
+                # ! Not enqueing again reason given above since we don't want to retry LLM failures in this flow. 
+                # If we want to retry only the scoring step without re-processing the resume, we can enqueue the failed resumes for scoring again without changing their status back to QUEUED_FOR_SCORING 
+                # since they are already parsed successfully and we only want to retry the scoring step.
+                # The job producer will handle enqueuing them to the appropriate scoring queue based on the scoring_type.
+                
+                # await self._retry_scoring_failures(
+                #     scoring_failed, db_job_id, batch_id,
+                #     scoring_type="text",
+                # )
 
             # 8️⃣ Commit all DB changes
             await self.db.commit()
@@ -238,11 +289,8 @@ class ResumeService_ForWorker(BaseResumeService):
                 await asyncio.gather(*candidate_tasks)
 
             # Retry scoring failures only (text scoring)
-            if scoring_failed:
-                await self._retry_scoring_failures(
-                    scoring_failed, db_job_id, batch_id,
-                    scoring_type="text",
-                )
+            
+           
 
             return self._build_summary(
                 resumes,
@@ -253,7 +301,7 @@ class ResumeService_ForWorker(BaseResumeService):
 
         except Exception:
             await self.db.rollback()
-            self.logger.exception(
+            self.score_text_logger.exception(
                 f"Fatal error scoring batch {batch_id}"
             )
             raise
@@ -268,7 +316,7 @@ class ResumeService_ForWorker(BaseResumeService):
     ) -> Optional[dict]:
 
         if not resume_ids:
-            self.logger.warning(
+            self.score_url_logger.warning(
                 f"Empty resume batch for batch_id={batch_id}"
             )
             return None
@@ -316,20 +364,33 @@ class ResumeService_ForWorker(BaseResumeService):
                 await self._mark_processing_failures(
                     processing_failed_ids, batch_id
                 )
+                
+            # 10. Retry scoring failures only
+            if scoring_failed:
+                scoring_failed_ids = [f.resume_id for f in scoring_failed]
+                await self._mark_processing_failures(
+                    scoring_failed_ids, batch_id
+                )
+                # ! Not enqueing again reason given above since we don't want to retry LLM failures in this flow. 
+                # If we want to retry only the scoring step without re-processing the resume, we can enqueue the failed resumes for scoring again without changing their status back to QUEUED_FOR_SCORING 
+                # since they are already parsed successfully and we only want to retry the scoring step.
+                
+                # await self._retry_scoring_failures(
+                #     scoring_failed, db_job_id, batch_id,
+                #     scoring_type="url",
+                # )
+                
 
             # 8️⃣ Commit all DB changes
             await self.db.commit()
+            
+            
 
             # 9️⃣ Side effects AFTER commit
             if candidate_tasks:
                 await asyncio.gather(*candidate_tasks)
 
-            # 10. Retry scoring failures only
-            if scoring_failed:
-                await self._retry_scoring_failures(
-                    scoring_failed, db_job_id, batch_id,
-                    scoring_type="url",
-                )
+            
 
             return self._build_summary(
                 resumes,
@@ -340,7 +401,7 @@ class ResumeService_ForWorker(BaseResumeService):
 
         except Exception:
             await self.db.rollback()
-            self.logger.exception(
+            self.score_url_logger.exception(
                 f"Fatal error scoring batch {batch_id}"
             )
             raise
@@ -350,12 +411,14 @@ class ResumeService_ForWorker(BaseResumeService):
     # =========================================================
     
     async def _validate_job(self, db_job_id):
+        """Validate that the job exists and is in a valid state for scoring."""
         job = await self.job_repository.get_job_by_id(db_job_id)
         if not job:
             raise DomainError(f"Job {db_job_id} not found")
         return job
 
     async def _fetch_resumes(self, db_job_id, resume_ids):
+        """Fetch resumes for scoring, ensuring they are in the correct status, and transition them to 'SCORING_IN_PROGRESS' atomically to avoid double processing."""
         resumes = await self.resume_repository.fetch_resumes_for_scoring(
             job_id=db_job_id,
             status=ResumeStatus.QUEUED_FOR_SCORING,
@@ -368,12 +431,15 @@ class ResumeService_ForWorker(BaseResumeService):
         return resumes
 
     async def _get_rubric(self, db_job_id):
+        """Fetch the active rubric for the job. This is needed to know the scoring criteria and threshold."""
         rubric = await self.job_repository.get_active_rubric(db_job_id)
         if not rubric:
+            self.logger.error(f"No active rubric found for job {db_job_id}")
             raise DomainError("No active rubric found")
         return rubric
 
     def _build_payload_parsed_text(self, resumes):
+        """Build the payload for scoring parsed text resumes.Using ResumeDataSchema which has application_id, resume_id and parsed_text."""
         return [
             ResumeDataSchema(
                 application_id=r.application_id,
@@ -384,6 +450,7 @@ class ResumeService_ForWorker(BaseResumeService):
         ]
         
     def _build_payload_url(self, resumes):
+        """Build the payload for scoring URL resumes. Using ResumeDataSchemaURL which has application_id, resume_id and resume_url."""
         return [
             ResumeDataSchemaURL(
                 application_id=r.application_id,
@@ -394,6 +461,7 @@ class ResumeService_ForWorker(BaseResumeService):
         ]
 
     async def _score_batch_parsed_text(self, payload, rubric):
+        """Score a batch of parsed text resumes using the LLM pipeline."""
         return await score_resume_with_text(
             resumes=payload,
             criteria=rubric.criteria,
@@ -406,11 +474,15 @@ class ResumeService_ForWorker(BaseResumeService):
         rubric,
         batch_id,
     ):
+        """
+        Persist successful scoring results to the database, update resume and application records, and enqueue candidate extraction tasks if needed.
+        """
         applications = await self.application_repository.get_application_by_application_ids(
             application_ids={r.application_id for r in resumes}
         )
         application_map = {a.id: a for a in applications}
-        resume_map = {r.id: r for r in resumes}
+        resume_map = {str(r.id): r for r in resumes}
+
 
         candidate_tasks = []
         processing_failed_ids = []
@@ -423,7 +495,8 @@ class ResumeService_ForWorker(BaseResumeService):
                 if appl:
                     appl.ai_analysis = item.score.ai_analysis
 
-                resume = resume_map.get(item.resume_id)
+                resume = resume_map.get(str(item.resume_id))
+                
                 if resume:
                     resume.status = ResumeStatus.SCORED
 
@@ -450,22 +523,33 @@ class ResumeService_ForWorker(BaseResumeService):
             except Exception as e:
                 rid = item.resume_id
                 self.logger.exception(
-                    f"Processing error resume_id={rid}"
+                    f"Processing error resume_id={rid},error is {str(e)}"
                 )
                 processing_failed_ids.append(rid)
 
         return candidate_tasks, processing_failed_ids
 
+
+
+
     def _detect_missing_results(self, score_results, resumes):
-        returned_ids = {r.resume_id for r in score_results} 
-        expected_ids = {r.id for r in resumes}
+        """Detect resumes that were expected to be scored but did not return any results, which can indicate a failure in the scoring process for those resumes. This is a safeguard to ensure we account for all resumes in the batch."""
+
+        returned_ids = {str(r.resume_id).lower() for r in score_results}
+        expected_ids = {str(r.id).lower() for r in resumes}
+
         return list(expected_ids - returned_ids)
+
+
 
     async def _mark_processing_failures(
         self,
         resume_ids,
         batch_id,
     ):
+        
+        self.logger.error(f"Marking processing failures for resume_ids: {resume_ids} in batch_id: {batch_id}")
+        """Mark resumes that failed processing with an error status and update the batch failure count."""
         await self.resume_repository.update_resume_status(
             resume_ids=resume_ids,
             new_status=ResumeStatus.ERROR,
@@ -473,8 +557,10 @@ class ResumeService_ForWorker(BaseResumeService):
 
         await self.batch_repository.increment_failure(
             batch_id=batch_id,
-            increased_failed_count=len(resume_ids),
+            increased_failed_count_by=len(resume_ids),
         )
+
+
 
     async def _retry_scoring_failures(
         self,
@@ -483,6 +569,10 @@ class ResumeService_ForWorker(BaseResumeService):
         batch_id,
         scoring_type: str = "text",
     ):
+        """
+        Retry scoring for resumes that failed scoring. This can be used to retry only the scoring step without re-processing the resume. Depending on the failure reason, you might want to add more sophisticated retry logic or limits here.
+        Again Enqueuing the failed resumes for scoring without re-processing since the parsing was successful and we only want to retry the scoring step. The job producer will handle enqueuing them to the appropriate scoring queue based on the scoring_type.
+        """
         failed_ids = [f.resume_id for f in failures]
 
         await self.resume_repository.update_resume_status(
@@ -510,6 +600,8 @@ class ResumeService_ForWorker(BaseResumeService):
         scoring_failed,
         batch_id,
     ):
+        """Build a summary of the scoring results for the batch, including counts of scored, processing failed, and scoring failed resumes."""
+        
         success_count = sum(
             1 for r in resumes if r.status == ResumeStatus.SCORED
         )

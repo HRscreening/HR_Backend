@@ -47,6 +47,15 @@ class JobService:
     def generate_batch_name(self,job_id:str) -> str:
         return f"application_processing_{job_id}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
         
+    async def validate_job(self, job_id: str, organization_id: Optional[str] = None) -> Job:
+        job = await self.job_repository.get_job_by_id(job_id=job_id)
+        if not job:
+            raise JobNotFound(status_code=404)
+        
+        if organization_id and job.organization_id != organization_id:
+            raise JobNotFound(status_code=404)
+
+        return job
  
     async def add_new_job(self, data: NewJobSchema, user_id: str, org_id: Optional[str]):
         
@@ -279,7 +288,7 @@ class JobService:
                     dashboard=DashboardInfo(
                         total_applications=total_applications,
                         by_status=analytics,
-                        avg_score=float(avg_match_score or 0.0),
+                        avg_score=float(round(avg_match_score or 0.0, 2)),
                     ),
                     criteria=CriteriaOverview(
                         current_active_version=active_rubric_version["version"],
@@ -295,21 +304,34 @@ class JobService:
             self.logger.exception(f"Error fetching job overview for job_id {job_id}: {e}")
             raise
 
-    async def process_applications(
+    async def process_applications_with_zip(
         self,
         job_id: str,
         user_id: str,
-        files: List[UploadFile],
-        background_tasks: BackgroundTasks = None,
+        raw_files: List[UploadFile],
         organization_id: Optional[str] = None, #TODO: add it
     ) -> dict:
 
         try:
+            
+            if len(raw_files) == 0:
+                raise DomainError(
+                    message="No files uploaded",
+                    status_code=status.HTTP_400_BAD_REQUEST
+                )
+            
+            if len(raw_files) > 3:
+                raise DomainError(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    message="Too many files uploaded. Maximum is 3.",
+                )
+            
+            files = await fileManager.validate_and_extract(raw_files)
+            
+            
             # 1. Fetch job
-            job : Job | None = await self.job_repository.get_job_by_id(job_id=job_id)
+            job : Job | None = await self.validate_job(job_id=job_id, organization_id=organization_id)
 
-            if not job:
-                raise JobNotFound(status_code=404)
 
             # 2. Prevent duplicate processing
             #! activate for production
@@ -365,6 +387,48 @@ class JobService:
             await self.db.rollback()
             self.logger.exception(f"Error processing applications for job {job_id}: {e}")
             raise
+    
+    
+    
+    async def process_applications_with_files(
+        self,
+        job_id: str,
+        user_id: str,
+        raw_files: List[UploadFile],
+        organization_id: Optional[str] = None, #TODO: add it
+    ) -> dict:
+
+        try:
+            
+            if len(raw_files) == 0:
+                raise DomainError(
+                    message="No files uploaded",
+                    status_code=status.HTTP_400_BAD_REQUEST
+                )
+            
+            if len(raw_files) > 3:
+                raise DomainError(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    message="Too many files uploaded. Maximum is 3.",
+                )
+            
+            files = await fileManager.validate_and_extract(raw_files)
+            
+            
+            # 1. Fetch job
+            job : Job = await self.job_repository.get_job_by_id(job_id=job_id)
+
+            
+            
+           
+        
+        except Exception as e:
+            await self.db.rollback()
+            self.logger.exception(f"Error processing applications for job {job_id}: {e}")
+            raise
+    
+    
+    
     
     async def get_applications(
         self,
@@ -461,22 +525,4 @@ class JobService:
             }
         }
 
-    # async def score_resume_ocr(self,job_id:str,resume_url:List[str]):
-    #     try:
-    #         rubric = await self.job_repository.get_active_rubric(job_id=job_id)
-    #         # score = await score_img_format_resume_files(
-    #         #     resume_url=resume_url,
-    #         #     criteria=rubric.criteria if rubric else None
-    #         # )
-            
-            
-    #         score = await score_image_resumes_async(
-    #             resume_urls=resume_url,
-    #             criteria=rubric.criteria if rubric else None
-    #         )
-            
-    #         return score
-            
-    #     except Exception as e:
-    #         self.logger.exception(f"Error scoring resume OCR: {e}")
-    #         raise
+    

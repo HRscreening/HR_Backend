@@ -14,7 +14,7 @@ class ScoreRepository:
                         overall_score=score.overall_score,
                         ai_confidence=score.ai_confidence,
                         breakdown=score.breakdown.model_dump(),
-                        grounding_data=None,  #TODO: To be removed in future, not needed as of now b'coz breakdown have  this already
+                        grounding_data={},  #TODO: To be removed in future, not needed as of now b'coz breakdown have  this already
                         scored_by=scored_by,
                         threshold_score=threshold_score,
                         criteria=criteria,

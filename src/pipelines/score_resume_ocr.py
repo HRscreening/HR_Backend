@@ -9,6 +9,9 @@ from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.runnables import RunnableLambda
 import httpx
 from configs.env_config import SUPABASE_PUBLIC_URL
+from configs.log_config import get_logger
+
+logger = get_logger("RESUME_OCR_SCORING_PIPELINE")
 
 async def score_img_format_resume_file(resume_url: str,criteria: dict):
   try:
@@ -126,7 +129,7 @@ async def score_img_format_resume_file(resume_url: str,criteria: dict):
             """
 
 
-
+    logger.info(f"Scoring resume at URL: {resume_url} ")
     response = client.models.generate_content(
         model="gemini-3-flash-preview",
         contents=[prompt, image],
@@ -136,16 +139,17 @@ async def score_img_format_resume_file(resume_url: str,criteria: dict):
     }
     )
 
-    print(response.text)
+    logger.info(f"Received scoring response for resume at URL: {resume_url} ")
     
     return response.parsed
+  
   except Exception as e:
-    print(f"Error scoring resume files: {e}")
+    logger.error(f"Failed to score resume at URL: {resume_url} with error: {e}")
 
 
 
 
-structured_llm = image_reader_model.with_structured_output(ScoreOutputSchema)
+# structured_llm = image_reader_model.with_structured_output(ScoreOutputSchema)
 
 
 # def build_message(input_data):

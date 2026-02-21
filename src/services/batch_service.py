@@ -90,16 +90,19 @@ class BatchService_ForWorker(BaseBatchService):
         if not batch:
             raise ValueError(f"Batch {batch_id} not found")
         
-        if batch.error_log is None:
-            batch.error_log = {}
-        if message:
-            batch.error_log[file_name] = message
+        results = batch.processing_results or {}
+
+        results[file_name] = message or "Processed successfully"
+
+        batch.processing_results = results  # reassign for SQLAlchemy
 
         if batch.processed_count >= batch.total_files:
             batch.status = BulkUploadStatus.COMPLETED
 
         await self.db.commit()
 
+  
+  
   
     async def mark_fail_job(
         self,
@@ -113,16 +116,19 @@ class BatchService_ForWorker(BaseBatchService):
         if not batch:
             raise ValueError(f"Batch {batch_id} not found")
 
-    
-        if batch.error_log is None:
-            batch.error_log = {}
-        
-        batch.error_log[file_name] = reason if reason else "Unknown error"
+
+        results = batch.error_log or {}
+
+        # Always record success
+        results[file_name] = reason or "Processed Unknown error"
+
 
         if batch.processed_count >= batch.total_files:
-            batch.status = "completed"
+            batch.status = BulkUploadStatus.COMPLETED
 
         await self.db.commit()
+
+
 
     async def dispatch_scoring_batch(
         self,
@@ -159,110 +165,11 @@ class BatchService_ForWorker(BaseBatchService):
 
         return len(resumes)
 
-    # TODO 
-    # async def finalize_batch_parsed(self,batch_id: str):
-    #     try:
-    #         batch = await self.batch_repository.get_batch_by_id(batch_id)
-            
-    #         if not batch:
-    #             raise ValueError(f"Batch {batch_id} not found")
-                
-
-    #         # ✅ batch not fully processed yet
-    #         if batch.total_files != (batch.failed_count + batch.success_count):
-    #             self.logger.info(f"Batch {batch_id} is not fully processed yet. Total: {batch.total_files}, Processed: {batch.processed_count}")
-    #             return
-
-    #         # ✅ idempotency guard USING EXISTING STATUS
-    #         if batch.status != BulkUploadStatus.PENDING:
-    #             self.logger.info(f"Batch {batch_id} is already finalized. Skipping...")
-    #             return
-
-    #         job_id = batch.job_id
-            
-    #         # May be Job status can be checked if needed
-            
-    #         if not job_id:
-    #             self.logger.error(f"Batch {batch_id} has no associated job_id")
-    #             raise ValueError(f"Batch {batch_id} has no associated job_id")
 
 
-    #         resume_ids = await self.resume_repositoy.lock_and_mark_parsed_resumes_for_scoring(job_id=job_id)
-            
-    #         if not resume_ids:
-    #             self.logger.error(f"No parsed resumes found for job_id {job_id}")
-    #             raise ValueError(f"No parsed resumes found for job_id {job_id}")
-                
 
-    #         # TODO: Dispatching all resumes in a single batch can be a problem if there are too many resumes,
-    #         # so we can dispatch in batches of N (e.g., 10 or 20) to avoid overwhelming the worker and also to have better control and monitoring of the processing.
-    #         # For now, we are dispatching all at once for simplicity.
-    #         await self.dispatch_scoring_batch(
-    #             db_job_id=job_id,
-    #             resume_ids=resume_ids,
-    #             batch_id=batch_id,
-    #         )
-            
-            
-    #         batch.status = BulkUploadStatus.PROCESSING
-    #         await self.db.commit()
-        
-    #     except Exception as e:
-    #         await self.db.rollback()
-    #         self.logger.exception(f"Error finalizing batch {batch_id}: {str(e)}")
 
-    # async def finalize_batch_parsed(self, batch_id: str):
-    #     try:
-    #         batch = await self.batch_repository.get_batch_by_id(batch_id)
 
-    #         if not batch:
-    #             raise ValueError(f"Batch {batch_id} not found")
-
-    #         # ✅ idempotency guard
-    #         if batch.status != BulkUploadStatus.PENDING:
-    #             self.logger.info(f"Batch {batch_id} already finalized or processing")
-    #             return
-
-    #         job_id = batch.job_id
-    #         if not job_id:
-    #             raise ValueError(f"Batch {batch_id} has no job_id")
-
-    #         # ! here not  checking for batch total files with success + failed count.Assuming redis is the source of truth for it 
-    #         # This is to avoid race condition between workers updating batch counts and this finalize method being called before counts are updated in DB but they are updated in Redis which is the source of truth for counts and status of batch processing for workers. So as long as Redis counts are correct, we can proceed with finalization even if DB counts are not yet updated due to async nature of DB updates and commits.
-            
-            
-    #         for _ in range(5):
-    #             resume_ids = await self.resume_repositoy.lock_and_mark_parsed_resumes_for_scoring(job_id)
-
-    #             if resume_ids:
-    #                 break
-
-    #             await asyncio.sleep(0.2)
-
-    #         if not resume_ids:
-    #             self.logger.warning("No resumes found — assuming already processed")
-            
-            
-            
-    #         resume_ids = await self.resume_repositoy.lock_and_mark_parsed_resumes_for_scoring(job_id=job_id)
-
-    #         if resume_ids:
-    #             await self.dispatch_scoring_batch(
-    #                 db_job_id=job_id,
-    #                 resume_ids=resume_ids,
-    #                 batch_id=batch_id,
-    #             )
-
-    #         # ✅ Mark transition
-    #         batch.status = BulkUploadStatus.PROCESSING
-
-    #         await self.db.commit()
-
-    #     except Exception:
-    #         await self.db.rollback()
-    #         raise
-    # In finalize_batch_parsed — single transaction
-    
     async def finalize_batch_parsed(self, batch_id: str):
         try:
             batch = await self.batch_repository.get_batch_by_id(batch_id)
@@ -286,7 +193,7 @@ class BatchService_ForWorker(BaseBatchService):
                 self.logger.warning(f"Batch {batch_id}: no PARSED resumes found")
 
             await self.batch_repository.update_batch_status(batch_id, BulkUploadStatus.PROCESSING)
-            await self.db.commit()  # ← single commit covers everything
+            await self.db.commit()  
 
         except Exception:
             await self.db.rollback()

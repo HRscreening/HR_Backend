@@ -42,14 +42,14 @@ class BatchRepository:
         await self.db.flush()  
         return batch
     
-    async def increment_success(self, batch_id: int,increased_processed_count: int = 1):
+    async def increment_success(self, batch_id: int,increased_processed_count_by: int = 1):
 
         stmt = (
             update(BulkUploadBatches)                                       #TODO : add more condition to check
             .where(BulkUploadBatches.id == batch_id )
             .values(
-                processed_count=BulkUploadBatches.processed_count + increased_processed_count,
-                success_count=BulkUploadBatches.success_count + increased_processed_count,
+                processed_count=BulkUploadBatches.processed_count + increased_processed_count_by,
+                success_count=BulkUploadBatches.success_count + increased_processed_count_by,
             )
             .returning(BulkUploadBatches)
         )
@@ -59,13 +59,13 @@ class BatchRepository:
     
     
     
-    async def increment_failure(self, batch_id: int,increased_failed_count: int = 1):
+    async def increment_failure(self, batch_id: int,increased_failed_count_by: int = 1):
         stmt = (
             update(BulkUploadBatches)
             .where(BulkUploadBatches.id == batch_id)
             .values(
-                processed_count=BulkUploadBatches.processed_count + increased_failed_count,
-                failed_count=BulkUploadBatches.failed_count + increased_failed_count,
+                processed_count=BulkUploadBatches.processed_count + increased_failed_count_by,
+                failed_count=BulkUploadBatches.failed_count + increased_failed_count_by,
             )
             .returning(BulkUploadBatches)
         )

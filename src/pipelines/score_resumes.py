@@ -234,6 +234,7 @@ async def score_resume_with_text(
     application_ids = []
     resume_ids = []
 
+    
     for r in resumes:
         resume_ids.append(r.resume_id)
         application_ids.append(r.application_id)
@@ -243,6 +244,7 @@ async def score_resume_with_text(
             "resume_text": r.resume_text,
         })
 
+    logger.info(f"Initiating scoring for Text Formatted  {len(resumes)} resumes with criteria: {criteria.keys()}")
     results = await chain.abatch(
         inputs,
         config={
@@ -281,6 +283,8 @@ async def score_resume_with_text(
                 score=result,
             )
         )
+        
+    logger.info(f"Completed scoring for Text Format Resumes {len(resumes)} resumes. Successes: {len(successes)}, Failures: {len(failures)}")
 
     return successes, failures
 

@@ -127,7 +127,7 @@ async def process_applications(
     request: Request,
     job_id: UUID,
     background_tasks: BackgroundTasks,
-    zip_file: UploadFile = File(...),
+    raw_files: List[UploadFile] = File(...),
     job_service: JobService = Depends(get_job_service)
 ):
 
@@ -135,24 +135,77 @@ async def process_applications(
         user_id = request.state.user.id
         ctx_type = request.state.context.type
         
-        files = [zip_file]  # Wrap the single file in a list to reuse the validation function
-        extracted_files = await fileManager.validate_and_extract(files)
+        print
+        
+        # files = [zip_file]  # Wrap the single file in a list to reuse the validation function
+        # extracted_files = await fileManager.validate_and_extract(files)
         
         if ctx_type == "org":
-            msg = await job_service.process_applications(
+            msg = await job_service.process_applications_with_zip(
                 job_id=str(job_id),
-                background_tasks=background_tasks,
                 user_id=str(user_id),
-                files=extracted_files,
+                raw_files=raw_files,
                 organization_id=request.state.context.org_id,
             )
             
         elif ctx_type == "personal":
-            msg = await job_service.process_applications(
+            msg = await job_service.process_applications_with_zip(
+                job_id=str(job_id),
+                user_id=str(user_id),
+                raw_files=raw_files,
+                organization_id=None,
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid context type",
+            )
+        
+        if not msg:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to start application processing",
+            )
+        
+        return {
+            "status": "success",
+            "message": msg,
+        }
+        
+
+
+
+# For Normal File Upload with multiple files
+@router.post("/process-applications-files/{job_id}",status_code=status.HTTP_202_ACCEPTED)
+async def process_applications(
+    request: Request,
+    job_id: UUID,
+    background_tasks: BackgroundTasks,
+    files: List[UploadFile] = File(...),
+    job_service: JobService = Depends(get_job_service)
+):
+
+    
+        user_id = request.state.user.id
+        ctx_type = request.state.context.type
+        
+        
+        
+        if ctx_type == "org":
+            msg = await job_service.process_applications_with_files(
                 job_id=str(job_id),
                 background_tasks=background_tasks,
                 user_id=str(user_id),
-                files=extracted_files,
+                raw_files=files,
+                organization_id=request.state.context.org_id,
+            )
+            
+        elif ctx_type == "personal":
+            msg = await job_service.process_applications_with_files(
+                job_id=str(job_id),
+                background_tasks=background_tasks,
+                user_id=str(user_id),
+                raw_files=files,
                 organization_id=None,
             )
         else:
@@ -215,6 +268,9 @@ async def get_application(
 class ScoreResumeRequest(BaseModel):
     resume_url: List[str] = Field(..., description="URL of the resume image to be scored")
 
+
+
+# !INTERNAL - For testing only, not part of public API
 @router.post("/score-resume-ocr/{job_id}",status_code=status.HTTP_200_OK)
 async def score_resume_ocr(
     job_id: UUID,
@@ -234,3 +290,6 @@ async def score_resume_ocr(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error scoring resume OCR: {str(e)}"
         )
+        
+        
+

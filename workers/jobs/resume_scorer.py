@@ -55,6 +55,10 @@ async def score_resumes_text_batch(ctx, payload: dict, **kwargs):
         raise
 
 
+
+
+
+
 async def score_resumes_url_batch(ctx, payload: dict, **kwargs):
     redis: ArqRedis = ctx["redis"]
     logger: Logger = ctx["logger"]
