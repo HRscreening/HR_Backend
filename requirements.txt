@@ -24,3 +24,6 @@ redis
 croniter==6.0.0                                                                                                                                   
 pytz==2025.2                                                                                                                                      
 rq==2.6.1
+watchfiles
+celery 
+redis

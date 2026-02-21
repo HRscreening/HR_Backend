@@ -18,14 +18,20 @@ class ApplicationRepository:
     def __init__(self,db: AsyncSession):
         self.db = db
     
-    async def create_application(self, job_id: str, candidate_id: int, resume_id: int) -> Application:
+    async def create_application(self, job_id: str, candidate_id: int | None, resume_id: int | None) -> Application:
+        """ Creates a new application record linking a candidate to a job with their resume."""
         application = Application(
             job_id=job_id,
             candidate_id=candidate_id,
-            resume_id=resume_id,
+            current_resume_id=resume_id,
             status=ApplicationStatus.APPLIED,
-            applied_at=datetime.now(timezone.utc)
         )
+        self.db.add(application)
+        await self.db.flush() 
+        return application
+    
+    async def add_application(self, application: Application) -> Application:
+        """ creates an existing application instance to the session."""
         self.db.add(application)
         await self.db.flush() 
         return application
@@ -92,14 +98,8 @@ class ApplicationRepository:
         avg_score = result.scalar_one_or_none()
         return avg_score
     
-
-    
-    
-    async def commit(self):
-        await self.db.commit()
-
-    async def rollback(self):
-        await self.db.rollback()
-
-
-        
+    async def get_application_by_application_ids(self,application_ids: list[int]) -> List[Application]:
+        result = await self.db.execute(
+            select(Application).where(Application.id.in_(application_ids))
+        )
+        return result.scalars().all()

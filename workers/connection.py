@@ -1,49 +1,19 @@
 # app/workers/connection.py
 
-
-from configs.redis_config import redis_conn
-from configs.env_config import DEFAULT_TIMEOUT_REDIS_WORKER
-from rq import Queue
-
-# =========================
-# Redis Configuration
-# =========================
+from arq import create_pool
+from arq.connections import RedisSettings
+from configs.env_config import REDIS_HOST, REDIS_PORT, REDIS_PASSWORD
 
 
-# =========================
-# Queue Configuration
-# =========================
-
-DEFAULT_TIMEOUT = DEFAULT_TIMEOUT_REDIS_WORKER  # 10 minutes
-
-resume_parsing_queue = Queue(
-    name="resume_parsing_queue",
-    connection=redis_conn,
-    default_timeout=DEFAULT_TIMEOUT_REDIS_WORKER
+redis_settings = RedisSettings(
+    host=REDIS_HOST,
+    port=REDIS_PORT,
+    password=REDIS_PASSWORD,
+    database=0,
 )
 
-resume_scoring_queue = Queue(
-    name="resume_scoring_queue",
-    connection=redis_conn,
-    default_timeout=60 * 20  # LLM calls are slow  #TODO: make it dynamic based on env variable later
-)
+DEFAULT_QUEUE = "default"
 
-llm_queue = Queue(
-    name="resume_parsing_queue",
-    connection=redis_conn,
-    default_timeout=60 * 20  # LLM calls are slow  #TODO: make it dynamic based on env variable later
-)
 
-candidate_extraction_queue = Queue(
-    name="candidate_extraction_queue",
-    connection=redis_conn,
-    default_timeout= 60*5  # 5 mins
-)
-
-# Optional: Map for dynamic access
-QUEUES = {
-    "resume_parsing": resume_parsing_queue,
-    "resume_scoring": resume_scoring_queue,
-    "candidate_extraction":candidate_extraction_queue,
-    "llm": llm_queue
-}
+async def get_redis_pool():
+    return await create_pool(redis_settings)

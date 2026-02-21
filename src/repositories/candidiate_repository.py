@@ -65,11 +65,8 @@ class CandidateRepository:
         return result.scalar_one_or_none()
     
 
-    async def commit(self):
-        await self.db.commit()
-
-    async def rollback(self):
-        await self.db.rollback()
-
+        
+    async def refresh(self,instance):
+        await self.db.refresh(instance)
 
         

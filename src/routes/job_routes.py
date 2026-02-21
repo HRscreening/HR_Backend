@@ -8,7 +8,7 @@ from src.schemas.user_schemas import NewJobSchema
 from  typing import Optional,List
 from uuid import UUID
 from src.schemas.job_schemas import JobOverviewResponse,JobOverviewResponseNew
-from src.services.resume_services import score_resumes_service
+# from src.services.resume_services import score_resumes_service
 from src.dependency import get_job_service,JobService
 from src.utils.file_manager import fileManager
 
@@ -174,26 +174,26 @@ async def process_applications(
         
 
 
-# !INTERNAL - For testing only, not part of public API
-@router.post("/process-resumes/{job_id}",status_code=status.HTTP_202_ACCEPTED)
-async def process_applications(request: Request,job_id: UUID,
-                               db: AsyncSession = Depends(get_db)):
+# # !INTERNAL - For testing only, not part of public API
+# @router.post("/process-resumes/{job_id}",status_code=status.HTTP_202_ACCEPTED)
+# async def process_applications(request: Request,job_id: UUID,
+#                                db: AsyncSession = Depends(get_db)):
     
-        user_id = request.state.user.id
-        ctx_type = request.state.context.type
+#         user_id = request.state.user.id
+#         ctx_type = request.state.context.type
         
-        if ctx_type == "org":
-            msg = await score_resumes_service(
-                job_id=str(job_id),
-                db=db,
-            )
-        elif ctx_type == "personal":
-            msg = await score_resumes_service(
-                job_id=str(job_id),
-                db=db,
-            )
+#         if ctx_type == "org":
+#             msg = await score_resumes_service(
+#                 job_id=str(job_id),
+#                 db=db,
+#             )
+#         elif ctx_type == "personal":
+#             msg = await score_resumes_service(
+#                 job_id=str(job_id),
+#                 db=db,
+#             )
         
-        return msg
+#         return msg
     
     
 @router.get("/get-applications/{job_id}", status_code=status.HTTP_200_OK)

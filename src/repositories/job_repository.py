@@ -102,12 +102,4 @@ class JobRepository:
         return result.scalars().all() 
     
 
-    
-    async def commit(self):
-        await self.db.commit()
-
-    async def rollback(self):
-        await self.db.rollback()
-
-
         

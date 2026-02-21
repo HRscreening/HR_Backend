@@ -43,12 +43,5 @@ class OrganizationRepository:
         )
         return result.scalars().first()
     
-    
-    async def commit(self):
-        await self.db.commit()
-
-    async def rollback(self):
-        await self.db.rollback()
-
 
         

@@ -1,6 +1,6 @@
 from configs.postgress_db import AsyncSession,get_db
+from arq.connections import ArqRedis
 from fastapi import Depends
-
 
 
 from src.repositories.user_repository import UserRepository
@@ -10,6 +10,8 @@ from src.repositories.batch_repositoy import BatchRepository
 from src.repositories.application_repository import ApplicationRepository
 from src.repositories.candidiate_repository import CandidateRepository 
 from src.repositories.resume_respositoy import ResumeRepository
+from workers.new_producer import ARQProducer
+from workers.connection import get_redis_pool
 
 
 from src.services.auth_services import AuthService
@@ -55,6 +57,18 @@ def get_candidate_repository(
 ): 
     return CandidateRepository(db)
 
+def get_resume_repository(
+    db: AsyncSession = Depends(get_db)
+):
+    return ResumeRepository(db)
+
+
+
+
+async def get_producer(redis: ArqRedis = Depends(get_redis_pool)):
+    return ARQProducer(redis)
+
+
 
 
 # -------------------------- Services --------------------------
@@ -87,10 +101,11 @@ def get_job_service(
     db: AsyncSession = Depends(get_db),
     batch_repository: BatchRepository = Depends(get_batch_repository),
     org_repository: OrganizationRepository = Depends(get_org_repository),
-    resume_repository: ResumeRepository = Depends(ResumeRepository),
+    resume_repository: ResumeRepository = Depends(get_resume_repository),
+    job_producer: ARQProducer = Depends(get_producer),
     application_repository: ApplicationRepository = Depends(get_application_repository)
 ):
-    return JobService(db=db,  job_repositoy=jobRepo,batch_repository=batch_repository,org_repository=org_repository,application_repository=application_repository,resume_repository=resume_repository)
+    return JobService(db=db,  job_repositoy=jobRepo,batch_repository=batch_repository,org_repository=org_repository,application_repository=application_repository,resume_repository=resume_repository,job_producer=job_producer)
 
 def get_batch_service(
     batch_repository: BatchRepository = Depends(get_batch_repository),

@@ -123,6 +123,13 @@ class ResumeScoreResult:
     application_id: str
     score: ScoreOutputSchema
 
+@dataclass
+class ResumeScoreFailure(BaseModel):
+    resume_id: str
+    application_id: str
+    error: str
+
+
 
 @dataclass
 class ResumeDataSchema:

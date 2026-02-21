@@ -1,11 +1,9 @@
-import redis
 from configs.env_config import REDIS_HOST, REDIS_PORT, REDIS_USERNAME, REDIS_PASSWORD
+from redis.asyncio import Redis
 
-redis_conn = redis.Redis(
+redis_client: Redis = Redis(
     host=REDIS_HOST,
     port=REDIS_PORT,
-    decode_responses=False,
-    username=REDIS_USERNAME,
-    password=REDIS_PASSWORD
+    password=REDIS_PASSWORD,
+    decode_responses=True, 
 )
-

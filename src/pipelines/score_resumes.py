@@ -3,13 +3,15 @@
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import PromptTemplate
 from src.pipelines.models import llm
-from src.schemas.user_schemas import ScoreOutputSchema,ResumeDataSchema,ResumeScoreResult,CandidateInfoSchema,BreakdownSchema,CriterionScoreSchema
+from src.schemas.score_schema import ScoreOutputSchema,ResumeDataSchema,ResumeScoreResult,ResumeScoreFailure
+
 from configs.log_config import get_logger
 from src.pipelines.models import scoring_model
 from configs.log_config import get_logger
 import json
 from dataclasses import dataclass
-from data.test_data import data
+# from data.test_data import data
+from pydantic import BaseModel
 
 logger = get_logger("ResumeScoringPipeline")
 
@@ -215,6 +217,135 @@ def score_resume_sync(resumes: list[ResumeDataSchema], criteria: dict):
     except Exception:
         logger.exception("Resume scoring batch failed")
         raise
+
+
+
+
+
+
+
+
+async def score_resume_with_text(
+    resumes: list[ResumeDataSchema],
+    criteria: dict,
+):
+
+    inputs = []
+    application_ids = []
+    resume_ids = []
+
+    for r in resumes:
+        resume_ids.append(r.resume_id)
+        application_ids.append(r.application_id)
+
+        inputs.append({
+            "criteria": json.dumps(criteria),
+            "resume_text": r.resume_text,
+        })
+
+    results = await chain.abatch(
+        inputs,
+        config={
+            "max_concurrency": 5,
+            "return_exceptions": True,
+        },
+    )
+
+    successes: list[ResumeScoreResult] = []
+    failures: list[ResumeScoreFailure] = []
+
+    for resume_id, application_id, result in zip(
+        resume_ids,
+        application_ids,
+        results,
+    ):
+
+        if isinstance(result, Exception):
+            logger.error(
+                f"Scoring failed for resume_id={resume_id}: {result}"
+            )
+
+            failures.append(
+                ResumeScoreFailure(
+                    resume_id=resume_id,
+                    application_id=application_id,
+                    error=str(result),
+                )
+            )
+            continue
+
+        successes.append(
+            ResumeScoreResult(
+                resume_id=resume_id,
+                application_id=application_id,
+                score=result,
+            )
+        )
+
+    return successes, failures
+
+
+# # For synchronous calls (if uploaded resumes number is more than 5) | Will be used by workers 
+# async def score_resume_with_text(resumes: list[ResumeDataSchema], criteria: dict):
+#     try:
+#         inputs = []
+#         application_ids = []
+#         resume_ids = []
+        
+
+#         for resume in resumes:
+#             resume_ids.append(resume.resume_id)
+#             application_ids.append(resume.application_id)
+#             inputs.append({
+#                 "criteria": json.dumps(criteria),
+#                 "resume_text": resume.resume_text
+#             })
+
+#         results = await chain.abatch(
+#             inputs,
+#             config={
+#                 "max_concurrency": 5, # TODO: Can be made dynamic
+#                 "return_exceptions": True
+#             }
+#         )
+        
+#         print("\n\n\nLLM CALL DONE. Processing results...\n\n\n")
+#         # print("Raw results from chain.batch:\n\n\n", results,"\n\n\n\n")
+
+#         response: list[ResumeScoreResult] = []
+
+#         for resume_id,application_id,result in zip(resume_ids,application_ids, results):
+#             if isinstance(result, Exception):
+#                 logger.error(f"Scoring failed for resume_id={resume_id}: {result}")
+#                 continue
+
+#             response.append(ResumeScoreResult(
+#                 resume_id=resume_id,
+#                 application_id=application_id,
+#                 score=result
+#             ))
+
+#         return response
+
+#     except Exception:
+#         logger.exception("Resume scoring batch failed")
+#         raise
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

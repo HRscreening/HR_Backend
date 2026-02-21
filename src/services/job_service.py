@@ -15,7 +15,7 @@ from typing import Optional,List
 from src.repositories.batch_repositoy import BatchRepository 
 from src.utils.extract_pdf import extract_text_from_pdf
 from src.pipelines.generate_rubric import generate_rubric_from_jd
-from workers.producer import enqueue_resumes_parsing
+# from workers.producer import enqueue_resumes_parsing
 from src.repositories.job_repository import JobRepository
 from src.repositories.org_repository import OrganizationRepository 
 from src.repositories.application_repository import ApplicationRepository
@@ -23,18 +23,23 @@ from src.utils.file_manager import FileManagerService
 from src.utils.file_manager import fileManager
 from configs.env_config import SUPABASE_PUBLIC_URL
 # from src.pipelines.score_resume_ocr import score_img_format_resume_files
-from src.pipelines.score_resume_ocr import score_image_resumes_async
+# from src.pipelines.score_resume_ocr import score_image_resumes_async
 from src.repositories.resume_respositoy import ResumeRepository
+from workers.new_producer import ARQProducer
+import json
+
 
 class JobService:
-    def __init__(self,job_repositoy:JobRepository,batch_repository:BatchRepository,org_repository,application_repository:ApplicationRepository,resume_repository:ResumeRepository,db: AsyncSession):
-        self.db = db
+    def __init__(self,job_repositoy:JobRepository,batch_repository:BatchRepository,org_repository,application_repository:ApplicationRepository,resume_repository:ResumeRepository,job_producer:ARQProducer,db: AsyncSession):
+        self.db = db #TODO: remove this from service layer 
         self.PUBLIC_URL = SUPABASE_PUBLIC_URL
         self.job_repository:JobRepository = job_repositoy
         self.application_repository:ApplicationRepository = application_repository
         self.resume_repository:ResumeRepository = resume_repository
         self.batch_repository:BatchRepository = batch_repository    
         self.organization_repository:OrganizationRepository = org_repository
+        self.job_producer: ARQProducer = job_producer
+        # self.job_producer: ARQProducer = job_producer
         self.file_manager:FileManagerService = fileManager
         self.logger = get_logger("JOB_SERVICE")
         
@@ -307,11 +312,12 @@ class JobService:
                 raise JobNotFound(status_code=404)
 
             # 2. Prevent duplicate processing
-            if job.active_processing_queue_id:
-                raise DomainError(
-                    message="An active application processing job already exists for this job.",
-                    status_code=status.HTTP_409_CONFLICT
-                )
+            #! activate for production
+            # if job.active_processing_queue_id:
+            #     raise DomainError(
+            #         message="An active application processing job already exists for this job.",
+            #         status_code=status.HTTP_409_CONFLICT
+            #     )
 
             
             batch_name = self.generate_batch_name(job_id=job_id)
@@ -325,28 +331,29 @@ class JobService:
             
 
             # 5. Create processing job
-            batch = BulkUploadBatches(
-                job_id=job.id,
-                uploaded_by_id=user_id,
+            batch = await self.batch_repository.create_batch(
+                job_id=job_id,
+                user_id=user_id,
+                source_file_url=json.dumps(saved_paths), #TODO: change this to array in DB
                 batch_name=batch_name,
-                source_file_url=files_uploaded_dir,
-                total_files = len(files),
+                total_files=len(saved_paths)
             )
 
-            self.db.add(batch)
             job.active_processing_queue_id = batch.id
             await self.db.commit()
-            await self.db.refresh(batch)
+            await self.db.refresh(job)
 
 
-            # Background task to process resumes
-            background_tasks.add_task(
-            enqueue_resumes_parsing,
-            resume_paths=saved_paths,
-            db_job_id=job.id,
-            batch_id=batch.id,
-            queue_name="resume_parsing"
-        )
+            # TODO:
+            # For very large uploads (>500–1000 resumes),
+            # replace per-resume enqueueing with a single job that processes the batch in one go to avoid overwhelming Redis and the worker queue with too many jobs at once. The worker can then read the batch info, iterate over the files, and process them sequentially or in controlled parallelism.
+            # batch-orchestrator job that fans out work
+            # from a worker to keep API latency low.
+            await self.job_producer.enqueue_resumes_parsing(
+                resume_paths=saved_paths,
+                db_job_id=job.id,
+                batch_id=batch.id,
+                )
 
             return {
                 # "processing_job_id": batch.id,
@@ -377,6 +384,7 @@ class JobService:
         if not active_rubric:
             raise RubricNotFound( message="Active rubric not found for the job", status_code=404 )
         
+        # TODO: need to pass current rubric id of the job to fetch score on that basis either it can come from user too
         applications = await self.application_repository.get_applications_of_job(job_id=job_id, current_rubric_id=active_rubric.id, page_size=page_size, offset=offset )
         
         response = []
@@ -410,6 +418,7 @@ class JobService:
                 "ai_analysis": app.ai_analysis,
             }
 
+            
             # ✅ candidate (minimal)
             app_data["candidate"] = {
                 "id": str(app.candidate.id),
@@ -422,14 +431,13 @@ class JobService:
             app_data["resume"] = {
                 "id": str(resume.id),
                 "raw_file_url": f"{self.PUBLIC_URL}/{resume.raw_file_url}",
-                "status": resume.status.value,
+                "status": resume.status,
                 "page_count": resume.page_count,
                 "uploaded_at": resume.uploaded_at.isoformat(),
             } if resume else None
 
             # ✅ active score only
-            app_data["scores"] = [
-                {
+            app_data["scores"] = {
                     "is_active": active_score.is_active,
                     "overall_score": active_score.overall_score,
                     "ai_confidence": active_score.ai_confidence,
@@ -439,8 +447,7 @@ class JobService:
                     "is_overridden": active_score.is_overridden,
                     "version": active_score.version,
                     "is_latest": active_score.is_latest,
-                }
-            ] if active_score else []
+                } if active_score else {}
 
             response.append(app_data)
 
@@ -454,22 +461,22 @@ class JobService:
             }
         }
 
-    async def score_resume_ocr(self,job_id:str,resume_url:List[str]):
-        try:
-            rubric = await self.job_repository.get_active_rubric(job_id=job_id)
-            # score = await score_img_format_resume_files(
-            #     resume_url=resume_url,
-            #     criteria=rubric.criteria if rubric else None
-            # )
+    # async def score_resume_ocr(self,job_id:str,resume_url:List[str]):
+    #     try:
+    #         rubric = await self.job_repository.get_active_rubric(job_id=job_id)
+    #         # score = await score_img_format_resume_files(
+    #         #     resume_url=resume_url,
+    #         #     criteria=rubric.criteria if rubric else None
+    #         # )
             
             
-            score = await score_image_resumes_async(
-                resume_urls=resume_url,
-                criteria=rubric.criteria if rubric else None
-            )
+    #         score = await score_image_resumes_async(
+    #             resume_urls=resume_url,
+    #             criteria=rubric.criteria if rubric else None
+    #         )
             
-            return score
+    #         return score
             
-        except Exception as e:
-            self.logger.exception(f"Error scoring resume OCR: {e}")
-            raise
+    #     except Exception as e:
+    #         self.logger.exception(f"Error scoring resume OCR: {e}")
+    #         raise
