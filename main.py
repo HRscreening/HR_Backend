@@ -1,21 +1,23 @@
 from fastapi import FastAPI,Depends
 # from configs.db import init_db
-from routes.auth_routes import router as auth_router
-from routes.user_routes import router as user_router
-from routes.job_routes import router as job_router
+from src.routes.auth_routes import router as auth_router
+from src.routes.user_routes import router as user_router
+from src.routes.job_routes import router as job_router
 from fastapi.middleware.cors import CORSMiddleware
-from middlewares.verify_user import auth_required 
+from src.middlewares.verify_user import auth_required 
 
 
 import logging
 from exception_handlers import domain_exception_handler
-from services.errors.base import DomainError
+from src.services.errors.base import DomainError
 from configs.supabase_config import supabase
-import models
+import src.models
 from configs.env_config import LANGHAIN_TRACKING_ENABLED, LANGCHAIN_API_KEY
 
 app = FastAPI()
 
+LANGHAIN_TRACKING_ENABLED 
+LANGCHAIN_API_KEY
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

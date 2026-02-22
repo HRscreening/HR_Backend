@@ -30,8 +30,8 @@ EXPIRATION_MINUTES = int(os.environ.get("EXPIRATION_MINUTES", 300))
 
 
 # LLM API Keys
-OPENAI_API_KEY =  os.environ["OPENAI_API_KEY"]=os.getenv("OPENAI_API_KEY")
-GEMINI_API_KEY = os.environ["GOOGLE_API_KEY"]=os.getenv("GOOGLE_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY", "")
 
 
 # Langmith tracking
@@ -42,7 +42,15 @@ LANGCHAIN_API_KEY = os.getenv("LANGCHAIN_API_KEY", "")
 # Supabase Configuration
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "your-supabase-url")
 SUPABASE_API_KEY = os.environ.get("SUPABASE_API_KEY", "your-supabase-api-key")
-
+SUPABASE_PUBLIC_URL = os.environ.get("SUPABASE_PUBLIC_URL", "your-supabase-file-initializer")
 
 
 BASE_UPLOAD_DIR = os.environ.get("BASE_UPLOAD_DIR", "/data/uploads")
+
+
+# TODO:FIX NAMES
+REDIS_HOST = os.environ.get('REDIS_HOST', None)
+REDIS_PORT = int(os.environ.get('REDIS_PORT', 6379))  # cast to int
+REDIS_USERNAME = os.environ.get('REDIS_USERNAME', None)
+REDIS_PASSWORD = os.environ.get('REDIS_PASSWORD', None)
+DEFAULT_TIMEOUT_REDIS_WORKER = int(os.environ.get("DEFAULT_TIMEOUT_REDIS_WORKER", 600))  # default timeout for redis worker in seconds
