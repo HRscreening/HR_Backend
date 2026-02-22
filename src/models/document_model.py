@@ -38,7 +38,13 @@ class Document(Base):
     file_url = Column(TEXT, nullable=False)  # URL to access the document directly
     file_path = Column(TEXT, nullable=False)  # The internal storage path (e.g., bucket path). Distinct from the public URL.
     extracted_text = Column(TEXT, nullable=True)  # Text extracted from the document after parsing
-    parsing_status = Column(SAEnum(DocumentProcessingStatus,native_enum=True,name="document_processing_status_enum"),nullable=False,default=DocumentProcessingStatus.PARSING_IN_PROGRESS)
+    # NOTE: DB schema uses VARCHAR for parsing_status (no enum type).
+    # Store enum values as strings, e.g. "pending", "parsed", "error".
+    parsing_status = Column(
+        VARCHAR(100),
+        nullable=True,
+        default=DocumentProcessingStatus.PENDING.value,
+    )
     parsing_error = Column(TEXT, nullable=True)  # Any error encountered during parsing/extraction
     ai_parsed_data = Column(JSONB, nullable=True)  # Structured data extracted by AI (e.g., parsed resume fields)
     version = Column(Integer, nullable=False, default=1)  # Versioning for documents

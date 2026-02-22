@@ -12,7 +12,6 @@ import uuid
 from sqlalchemy.dialects.postgresql import JSONB,UUID
 from sqlalchemy.orm import relationship
 from configs.postgress_db import Base
-from sqlalchemy import Enum as SAEnum
 from .enums import RubricSource
 
 
@@ -38,8 +37,17 @@ class Rubric(Base):
 
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     
-    source = Column(SAEnum(RubricSource,native_enum=True ,name="rubric_source_enum"), nullable=True,default=RubricSource.AI)  # Source of the rubric (e.g., 'system_generated', 'custom_created')
+    # NOTE: In the current DB, `rubrics.source` is VARCHAR (not a Postgres enum).
+    # Store the enum *value* (e.g. "ai" / "manual" / "combined") to match the DB.
+    source = Column(String, nullable=True, default=RubricSource.AI.value)
     ai_metadata = Column(JSONB, nullable=True)  # If source is ai, this stores details about the extraction — model used, confidence, etc.
+
+    # Versioning / audit (production-grade)
+    parent_rubric_id = Column(UUID(as_uuid=True), ForeignKey("rubrics.id", ondelete="SET NULL"), nullable=True)
+    created_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_via = Column(String, nullable=True)      # e.g. "create_job", "ui_edit", "ai_regen"
+    change_reason = Column(String, nullable=True)    # e.g. "edit", "ai_regen", "copy"
+    change_type = Column(String, nullable=True)      # e.g. "minor", "major"
     
     
     job = relationship("Job", back_populates="rubrics")

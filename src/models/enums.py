@@ -11,10 +11,12 @@ class UserRole(enum.Enum):
 
 
 class JobStatus(enum.Enum):
-    OPEN = "open"
-    PAUSED = "paused"
-    CLOSED = "closed"
-    ARCHIVED = "archived"
+    """Values must match PostgreSQL job_status_enum exactly (OPEN/PAUSED/CLOSED/ARCHIVED/draft)."""
+    DRAFT = "draft"          # JD uploaded, not yet finalized
+    OPEN = "OPEN"
+    PAUSED = "PAUSED"
+    CLOSED = "CLOSED"
+    ARCHIVED = "ARCHIVED"
 
 
 class ApplicationStatus(enum.Enum):
@@ -65,6 +67,7 @@ class BulkUploadStatus(enum.Enum):
     FAILED = "failed"
     
 class DocumentProcessingStatus(enum.Enum):
+    PENDING = "pending"      # Queued for parsing
     UPLOADED = "uploaded"
     PARSING_IN_PROGRESS = "parsing_in_progress"
     PARSED = "parsed"

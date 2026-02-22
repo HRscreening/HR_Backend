@@ -11,7 +11,6 @@ from datetime import datetime, timezone
 from src.models import Organization,User,Job,Rubric,Application,BulkUploadBatches,Score,Resume
 from src.models.enums import ApplicationStatus
 from pydantic import EmailStr
-from src.schemas.user_schemas import NewJobSchema
 from typing import Optional,List
 
 class ApplicationRepository:

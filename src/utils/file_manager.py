@@ -2,12 +2,16 @@
 
 import io
 import os
+import re
 import shutil
+import tempfile
+import unicodedata
 import zipfile
 from fastapi import UploadFile, status
 from typing import List
 from src.services.errors.base import DomainError
-from configs.env_config import BASE_UPLOAD_DIR
+from configs.env_config import BASE_UPLOAD_DIR, SUPABASE_PUBLIC_URL
+from src.utils.manage_supabase_buckets import save_file_from_path
 
 
 
@@ -31,6 +35,39 @@ class FileManagerService:
     MAX_FILES = 100
     MAX_FILE_SIZE_MB = 5
     MAX_ZIP_FILES = 200
+
+    def sanitize_filename(self, filename: str) -> str:
+        """
+        Make a Supabase-safe object key component.
+        Keeps extension, strips/normalizes unicode, replaces unsafe chars with '_'.
+        """
+        if not filename:
+            return "uploaded_file"
+
+        base = os.path.basename(filename)
+        name, ext = os.path.splitext(base)
+        ext = (ext or "").lower()
+
+        # Normalize unicode (e.g., “–” -> "-"), then drop non-ascii
+        name = unicodedata.normalize("NFKD", name)
+        name = name.encode("ascii", "ignore").decode("ascii")
+
+        # Replace any run of unsafe chars with underscore
+        name = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("._-")
+        name = re.sub(r"_+", "_", name)
+
+        if not name:
+            name = "uploaded_file"
+
+        # Keep keys reasonably short (avoid storage limits / ugly URLs)
+        if len(name) > 120:
+            name = name[:120]
+
+        # Default to .pdf if no extension
+        if not ext:
+            ext = ".pdf"
+
+        return f"{name}{ext}"
 
     async def validate_and_extract(
         self,
@@ -95,8 +132,44 @@ class FileManagerService:
             saved_paths.append(dest_path)
 
         return job_dir, saved_paths
-    
-    
+
+    async def upload(self, file: UploadFile, destination_path: str) -> tuple[str, str]:
+        """
+        Upload a single file to Supabase storage (resumes bucket).
+        Supabase storage client expects a file path (it calls open(path, "rb")), so we
+        write the UploadFile to a temp file, upload via save_file_from_path, then remove it.
+        destination_path: path prefix inside bucket, e.g. "jds/{job_id}" (no trailing slash).
+        Returns (public_url, stored_filename).
+        """
+        if not file.filename:
+            raise ValueError("File name is empty")
+        self._validate_extension(file.filename)
+
+        safe_filename = self.sanitize_filename(file.filename)
+        await file.seek(0)
+        contents = await file.read()
+        await file.seek(0)
+
+        suffix = os.path.splitext(safe_filename)[1] or ".pdf"
+        fd, tmp_path = tempfile.mkstemp(suffix=suffix)
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(contents)
+            # destination_path inside bucket must include filename for save_file_from_path
+            bucket_dest = f"{destination_path.rstrip('/')}/{safe_filename}"
+            save_file_from_path(
+                local_file_path=tmp_path,
+                bucket_name="resumes",
+                destination_path=bucket_dest,
+            )
+            storage_path = f"resumes/{bucket_dest}"
+            return f"{SUPABASE_PUBLIC_URL}/{storage_path}", safe_filename
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
     # ------------------ helpers ------------------
 
     async def _read_and_validate_size(self, file: UploadFile) -> bytes:

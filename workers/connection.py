@@ -22,6 +22,12 @@ resume_parsing_queue = Queue(
     default_timeout=DEFAULT_TIMEOUT_REDIS_WORKER
 )
 
+jd_extraction_queue = Queue(
+    name="jd_extraction",
+    connection=redis_conn,
+    default_timeout=60 * 20,  # JD parsing includes LLM calls
+)
+
 resume_scoring_queue = Queue(
     name="resume_scoring_queue",
     connection=redis_conn,
@@ -43,6 +49,7 @@ candidate_extraction_queue = Queue(
 # Optional: Map for dynamic access
 QUEUES = {
     "resume_parsing": resume_parsing_queue,
+    "jd_extraction": jd_extraction_queue,
     "resume_scoring": resume_scoring_queue,
     "candidate_extraction":candidate_extraction_queue,
     "llm": llm_queue

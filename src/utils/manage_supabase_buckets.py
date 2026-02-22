@@ -209,22 +209,28 @@ def save_file_from_path(
         """
 
         file_path = Path(local_file_path)
-        
-        try:
 
+        response = None
+        try:
             with file_path.open("rb") as f:
                 response = supabase.storage.from_(bucket_name).upload(
                     destination_path,
                     f,
                     file_options={"content-type": "application/pdf"},
                 )
-
         except StorageException as e:
-           if "409" in str(e) or "Duplicate" in str(e):
             # File already exists → skip
-            return f"{bucket_name}/{destination_path}"
-        
-        if hasattr(response, "error") and response.error:
+            if "409" in str(e) or "Duplicate" in str(e):
+                return f"{bucket_name}/{destination_path}"
+            # Anything else is a real error
+            raise
+
+        # Different supabase/storage-py versions return different response shapes
+        if hasattr(response, "error") and getattr(response, "error"):
             raise Exception(response.error.message)
+        if isinstance(response, dict) and response.get("error"):
+            raise Exception(response["error"].get("message") or "Error uploading file")
+
+        return f"{bucket_name}/{destination_path}"
         
 

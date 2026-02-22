@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.middlewares.verify_user import auth_required
 # from src.utils.verify_token import verify_token
 
-from src.schemas.user_schemas import NewOrgSchema,NewJobSchema
+from src.schemas.user_schemas import NewOrgSchema
 from src.services import user_services
 # from services.errors.auth_errors import EmailAlreadyExists
 from  typing import Optional

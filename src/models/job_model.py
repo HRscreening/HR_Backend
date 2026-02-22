@@ -43,7 +43,12 @@ class Job(Base):
     title = Column(String, nullable=False)
 
     status = Column(
-        SAEnum(JobStatus, name="job_status_enum", native_enum=True),
+        SAEnum(
+            JobStatus,
+            name="job_status_enum",
+            native_enum=True,
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
         nullable=False,
         default=JobStatus.OPEN,
     )
@@ -77,8 +82,6 @@ class Job(Base):
     total_applications = Column(Integer, default=0)
     opened_at = Column(DateTime(timezone=True), nullable=True)
     closed_at = Column(DateTime(timezone=True), nullable=True)
-    
-    active_processing_queue_id = Column(UUID(as_uuid=True), nullable=True)
 
     # relationships
     organization = relationship("Organization", back_populates="jobs")

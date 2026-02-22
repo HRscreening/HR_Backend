@@ -6,7 +6,6 @@ from src.models import Job,Rubric,BulkUploadBatches
 
 from  configs.log_config import get_logger
 
-from src.schemas.user_schemas import NewJobSchema
 from src.schemas.job_schemas import JobOverviewResponse
 
 from src.services.errors.user_errors import JDExtractionFailed,JobNotFound,RubricNotFound

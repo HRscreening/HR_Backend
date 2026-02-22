@@ -44,7 +44,7 @@ class AuthService:
 
             # 3️⃣ Update unverified user
             if existing_user and not existing_user.email_verified:
-                await self.auth_repository.update_user_passwd_otp(
+                await self.auth_repository.update_user_password_and_otp(
                     existing_user,
                     hashed_password,
                     otp

@@ -9,7 +9,6 @@ from src.pipelines.models import scoring_model
 from configs.log_config import get_logger
 import json
 from dataclasses import dataclass
-from data.test_data import data
 
 logger = get_logger("ResumeScoringPipeline")
 
@@ -66,8 +65,8 @@ GROUNDING RULE (VERY IMPORTANT)
 - For EACH criterion:
   - Include AT MOST 2 evidence snippets.
   - Each snippet must be ≤ 120 characters.
+  - Use EXACT VERBATIM quotes directly extracted from the resume. Do NOT paraphrase.
   - Prefer the STRONGEST and most specific evidence only.
-- Use near-verbatim resume excerpts (light trimming allowed).
 - Do NOT repeat the same evidence across multiple criteria.
 - If no evidence exists, return an EMPTY ARRAY [] for that criterion.
 - grounding_data must be concise and readable by humans.

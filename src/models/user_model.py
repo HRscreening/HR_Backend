@@ -22,8 +22,7 @@ class User(Base):
     password = Column(String, nullable=False)
     email_verified = Column(Boolean, default=False)
     otp = Column(String, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())  # Timestamp when the user account was created
-    joined_at = Column(DateTime(timezone=True), server_default=func.now()) # Timestamp when the user joined/created organization
+    joined_at = Column(DateTime(timezone=True), server_default=func.now())  # Timestamp when the user joined/created account
     user_metadata = Column(JSONB, nullable=True)
     
     

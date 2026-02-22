@@ -5,7 +5,7 @@ from src.models import Organization,User,Job,Rubric,Application,BulkUploadBatche
 
 from  configs.log_config import get_logger
 
-from src.schemas.user_schemas import NewOrgSchema,NewJobSchema
+from src.schemas.org_schema import NewOrgSchema
 
 from src.services.errors.user_errors import OrganizationAlreadyExists
 

@@ -195,3 +195,54 @@ def enqueue_candidate_extraction(
         )
 
         return None
+
+
+def enqueue_jd_extraction(
+    job_id: str,
+    document_id: str,
+    file_path: str,
+    queue_name: str = "jd_extraction"
+) -> str | None:
+    """Enqueue JD extraction + parsing job."""
+    if queue_name not in QUEUES:
+        raise ValueError(f"Invalid queue: {queue_name}")
+
+    queue = QUEUES[queue_name]
+    redis_job_id = str(uuid.uuid4())
+
+    redis_conn.hset(
+        f"job:{redis_job_id}",
+        mapping={
+            "status": "queued",
+            "job_id": str(job_id),
+            "document_id": str(document_id),
+            "file_path": file_path,
+            "type": "jd_extraction"
+        }
+    )
+
+    try:
+        queue.enqueue(
+            "workers.tasks.jd_parser.parse_jd",
+            {
+                "redis_job_id": redis_job_id,
+                "job_id": str(job_id),
+                "document_id": str(document_id),
+                "file_path": file_path,
+            },
+            retry=Retry(max=2, interval=[10, 30])
+        )
+
+        logger.info(f"Enqueued JD extraction job {redis_job_id} for job {job_id}")
+        return redis_job_id
+
+    except Exception as e:
+        logger.error(f"Failed to enqueue JD extraction job {redis_job_id}: {e}")
+        redis_conn.hset(
+            f"job:{redis_job_id}",
+            mapping={
+                "status": "failed_to_enqueue",
+                "error": str(e)
+            }
+        )
+        return None

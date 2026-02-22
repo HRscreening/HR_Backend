@@ -1,0 +1,328 @@
+"""
+Post-processor for LLM rubric output.
+
+The LLM is imperfect — this module normalizes, validates, and fixes
+common issues in the raw output before it reaches the frontend.
+
+Responsibilities:
+  1. Normalize criterion weights to sum exactly 100 per section
+  2. Normalize sub-criteria weights to sum exactly 100
+  3. Enforce priority uniqueness and sequential ordering
+  4. Sort criteria arrays by priority (ascending = most important first)
+  5. Normalize empty value to null
+  6. Ensure display_name is properly formatted
+"""
+
+from configs.log_config import get_logger
+import json
+from typing import Any, Tuple, List
+
+from src.schemas.rubric_schemas import PipelineRubricOutput
+
+logger = get_logger("rubric_post_processor")
+
+
+def _snake_to_display(name: str) -> str:
+    """Convert snake_case to Title Case."""
+    return " ".join(word.capitalize() for word in name.split("_") if word)
+
+
+def _compute_weights_from_importance(items: list[dict], importance_key: str = "importance", max_imp: int = 10) -> list[dict]:
+    """
+    Compute 'weight' dynamically from 'importance' (1-10 or 1-5).
+    Ensures the weights sum to 100.
+    """
+    if not items:
+        return items
+
+    total_imp = sum(item.get(importance_key, (max_imp // 2) or 1) for item in items)
+    if total_imp == 0:
+        equal_weight = 100 // len(items)
+        remainder = 100 - (equal_weight * len(items))
+        for i, item in enumerate(items):
+            item["weight"] = equal_weight + (1 if i < remainder else 0)
+        return items
+
+    factor = 100.0 / total_imp
+    new_weights = []
+    importances = []
+    for item in items:
+        imp = item.get(importance_key, (max_imp // 2) or 1)
+        importances.append(imp)
+        new_weights.append(round(imp * factor))
+
+    diff = 100 - sum(new_weights)
+    if diff != 0:
+        max_idx = new_weights.index(max(new_weights))
+        new_weights[max_idx] += diff
+
+    for i, item in enumerate(items):
+        item["weight"] = max(0, new_weights[i])
+        item[importance_key] = importances[i]
+
+    return items
+
+
+def _fix_value_consistency(item: dict) -> dict:
+    """Normalize value: empty string or missing → null; ensure value_type is none."""
+    val = item.get("value")
+    if val is None or (isinstance(val, str) and not val.strip()):
+        item["value"] = None
+    item["value_type"] = "none"
+    return item
+
+
+def _fix_display_name(item: dict) -> dict:
+    """Ensure display_name exists and is properly formatted."""
+    if not item.get("display_name"):
+        item["display_name"] = _snake_to_display(item.get("name", "unknown"))
+    return item
+
+
+def post_process_rubric(raw_output: dict) -> dict:
+    """
+    Main entry point. Takes raw LLM output (already parsed to dict)
+    and returns a cleaned, validated version.
+    """
+    try:
+        # Domain validation
+        if not raw_output.get("domain"):
+            raw_output["domain"] = "other"
+        if not isinstance(raw_output.get("domain_confidence"), (int, float)):
+            raw_output["domain_confidence"] = 0.5
+
+        raw_output["domain_confidence"] = max(0.0, min(1.0, raw_output["domain_confidence"]))
+
+        # Threshold validation
+        threshold = raw_output.get("threshold_score", 60)
+        raw_output["threshold_score"] = max(0, min(100, int(threshold)))
+
+        # Process each section
+        sections = raw_output.get("sections", [])
+        if not isinstance(sections, list):
+            sections = []
+        for section in sections:
+            if not isinstance(section, dict):
+                continue
+            if not section.get("key"):
+                section["key"] = "requirements"
+            criteria = section.get("criteria", [])
+            if not isinstance(criteria, list):
+                criteria = []
+                section["criteria"] = criteria
+
+            # Fix each criterion
+            for criterion in criteria:
+                if not isinstance(criterion, dict):
+                    continue
+                _fix_display_name(criterion)
+                _fix_value_consistency(criterion)
+
+                # Process sub-criteria
+                subs = criterion.get("sub_criteria")
+                if subs and isinstance(subs, list) and len(subs) > 0:
+                    for sub in subs:
+                        if not isinstance(sub, dict):
+                            continue
+                        _fix_display_name(sub)
+                        _fix_value_consistency(sub)
+                    criterion["sub_criteria"] = _compute_weights_from_importance(subs, "importance", 5)
+                elif subs is not None and (not isinstance(subs, list) or len(subs) == 0):
+                    criterion["sub_criteria"] = None
+
+            # Normalize weights across criteria in this section based on importance
+            if criteria:
+                section["criteria"] = _compute_weights_from_importance(criteria, "importance", 10)
+
+            # Fix priorities: ensure sequential and unique
+            sorted_criteria = sorted(criteria, key=lambda c: c.get("priority", 999))
+            for i, criterion in enumerate(sorted_criteria):
+                criterion["priority"] = i + 1
+            section["criteria"] = sorted_criteria
+
+            # Ensure section label exists (default from key: snake_case → Title Case)
+            if not section.get("label") and section.get("key"):
+                section["label"] = _snake_to_display(section["key"])
+
+        # Ensure at least one section exists
+        if not sections:
+            sections = [{"key": "requirements", "label": "Requirements", "criteria": []}]
+
+        raw_output["sections"] = sections
+
+        logger.info(
+            "Post-processed rubric: domain=%s, sections=%d, total_criteria=%d",
+            raw_output.get("domain"),
+            len(sections),
+            sum(len(s.get("criteria", [])) for s in sections),
+        )
+
+        return raw_output
+
+    except Exception as e:
+        logger.exception("Post-processing failed, returning raw output: %s", e)
+        return raw_output
+
+
+def is_valid_json(text: str) -> bool:
+    """
+    Returns True iff `text` is valid JSON (strict).
+    This is intended for validating raw LLM output before processing.
+    """
+    try:
+        json.loads(text)
+        return True
+    except Exception:
+        return False
+
+
+def _safe_numeric(value: Any, kind: str) -> Any:
+    """Coerce string/bool to int or float when possible; return as-is otherwise."""
+    if kind == "int":
+        if type(value) is int:
+            return value
+        if isinstance(value, (float, str)) and str(value).strip() != "":
+            try:
+                return int(float(value))
+            except (ValueError, TypeError):
+                pass
+    elif kind == "float":
+        if type(value) in (int, float) and type(value) is not bool:
+            return float(value)
+        if isinstance(value, str) and value.strip() != "":
+            try:
+                return float(value)
+            except (ValueError, TypeError):
+                pass
+    return value
+
+
+def validate_rubric_json(payload: Any) -> Tuple[bool, List[str]]:
+    """
+    Validates that the payload matches the pipeline rubric contract.
+    - Payload must be a dict; only rubric structure is validated (no job_data required).
+    - Numeric fields are checked (with optional coercion from strings).
+    - Weights/priorities are ints in range; section/sub-criteria weights sum to 100.
+
+    Handles any input type: missing keys are reported, wrong types are coerced when safe.
+    Returns: (ok, errors)
+    """
+    errors: list[str] = []
+
+    if payload is None:
+        return False, ["payload is required"]
+    if not isinstance(payload, dict):
+        return False, [f"payload must be a JSON object, got {type(payload).__name__}"]
+
+    # Work with a shallow copy so we can normalize without mutating caller's payload
+    payload = dict(payload)
+
+    # --- Type strictness / coercion for top-level numerics ---
+    def _is_strict_int(x: Any) -> bool:
+        return type(x) is int  # noqa: E721 (intentional: bool must be rejected)
+
+    def _is_strict_number(x: Any) -> bool:
+        return type(x) in (int, float) and type(x) is not bool
+
+    dc = payload.get("domain_confidence")
+    if dc is not None:
+        dc = _safe_numeric(dc, "float")
+        payload["domain_confidence"] = dc
+        if not _is_strict_number(dc):
+            errors.append("domain_confidence must be a number (0.0–1.0), not a string/bool")
+    ts = payload.get("threshold_score")
+    if ts is not None:
+        ts = _safe_numeric(ts, "int")
+        payload["threshold_score"] = ts
+        if not _is_strict_int(ts):
+            errors.append("threshold_score must be an integer (0–100), not a string/bool")
+
+    sections = payload.get("sections")
+    if sections is None or not isinstance(sections, list):
+        errors.append("sections must be an array")
+        sections = []
+
+    for si, section in enumerate(sections):
+        if not isinstance(section, dict):
+            errors.append(f"sections[{si}] must be an object")
+            continue
+
+        criteria = section.get("criteria")
+        if criteria is None or not isinstance(criteria, list):
+            errors.append(f"sections[{si}].criteria must be an array")
+            continue
+
+        # criteria weights monotonicity is a heuristic for JD ordering.
+        # We validate non-increasing weights when there are 3+ items.
+        weights_seen: list[int] = []
+
+        for ci, c in enumerate(criteria):
+            if not isinstance(c, dict):
+                errors.append(f"sections[{si}].criteria[{ci}] must be an object")
+                continue
+
+            w = c.get("weight")
+            p = c.get("priority")
+            if not _is_strict_int(w):
+                errors.append(f"sections[{si}].criteria[{ci}].weight must be an int")
+            elif not (0 <= w <= 100):
+                errors.append(f"sections[{si}].criteria[{ci}].weight must be 0..100")
+            else:
+                weights_seen.append(w)
+
+            if not _is_strict_int(p):
+                errors.append(f"sections[{si}].criteria[{ci}].priority must be an int")
+            elif p < 1:
+                errors.append(f"sections[{si}].criteria[{ci}].priority must be >= 1")
+
+            val = c.get("value")
+            if val is not None and not isinstance(val, str):
+                errors.append(f"sections[{si}].criteria[{ci}].value must be a string or null")
+
+            subs = c.get("sub_criteria")
+            if subs is None:
+                continue
+            if not isinstance(subs, list):
+                errors.append(f"sections[{si}].criteria[{ci}].sub_criteria must be an array or null")
+                continue
+
+            sub_weights: list[int] = []
+            for sj, sc in enumerate(subs):
+                if not isinstance(sc, dict):
+                    errors.append(f"sections[{si}].criteria[{ci}].sub_criteria[{sj}] must be an object")
+                    continue
+                sw = sc.get("weight")
+                if not _is_strict_int(sw):
+                    errors.append(f"sections[{si}].criteria[{ci}].sub_criteria[{sj}].weight must be an int")
+                elif not (0 <= sw <= 100):
+                    errors.append(f"sections[{si}].criteria[{ci}].sub_criteria[{sj}].weight must be 0..100")
+                else:
+                    sub_weights.append(sw)
+
+                sval = sc.get("value")
+                if sval is not None and not isinstance(sval, str):
+                    errors.append(
+                        f"sections[{si}].criteria[{ci}].sub_criteria[{sj}].value must be a string or null"
+                    )
+
+            if len(sub_weights) >= 3:
+                for a, b in zip(sub_weights, sub_weights[1:]):
+                    if a < b:
+                        errors.append(
+                            f"sections[{si}].criteria[{ci}].sub_criteria weights should be non-increasing by JD order"
+                        )
+                        break
+
+        if len(weights_seen) >= 3:
+            for a, b in zip(weights_seen, weights_seen[1:]):
+                if a < b:
+                    errors.append(f"sections[{si}].criteria weights should be non-increasing by priority/JD order")
+                    break
+
+    # --- Structural validation via pipeline schema (job_data not required) ---
+    try:
+        PipelineRubricOutput.model_validate(payload)
+    except Exception as e:
+        errors.append(f"schema validation failed: {e}")
+
+    return (len(errors) == 0), errors

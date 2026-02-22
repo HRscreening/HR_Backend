@@ -1,4 +1,5 @@
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
+from datetime import datetime
 from uuid import UUID
 from pydantic import BaseModel
 from enum import Enum
@@ -39,6 +40,26 @@ class JobCriteria(BaseModel):
     version: int
     threshold_score: Optional[int]
     criteria: Dict[str, Any]
+
+
+# -------- Rubric Versions (for audit + switching) --------
+class RubricVersionInfo(BaseModel):
+    rubric_id: UUID
+    version: int
+    is_active: bool
+    source: Optional[str] = None
+    created_at: Optional[datetime] = None
+    created_by_id: Optional[UUID] = None
+    created_via: Optional[str] = None
+    change_reason: Optional[str] = None
+    change_type: Optional[str] = None
+    parent_rubric_id: Optional[UUID] = None
+
+
+class RubricVersionsResponse(BaseModel):
+    job_id: UUID
+    active_rubric_id: Optional[UUID] = None
+    versions: List[RubricVersionInfo]
 
 
 # -------- Settings --------

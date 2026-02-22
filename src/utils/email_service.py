@@ -1,7 +1,22 @@
+import asyncio
 import smtplib
 from email.mime.text import MIMEText
 from configs.env_config import SENDER_EMAIL, SENDER_MAIL_PASSWORD
-from src.services.errors.base import DomainError 
+from src.services.errors.base import DomainError
+
+
+def _send_otp_sync(sender_email: str, sender_password: str, smtp_host: str, smtp_port: int, receiver_email: str, otp: str) -> None:
+    """Blocking SMTP send (run in thread)."""
+    body = f"Your OTP for signup is {otp}. It is valid for 5 minutes."
+    msg = MIMEText(body)
+    msg["Subject"] = "Your OTP Code"
+    msg["From"] = sender_email
+    msg["To"] = receiver_email
+    with smtplib.SMTP(smtp_host, smtp_port) as server:
+        server.starttls()
+        server.login(sender_email, sender_password)
+        server.sendmail(sender_email, receiver_email, msg.as_string())
+
 
 class EmailService:
     def __init__(
@@ -16,26 +31,21 @@ class EmailService:
         self.smtp_host = smtp_host
         self.smtp_port = smtp_port
 
-    def send_otp_email(self, receiver_email: str, otp: int) -> None:
-        subject = "Your OTP Code"
-        body = f"Your OTP for signup is {otp}. It is valid for 5 minutes."
-
-        msg = MIMEText(body)
-        msg["Subject"] = subject
-        msg["From"] = self.sender_email
-        msg["To"] = receiver_email
-
+    async def send_otp_email(self, receiver_email: str, otp: str | int) -> None:
+        """Send OTP email asynchronously (blocking SMTP runs in thread pool)."""
+        otp_str = str(otp)
         try:
-            with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
-                server.starttls()
-                server.login(self.sender_email, self.sender_password)
-                server.sendmail(
-                    self.sender_email,
-                    receiver_email,
-                    msg.as_string(),
-                )
+            await asyncio.to_thread(
+                _send_otp_sync,
+                self.sender_email,
+                self.sender_password,
+                self.smtp_host,
+                self.smtp_port,
+                receiver_email,
+                otp_str,
+            )
         except Exception as e:
-            raise DomainError("Failed to send OTP email",500) from e
+            raise DomainError("Failed to send OTP email", 500) from e
 
 
 emailService = EmailService()
