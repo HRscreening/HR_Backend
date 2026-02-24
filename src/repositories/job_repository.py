@@ -15,7 +15,7 @@ class JobRepository:
         self.logger = get_logger("JOB_REPOSITORY")
 
     # ─── Job CRUD ────────────────────────────────────────────────────
-
+    
     async def create_job(self, job_data, user_id: str) -> Job:
         """Create a new Job record. Does NOT commit (caller manages transaction)."""
         job = Job(
@@ -159,6 +159,14 @@ class JobRepository:
             select(Rubric).where(Rubric.job_id == job_id).order_by(Rubric.version.desc())
         )
         return result.scalars().all()
+    
+          
+    async def get_all_rubrics_versions(self,job_id:str) -> List[Rubric]:
+        result = await self.db.execute(
+            select(Rubric.version,Rubric.id,Rubric.created_at).where(Rubric.job_id == job_id)
+        )
+        return result.mappings().all()
+    
 
     async def get_rubric_by_id(self, rubric_id: str) -> Optional[Rubric]:
         result = await self.db.execute(select(Rubric).where(Rubric.id == rubric_id))
@@ -190,46 +198,46 @@ class JobRepository:
 
     # ─── Application Queries ─────────────────────────────────────────
 
-    async def get_applications_by_group(self, job_id: str):
-        result = await self.db.execute(
-            select(Application.status, func.count(Application.id))
-            .where(Application.job_id == job_id)
-            .group_by(Application.status)
-        )
-        return result.all()
+    # async def get_applications_by_group(self, job_id: str):
+    #     result = await self.db.execute(
+    #         select(Application.status, func.count(Application.id))
+    #         .where(Application.job_id == job_id)
+    #         .group_by(Application.status)
+    #     )
+    #     return result.all()
 
-    async def get_total_applications_count(self, job_id: str) -> int:
-        result = await self.db.execute(
-            select(func.count(Application.id))
-            .where(Application.job_id == job_id)
-        )
-        return result.scalar_one()
+    # async def get_total_applications_count(self, job_id: str) -> int:
+    #     result = await self.db.execute(
+    #         select(func.count(Application.id))
+    #         .where(Application.job_id == job_id)
+    #     )
+    #     return result.scalar_one()
 
-    async def get_applications_of_job(
-        self,
-        job_id: str,
-        current_rubric_id: str,
-        page_size: int = 15,
-        offset: int = 0,
-    ):
-        stmt = (
-            select(Application, Score)
-            .join(
-                Score,
-                (Score.application_id == Application.id)
-                & (Score.rubric_id == current_rubric_id),
-            )
-            .where(Application.job_id == job_id)
-            .options(
-                selectinload(Application.candidate),
-                selectinload(Application.resume),
-            )
-            .order_by(Score.overall_score.desc())
-            .limit(page_size)
-            .offset(offset)
-        )
-        result = await self.db.execute(stmt)
-        return result.all()
+    # async def get_applications_of_job(
+    #     self,
+    #     job_id: str,
+    #     current_rubric_id: str,
+    #     page_size: int = 15,
+    #     offset: int = 0,
+    # ):
+    #     stmt = (
+    #         select(Application, Score)
+    #         .join(
+    #             Score,
+    #             (Score.application_id == Application.id)
+    #             & (Score.rubric_id == current_rubric_id),
+    #         )
+    #         .where(Application.job_id == job_id)
+    #         .options(
+    #             selectinload(Application.candidate),
+    #             selectinload(Application.resume),
+    #         )
+    #         .order_by(Score.overall_score.desc())
+    #         .limit(page_size)
+    #         .offset(offset)
+    #     )
+    #     result = await self.db.execute(stmt)
+    #     return result.all()
 
     # ─── Transaction Helpers ─────────────────────────────────────────
 

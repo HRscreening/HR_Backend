@@ -30,10 +30,11 @@ from fastapi import (
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
+from typing import Optional, List
 
 from configs.postgress_db import get_db
 from src.schemas.rubric_schemas import SetRubricRequest, UpdateRubricRequest, GenerateRubricPreviewRequest
-from src.schemas.job_schemas import JobOverviewResponse, RubricVersionsResponse
+from src.schemas.job_schemas import JobOverviewResponse,JobOverviewResponseNew, RubricVersionsResponse
 from src.services.resume_services import score_resumes_service
 from src.dependency import get_job_service, JobService
 from src.utils.file_manager import fileManager
@@ -290,7 +291,7 @@ async def get_jobs(
 
 @router.get(
     "/get-job/{job_id}",
-    response_model=JobOverviewResponse,
+    response_model=JobOverviewResponseNew,
     status_code=status.HTTP_200_OK,
 )
 async def get_job_overview(
@@ -306,13 +307,13 @@ async def get_job_overview(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Organization context missing org_id",
             )
-        return await job_service.get_job_overview(
+        return await job_service.get_job_overview2(
             job_id=str(job_id),
             organization_id=ctx.org_id,
         )
 
     if ctx.type == "personal":
-        return await job_service.get_job_overview(
+        return await job_service.get_job_overview2(
             job_id=str(job_id),
             organization_id=None,
         )
@@ -379,6 +380,59 @@ async def process_applications(
     return {"status": "success", "message": msg}
 
 
+# ! uses keshav's version for scoring resumes
+@router.post("/process-applications-zip-file/{job_id}",status_code=status.HTTP_202_ACCEPTED)
+async def process_applications(
+    request: Request,
+    job_id: UUID,
+    background_tasks: BackgroundTasks,
+    raw_files: List[UploadFile] = File(...),
+    job_service: JobService = Depends(get_job_service)
+):
+
+    
+        user_id = request.state.user.id
+        ctx_type = request.state.context.type
+        
+        print
+        
+        # files = [zip_file]  # Wrap the single file in a list to reuse the validation function
+        # extracted_files = await fileManager.validate_and_extract(files)
+        
+        if ctx_type == "org":
+            msg = await job_service.process_applications_with_zip(
+                job_id=str(job_id),
+                user_id=str(user_id),
+                raw_files=raw_files,
+                organization_id=request.state.context.org_id,
+            )
+            
+        elif ctx_type == "personal":
+            msg = await job_service.process_applications_with_zip(
+                job_id=str(job_id),
+                user_id=str(user_id),
+                raw_files=raw_files,
+                organization_id=None,
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid context type",
+            )
+        
+        if not msg:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to start application processing",
+            )
+        
+        return {
+            "status": "success",
+            "message": msg,
+        }
+        
+
+
 # ─── 8. Process Resumes (internal/testing) ───────────────────────────
 
 @router.post(
@@ -400,14 +454,17 @@ async def trigger_scoring(
 # ─── 9. Get Applications ─────────────────────────────────────────────
 
 @router.get("/get-applications/{job_id}", status_code=status.HTTP_200_OK)
-async def get_applications(
+async def get_application(
     job_id: UUID,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    job_service: JobService = Depends(get_job_service),
+    job_service: JobService = Depends(get_job_service)
 ):
-    return await job_service.get_applications(
+    applications = await job_service.get_applications(
         job_id=str(job_id),
         page=page,
         page_size=page_size,
     )
+
+    return applications
+

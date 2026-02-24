@@ -81,6 +81,20 @@ class ApplicationRepository:
         rows = result.all()
         return rows
     
+    async def get_avg_match_score(self, job_id: str) -> Optional[float]:
+        result = await self.db.execute(
+            select(func.avg(Score.overall_score)).join(Application, Application.id == Score.application_id).where(Application.job_id == job_id)
+        )
+        avg_score = result.scalar_one_or_none()
+        return avg_score
+    
+    async def get_application_by_application_ids(self,application_ids: list[int]) -> List[Application]:
+        result = await self.db.execute(
+            select(Application).where(Application.id.in_(application_ids))
+        )
+        return result.scalars().all()
+    
+    
     async def commit(self):
         await self.db.commit()
 

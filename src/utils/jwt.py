@@ -1,4 +1,6 @@
 import jwt
+from fastapi import HTTPException
+from bson import ObjectId
 from datetime import datetime, timedelta
 from configs.env_config import SECRET_KEY, ALGORITHM, EXPIRATION_MINUTES
 from src.services.errors.base import DomainError
@@ -38,22 +40,22 @@ class JWTService:
 
     
     async def verify_token(self,token: str):
-
-        if not token:
-            raise DomainError("Missing or invalid token",401)
+        pass
+        # if not token:
+        #     raise DomainError("Missing or invalid token",401)
         
-        payload = self.decode_jwt(token)
+        # payload = self.decode_jwt(token)
 
-        if not payload or "user_id" not in payload:
-            raise 
+        # if not payload or "user_id" not in payload:
+        #     raise 
         
         
 
-        user = await db["users"].find_one({"_id": ObjectId(payload["user_id"])})
+        # user = await db["users"].find_one({"_id": ObjectId(payload["user_id"])})
 
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+        # if not user:
+        #     raise HTTPException(status_code=404, detail="User not found")
 
-        # print(f"Authenticated user: {user}")
+        # # print(f"Authenticated user: {user}")
         
-        return user
+        # return user

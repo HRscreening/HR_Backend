@@ -3,6 +3,10 @@ from fastapi import FastAPI,Depends
 from src.routes.auth_routes import router as auth_router
 from src.routes.user_routes import router as user_router
 from src.routes.job_routes import router as job_router
+from src.routes.batch_routes import router as batch_router
+from src.routes.application_routes import router as application_router
+from src.routes.candidate_routes import router as candidate_router
+from src.routes.org_routes import router as org_router
 from fastapi.middleware.cors import CORSMiddleware
 from src.middlewares.verify_user import auth_required 
 
@@ -43,4 +47,8 @@ async def root():
 app.include_router(auth_router)
 app.include_router(user_router,dependencies=[Depends(auth_required)])
 app.include_router(job_router,dependencies=[Depends(auth_required)])
+app.include_router(batch_router,dependencies=[Depends(auth_required)])
+app.include_router(application_router,dependencies=[Depends(auth_required)])
+app.include_router(candidate_router,dependencies=[Depends(auth_required)])
+app.include_router(org_router,dependencies=[Depends(auth_required)])
 
