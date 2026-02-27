@@ -2,8 +2,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from arq.connections import ArqRedis
 
 from configs.postgress_db import async_session_maker
-from workers.connection import get_redis_pool
-from workers.new_producer import ARQProducer
+from async_workers.connection import get_redis_pool
+from async_workers.producer import ARQProducer
 
 # Repositories
 from src.repositories.job_repository import JobRepository

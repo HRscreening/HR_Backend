@@ -17,13 +17,12 @@ class ApplicationRepository:
     def __init__(self,db: AsyncSession):
         self.db = db
     
-    async def create_application(self, job_id: str, candidate_id: int, resume_id: int) -> Application:
+    async def create_application(self, job_id: str, candidate_id: int = None, resume_id: int = None) -> Application:
         application = Application(
             job_id=job_id,
             candidate_id=candidate_id,
-            resume_id=resume_id,
+            current_resume_id=resume_id,
             status=ApplicationStatus.APPLIED,
-            applied_at=datetime.now(timezone.utc)
         )
         self.db.add(application)
         await self.db.flush() 
@@ -38,7 +37,7 @@ class ApplicationRepository:
     
     async def get_applications_by_candidate(self, candidate_id: int) -> List[Application]:
         result = await self.db.execute(
-            select(Application).where(Application.candidate_id == candidate_id).order_by(Application.applied_at.desc())
+            select(Application).where(Application.candidate_id == candidate_id).order_by(Application.created_at.desc())
         )
         return result.scalars().all()
         

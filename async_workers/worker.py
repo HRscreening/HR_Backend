@@ -2,12 +2,12 @@
 
 from arq.connections import RedisSettings
 
-from workers.jobs.candidate_extracter import extract_candidate_worker
-from workers.jobs.resume_parser import parse_resume_worker 
-from workers.jobs.resume_scorer import score_resumes_text_batch, score_resumes_url_batch
-from workers.dependency import on_startup,on_shutdown
+from async_workers.jobs.candidate_extracter import extract_candidate_worker
+from async_workers.jobs.resume_parser import parse_resume_worker 
+from async_workers.jobs.resume_scorer import score_resumes_text_batch, score_resumes_url_batch
+from async_workers.dependency import on_startup, on_shutdown
 from configs.env_config import REDIS_HOST, REDIS_PORT, REDIS_PASSWORD
-from workers.connection import redis_settings
+from async_workers.connection import redis_settings
 from arq import func
 
 

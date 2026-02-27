@@ -72,3 +72,26 @@ class DocumentProcessingStatus(enum.Enum):
     PARSING_IN_PROGRESS = "parsing_in_progress"
     PARSED = "parsed"
     ERROR = "error"
+    
+class InterviewType(enum.Enum):
+    IN_PERSON = "In Person"
+    PHONE = "Phone"
+    VIDEO_CALL = "Video Call"
+    
+class InterviewStatus(enum.Enum):
+    COLLECTING_AVAILABILITY = "Collecting Availability"
+    READY_TO_BOOK = "Ready to Book"
+    SCHEDULED = "Scheduled"
+    COMPLETED = "Completed"
+    CANCELED = "Canceled"
+    IN_PROGRESS = "In Progress"
+    AWAITING_FEEDBACK = "Awaiting Feedback"
+    FEEDBACK_COLLECTED = "Feedback Collected"
+    
+    
+    
+class PanelistResponseStatus(enum.Enum):
+    SUBMITTED = "Submitted"
+    EXPIRED = "Expired"
+    PENDING = "Pending"
+    

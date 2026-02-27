@@ -30,7 +30,7 @@ from src.repositories.job_repository import JobRepository
 from src.repositories.batch_repositoy import BatchRepository
 from src.repositories.application_repository import ApplicationRepository
 from src.repositories.resume_respositoy import ResumeRepository
-from async_workers.new_producer import ARQProducer
+from async_workers.producer import ARQProducer
 from src.repositories.org_repository import OrganizationRepository
 from src.utils.extract_pdf import extract_text_from_pdf
 from src.utils.file_manager import FileManagerService, fileManager
@@ -828,7 +828,7 @@ class JobService:
             #     )
 
             
-            batch_name = self.generate_batch_name(job_id=job_id)
+            batch_name = self._generate_batch_name(job_id=job_id)
             
             
             # 4. Stage files to storage
@@ -841,13 +841,15 @@ class JobService:
             # 5. Create processing job
             batch = await self.batch_repository.create_batch(
                 job_id=job_id,
-                user_id=user_id,
+                uploaded_by_id=user_id,
                 source_file_url=json.dumps(saved_paths), #TODO: change this to array in DB
                 batch_name=batch_name,
                 total_files=len(saved_paths)
             )
 
-            job.active_processing_queue_id = batch.id
+            # This field has been removed from DB
+            # job.active_processing_queue_id = batch.id
+            
             await self.db.commit()
             await self.db.refresh(job)
 
@@ -894,6 +896,8 @@ class JobService:
     
         total = await self.application_repository.get_total_applications_count(job_id=job_id)
         active_rubric = await self.job_repository.get_active_rubric(job_id=job_id)
+        
+        self.logger.info(f"Fetching applications for job {job_id} with active rubric {active_rubric.id if active_rubric else 'None'} (total applications: {total})")
         
         if not active_rubric:
             raise RubricNotFound( message="Active rubric not found for the job", status_code=404 )

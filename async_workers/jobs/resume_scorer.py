@@ -2,8 +2,8 @@ import os
 from logging import Logger
 from arq import Retry
 from arq.connections import ArqRedis
-from workers.jobs.utils import get_batch_payload
-from workers.context_manager import job_context
+from async_workers.jobs.utils import get_batch_payload
+from async_workers.context_manager import job_context
 from src.services.resume_services import ResumeService_ForWorker
 
 

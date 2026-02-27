@@ -75,14 +75,12 @@ async def flag_application(application_id: UUID, request: Request, body:FlagAppl
     if ctx_type == "org":
         await application_service.flag_application(
             application_id=application_id,
-            flag_reason=body.flag_reason,
-            org_id=request.state.context.org_id,
+            flag_reason=body.flag_reason
         )
     elif ctx_type == "personal":
         await application_service.flag_application(
             application_id=application_id,
             flag_reason=body.flag_reason,
-            org_id=None,
         )
     else:
         raise HTTPException(

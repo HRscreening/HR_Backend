@@ -16,7 +16,6 @@ class Organization(Base):
     created_by = Column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
-        unique=True,        #  esnuring only one organization per user
         nullable=False
     )
     

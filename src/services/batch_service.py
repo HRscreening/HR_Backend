@@ -10,7 +10,7 @@ from typing import Optional,List
 from src.repositories.batch_repositoy import BatchRepository 
 from src.repositories.resume_respositoy import ResumeRepository
 from src.models.enums import BulkUploadStatus,ResumeStatus
-from workers.new_producer import ARQProducer
+from async_workers.producer import ARQProducer
 import asyncio
 
 

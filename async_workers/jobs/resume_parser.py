@@ -2,12 +2,12 @@ import os
 from logging import Logger
 from arq import Retry
 from arq.connections import ArqRedis
-from workers.context_manager import job_context
+from async_workers.context_manager import job_context
 
 from src.services.resume_services import ResumeService_ForWorker
 from src.services.batch_service import BatchService_ForWorker
 
-from workers.jobs.utils import increment_and_check_batch, release_finalize_lock
+from async_workers.jobs.utils import increment_and_check_batch, release_finalize_lock
 
 
 async def parse_resume_worker(ctx, payload: dict, **kwargs):

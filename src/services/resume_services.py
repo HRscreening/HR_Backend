@@ -498,7 +498,7 @@ from src.repositories.batch_repositoy import BatchRepository
 from src.repositories.job_repository import JobRepository
 from src.repositories.document_repository import DocumentRepository
 from src.utils.manage_supabase_buckets import supbase_file_manager,SupabaseFileHandler
-from workers.new_producer import ARQProducer 
+from async_workers.producer import ARQProducer 
 from src.repositories.score_repository import ScoreRepository
 from datetime import datetime
 from typing import Optional,List
@@ -634,7 +634,7 @@ class ResumeService_ForWorker(BaseResumeService):
                 file_path=str(uploaded_file_url),
                 file_url=f"{SUPABASE_PUBLIC_URL}/{uploaded_file_url}",
                 extracted_text=parsed_text,
-                parsing_status=DocumentProcessingStatus.PARSED,
+                parsing_status=DocumentProcessingStatus.PARSED.value,
             ))
             
             
@@ -1004,7 +1004,6 @@ class ResumeService_ForWorker(BaseResumeService):
 
 
 
-
     def _detect_missing_results(self, score_results, resumes):
         """Detect resumes that were expected to be scored but did not return any results, which can indicate a failure in the scoring process for those resumes. This is a safeguard to ensure we account for all resumes in the batch."""
 
@@ -1032,7 +1031,6 @@ class ResumeService_ForWorker(BaseResumeService):
             batch_id=batch_id,
             increased_failed_count_by=len(resume_ids),
         )
-
 
 
     async def _retry_scoring_failures(

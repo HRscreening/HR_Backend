@@ -99,16 +99,16 @@ class CandidateService(BaseCandidateService):
             if candidate_info.phone is not None:
                 candidate.phone = candidate_info.phone
 
-            await self.candidate_repository.commit()
+            await self.db.commit()
 
             return candidate
 
         except DomainError:
-            await self.candidate_repository.rollback()
+            await self.db.rollback()
             raise
 
         except Exception as e:
-            await self.candidate_repository.rollback()
+            await self.db.rollback()
             self.logger.error(f"Failed to edit candidate info: {str(e)}")
             raise DomainError("Failed to edit candidate info", 500)
 

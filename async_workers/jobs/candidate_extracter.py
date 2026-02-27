@@ -3,7 +3,7 @@ from arq import Retry
 from arq.connections import ArqRedis
 from src.schemas.user_schemas import CandidateInfoSchema
 from src.services.candidate_service import CandidateService_ForWorker
-from workers.context_manager import job_context
+from async_workers.context_manager import job_context
 
 
 async def extract_candidate_worker(ctx, payload: dict, **kwargs):

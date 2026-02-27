@@ -5,11 +5,14 @@ from src.repositories.application_repository import ApplicationRepository
 from src.models.enums import ApplicationStatus
 from datetime import datetime, timezone
 from src.schemas.candidate_schemas import CandidateCreateSchema
+from src.repositories.candidiate_repository import CandidateRepository
 
 class ApplicationService:
-    def __init__(self, application_repository:ApplicationRepository, db: AsyncSession):
+    def __init__(self, application_repository:ApplicationRepository,candidate_repository:CandidateRepository, db: AsyncSession):
         self.db = db
         self.application_repository = application_repository
+        self.candidate_repository = candidate_repository
+
         self.logger = get_logger("APPLICATION_SERVICE")       
     
     async def get_applications_of_job(

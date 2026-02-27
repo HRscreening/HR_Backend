@@ -10,7 +10,7 @@ from src.repositories.batch_repositoy import BatchRepository
 from src.repositories.application_repository import ApplicationRepository
 from src.repositories.candidiate_repository import CandidateRepository 
 from src.repositories.resume_respositoy import ResumeRepository
-from workers.new_producer import ARQProducer
+from async_workers.producer import ARQProducer
 from async_workers.connection import get_redis_pool
 
 

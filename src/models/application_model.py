@@ -35,9 +35,9 @@ class Application(Base):
     denormalized_rank = Column(Integer, nullable=True)
     offer_letter_url = Column(String, nullable=True) 
     
-    current_resume_id = Column(UUID(as_uuid=True), ForeignKey("resumes.id", ondelete="SET NULL"), nullable=True)  # The resume used for the current evaluation round
+    current_resume_id = Column(UUID(as_uuid=True), ForeignKey("resumes.id", ondelete="SET NULL"), nullable=True, index=True)  # The resume used for the current evaluation round
     
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, index=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), nullable=False, server_default=func.now())
     ai_analysis = Column(JSONB, nullable=True)  # The AI's holistic assessment of this application — a summary/evaluation beyond just the score
@@ -60,5 +60,12 @@ class Application(Base):
         "Score",
         back_populates="application",
         cascade="all, delete-orphan"
+    )
+    
+    interviews = relationship(
+        "Interview",
+        back_populates="application",
+         cascade="all, delete-orphan",
+        order_by="Interview.round_number",
     )
 

@@ -175,7 +175,7 @@ class JobOverviewInfo(BaseModel):
     status: str  # or JobStatus if Enum
     description: str
     created_at: datetime
-    salary: Optional[float]
+    salary: Optional[str]
     location: Optional[str]
     target_headcount: Optional[int]
     current_batch_id: Optional[UUID]

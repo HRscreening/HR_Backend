@@ -7,6 +7,8 @@ from sqlalchemy import (
     ForeignKey,
     String,
     Numeric,
+    Index,
+    text,
 )
 import uuid
 from sqlalchemy.dialects.postgresql import JSONB,UUID
@@ -17,6 +19,11 @@ from .enums import RubricSource
 
 class Rubric(Base):
     __tablename__ = "rubrics"
+    __table_args__ = (
+        Index('rubrics_job_id_created_at_idx', 'job_id', text('created_at DESC')),
+        Index('rubrics_job_id_version_uq', 'job_id', 'version', unique=True),
+        Index('rubrics_one_active_per_job_uq', 'job_id', unique=True, postgresql_where=text('is_active IS TRUE')),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4)
 

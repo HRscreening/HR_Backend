@@ -31,16 +31,18 @@ class BulkUploadBatches(Base):
     job_id = Column(
         UUID(as_uuid=True),
         ForeignKey("jobs.id",ondelete="CASCADE"),
-        nullable=False
+        nullable=False,
+        index=True,
     )
     
-    uploaded_by_id = Column(
+    uploaded_by = Column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="RESTRICT"),
-        nullable=False
+        nullable=False,
+        index=True,
     )  
     
-    batch_name = Column(VARCHAR(100), nullable=False) # Name/label for this bulk upload batch
+    batch_name = Column(VARCHAR(255), nullable=False) # Name/label for this bulk upload batch
 
 
     source_file_url = Column(
@@ -52,22 +54,27 @@ class BulkUploadBatches(Base):
         BulkUploadStatus,
         name="bulk_upload_status_enum",
         native_enum=True
-    ),nullable=False,default=BulkUploadStatus.PENDING)
+    ),nullable=False,default=BulkUploadStatus.PENDING,index=True)
     
     total_files = Column(Integer, nullable=False, default=0)
-    processed_count = Column(Integer, nullable=False, default=0)
+    processed_count = Column(Integer, nullable=True, default=0)
     success_count = Column(Integer, nullable=False, default=0)
     failed_count = Column(Integer, nullable=False, default=0)
     processing_results = Column(JSONB, nullable=True)  # Per-file results array — what happened to each individual resume in the batch.
     error_log = Column(JSONB, nullable=True)  # Detailed errors for any files that failed. For debugging.
     batch_metadata = Column("metadata",JSONB, nullable=True)  # Any additional info about the batch upload
     
+    scoring_total = Column(Integer, nullable=False,default=0)  # Total score for the batch if applicable (e.g., average candidate score from resume parsing)
+    scoring_completed = Column(Integer, nullable=False,default=0 )  # Whether any scoring operations for this batch have completed yet.
+    scoring_failed = Column(Integer, nullable=False,default=0 )  # Whether any scoring operations for this batch have failed.
+    scoring_status = Column(VARCHAR(100), nullable=True)  # e.g., "Not Started", "In Progress", "Completed", "Failed"
+    
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False
     )
-
+    
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),

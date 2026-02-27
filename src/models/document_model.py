@@ -6,6 +6,7 @@ from sqlalchemy import (
     func,
     Boolean,
     ForeignKey,
+    Index,
 )
 from sqlalchemy import Enum as SAEnum
 import uuid
@@ -21,6 +22,11 @@ from .enums import DocumentProcessingStatus
 
 class Document(Base):
     __tablename__ = "documents"
+    __table_args__ = (
+        Index('idx_documents_entity', 'entity_type', 'entity_id'),
+        Index('idx_documents_is_latest', 'is_latest'),
+        Index('idx_documents_parsing_status', 'parsing_status'),
+    )
 
     id = Column(
         UUID(as_uuid=True),
@@ -30,13 +36,13 @@ class Document(Base):
     
     entity_type = Column(VARCHAR(100), nullable=False)  # e.g., Which table this document is associated with
     entity_id = Column(UUID(as_uuid=True), nullable=False)  # e.g., ID of the record in that entity table
-    document_type = Column(VARCHAR(100), nullable=False)  # e.g., 'resume', 'cover_letter', 'job_description'
-    file_name = Column(VARCHAR(255), nullable=False) # Original file name as uploaded
-    file_size_bytes = Column(BIGINT, nullable=False) 
-    mime_type = Column(VARCHAR(100), nullable=False)  # e.g., 'application/pdf', 'application/msword'
-    storage_provider = Column(VARCHAR(100), nullable=False)  # e.g., 's3', 'gcs' 
+    document_type = Column(VARCHAR(50), nullable=False)  # e.g., 'resume', 'cover_letter', 'job_description'
+    file_name = Column(VARCHAR(500), nullable=False) # Original file name as uploaded
+    file_size_bytes = Column(BIGINT, nullable=True) 
+    mime_type = Column(VARCHAR(100), nullable=True)  # e.g., 'application/pdf', 'application/msword'
+    storage_provider = Column(VARCHAR(100), nullable=True)  # e.g., 's3', 'gcs' 
     file_url = Column(TEXT, nullable=False)  # URL to access the document directly
-    file_path = Column(TEXT, nullable=False)  # The internal storage path (e.g., bucket path). Distinct from the public URL.
+    file_path = Column(TEXT, nullable=True)  # The internal storage path (e.g., bucket path). Distinct from the public URL.
     extracted_text = Column(TEXT, nullable=True)  # Text extracted from the document after parsing
     # NOTE: DB schema uses VARCHAR for parsing_status (no enum type).
     # Store enum values as strings, e.g. "pending", "parsed", "error".

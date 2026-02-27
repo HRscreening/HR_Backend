@@ -30,10 +30,10 @@ class BatchRepository:
         )
         return result.scalar_one_or_none()
     
-    async def create_batch(self, job_id: str,user_id:str,source_file_url:List[str],batch_name: str, total_files: int) -> BulkUploadBatches:
+    async def create_batch(self, job_id: str,uploaded_by_id:str,source_file_url:List[str],batch_name: str, total_files: int) -> BulkUploadBatches:
         batch = BulkUploadBatches(
                 job_id=job_id,
-                uploaded_by_id=user_id,
+                uploaded_by=uploaded_by_id,
                 batch_name=batch_name,
                 source_file_url=source_file_url,
                 total_files = total_files,

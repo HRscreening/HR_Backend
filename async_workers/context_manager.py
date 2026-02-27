@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 
-from workers.new_producer import ARQProducer
+from async_workers.producer import ARQProducer
 
 from src.repositories.job_repository import JobRepository
 from src.repositories.resume_respositoy import ResumeRepository

@@ -24,7 +24,6 @@ from fastapi import (
     status,
     File,
     UploadFile,
-    BackgroundTasks,
     Query,
 )
 from fastapi.responses import Response
@@ -37,7 +36,6 @@ from src.schemas.rubric_schemas import SetRubricRequest, UpdateRubricRequest, Ge
 from src.schemas.job_schemas import JobOverviewResponse,JobOverviewResponseNew, RubricVersionsResponse
 from src.services.resume_services import score_resumes_service
 from src.dependency import get_job_service, JobService
-from src.utils.file_manager import fileManager
 
 
 router = APIRouter(prefix="/api/jobs", tags=["Job Management"])
@@ -340,44 +338,44 @@ async def get_jd_status(
 
 # ─── 7. Process Applications (resume upload) ─────────────────────────
 
-@router.post(
-    "/process-applications-zip-file/{job_id}",
-    status_code=status.HTTP_202_ACCEPTED,
-)
-async def process_applications(
-    request: Request,
-    job_id: UUID,
-    background_tasks: BackgroundTasks,
-    zip_file: UploadFile = File(...),
-    job_service: JobService = Depends(get_job_service),
-):
-    user_id = request.state.user.id
-    ctx = request.state.context
+# @router.post(
+#     "/process-applications-zip-file/{job_id}",
+#     status_code=status.HTTP_202_ACCEPTED,
+# )
+# async def process_applications(
+#     request: Request,
+#     job_id: UUID,
+#     background_tasks: BackgroundTasks,
+#     zip_file: UploadFile = File(...),
+#     job_service: JobService = Depends(get_job_service),
+# ):
+#     user_id = request.state.user.id
+#     ctx = request.state.context
 
-    files = [zip_file]
-    extracted_files = await fileManager.validate_and_extract(files)
+#     files = [zip_file]
+#     extracted_files = await fileManager.validate_and_extract(files)
 
-    if ctx.type not in ("org", "personal"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid context type",
-        )
+#     if ctx.type not in ("org", "personal"):
+#         raise HTTPException(
+#             status_code=status.HTTP_400_BAD_REQUEST,
+#             detail="Invalid context type",
+#         )
 
-    msg = await job_service.process_applications(
-        job_id=str(job_id),
-        background_tasks=background_tasks,
-        user_id=str(user_id),
-        files=extracted_files,
-        organization_id=ctx.org_id if ctx.type == "org" else None,
-    )
+#     msg = await job_service.process_applications(
+#         job_id=str(job_id),
+#         background_tasks=background_tasks,
+#         user_id=str(user_id),
+#         files=extracted_files,
+#         organization_id=ctx.org_id if ctx.type == "org" else None,
+#     )
 
-    if not msg:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to start application processing",
-        )
+#     if not msg:
+#         raise HTTPException(
+#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+#             detail="Failed to start application processing",
+#         )
 
-    return {"status": "success", "message": msg}
+#     return {"status": "success", "message": msg}
 
 
 # ! uses keshav's version for scoring resumes
@@ -385,7 +383,6 @@ async def process_applications(
 async def process_applications(
     request: Request,
     job_id: UUID,
-    background_tasks: BackgroundTasks,
     raw_files: List[UploadFile] = File(...),
     job_service: JobService = Depends(get_job_service)
 ):

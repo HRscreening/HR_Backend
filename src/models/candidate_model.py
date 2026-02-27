@@ -6,7 +6,9 @@ from sqlalchemy import (
     Boolean,
     String,
     ForeignKey,
-    UniqueConstraint
+    UniqueConstraint,
+    Index,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID,TEXT
 import uuid
@@ -15,6 +17,7 @@ from configs.postgress_db import Base
 
 class Candidate(Base):
     __tablename__ = "candidates"
+    
     
 
     id = Column(UUID(as_uuid=True), primary_key=True, index=True,default=uuid.uuid4)
