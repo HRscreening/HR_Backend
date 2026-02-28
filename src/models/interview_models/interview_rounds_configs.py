@@ -46,6 +46,13 @@ class Interview_Round_Configs(Base):
     duration_minutes = Column(Integer, nullable=False)  
     panelists = Column(JSONB, nullable=False)  # List of panelists with their details (e.g., name, email, role)
     meet_link = Column(String, nullable=True)  # Optional: link to the virtual meeting room for this round
+    
+    start_date = Column(DateTime(timezone=True), nullable=False)
+    end_date = Column(DateTime(timezone=True), nullable=False)
+    
+    slots_available = Column(Boolean, nullable=False, default=False)  # Indicates if there are still slots available for this round
+    candidate_slot_booking_link = Column(String, nullable=True)  # Optional: link to the slot booking system (e.g., Calendly) for this round
+    
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -54,4 +61,5 @@ class Interview_Round_Configs(Base):
     updated_at = Column(DateTime(timezone=True),server_default=func.now(),onupdate=func.now(),nullable=False)
     job = relationship("Job", back_populates="interview_round_configs")
     interviews = relationship("Interview", back_populates="round_config")
+    panelist_availability = relationship("Panelist_Availability",back_populates="round_config")
     

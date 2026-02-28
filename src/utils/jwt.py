@@ -1,7 +1,7 @@
 import jwt
 from fastapi import HTTPException
 from bson import ObjectId
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta,timezone
 from configs.env_config import SECRET_KEY, ALGORITHM, EXPIRATION_MINUTES
 from src.services.errors.base import DomainError
 
@@ -27,6 +27,7 @@ class JWTService:
 
     def decode_token(self, token: str) -> dict | None:
         try:
+            print(f"Secret: {self.secret_key}, Algorithm: {self.algorithm}")
             decoded = jwt.decode(
                 token,
                 self.secret_key,
@@ -34,9 +35,20 @@ class JWTService:
             )
             return decoded
         except jwt.ExpiredSignatureError:
-            return None
+            raise DomainError(
+                "Token has expired. Please log in again.",
+                status_code=401
+            )
         except jwt.InvalidTokenError:
-            return None
+            raise DomainError(
+                "Invalid token. Please log in again.",
+                status_code=401
+            )
+        except Exception as e:
+            raise DomainError(
+                f"Token decoding failed: {str(e)}",
+                status_code=401
+            )
 
     
     async def verify_token(self,token: str):
@@ -59,3 +71,28 @@ class JWTService:
         # # print(f"Authenticated user: {user}")
         
         # return user
+
+    
+    def create_panelist_availability_token(
+    self,
+        panelist_email: str,
+        interview_id: str,
+        expiration_minutes: int,
+        round_config_id: str,
+    ) -> str:
+
+        now = datetime.now(timezone.utc)
+
+        payload = {
+            "panelist_email": panelist_email,
+            "round_config_id": round_config_id,
+            "interview_id": interview_id,
+            "iat": now,
+            "exp": now + timedelta(minutes=expiration_minutes),
+        }
+
+        return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
+    
+    
+    
+jwt_service = JWTService()

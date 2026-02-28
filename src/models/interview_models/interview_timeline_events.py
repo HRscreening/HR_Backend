@@ -30,7 +30,7 @@ class Interview_TimeLine_Events(Base):
         index=True,
     )
     
-    event_type = Column(String, nullable=False,index=True)  # Email of the panelist whose availability is being tracked
+    event_type = Column(String, nullable=False,index=True)  
     actor = Column(String, nullable=True)  # Email or user ID of who triggered it 
     details = Column(JSONB, nullable=True)  # Additional details about the event (e
     

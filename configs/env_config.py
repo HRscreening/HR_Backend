@@ -54,3 +54,5 @@ REDIS_PORT = int(os.environ.get('REDIS_PORT', 6379))  # cast to int
 REDIS_USERNAME = os.environ.get('REDIS_USERNAME', None)
 REDIS_PASSWORD = os.environ.get('REDIS_PASSWORD', None)
 DEFAULT_TIMEOUT_REDIS_WORKER = int(os.environ.get("DEFAULT_TIMEOUT_REDIS_WORKER", 600))  # default timeout for redis worker in seconds
+
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")  # Update this to your actual frontend URL

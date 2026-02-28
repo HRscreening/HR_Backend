@@ -93,10 +93,11 @@ class ApplicationRepository:
         )
         return result.scalars().all()
     
-    
+    # TODO : remove this
     async def commit(self):
         await self.db.commit()
 
+    # TODO : remove this
     async def rollback(self):
         await self.db.rollback()
 

@@ -6,7 +6,11 @@ from src.routes.job_routes import router as job_router
 from src.routes.batch_routes import router as batch_router
 from src.routes.application_routes import router as application_router
 from src.routes.candidate_routes import router as candidate_router
+from src.routes.interview_routes.interview_round_config_route import router as interview_round_config_router
 from src.routes.org_routes import router as org_router
+from src.routes.interview_routes.panlist_route import unproducted_router as panelist_unprotected_router
+
+
 from fastapi.middleware.cors import CORSMiddleware
 from src.middlewares.verify_user import auth_required 
 
@@ -52,3 +56,6 @@ app.include_router(application_router,dependencies=[Depends(auth_required)])
 app.include_router(candidate_router,dependencies=[Depends(auth_required)])
 app.include_router(org_router,dependencies=[Depends(auth_required)])
 
+# Interview routes
+app.include_router(interview_round_config_router,dependencies=[Depends(auth_required)])
+app.include_router(panelist_unprotected_router)

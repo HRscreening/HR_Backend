@@ -6,3 +6,8 @@ class UpdateApplicationStatusRequest(BaseModel):
 
 class FlagApplicationRequest(BaseModel):
     flag_reason: str 
+    
+    
+class MoveApplicationRequest(BaseModel):
+    job_id: str
+    target_round: int

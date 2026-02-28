@@ -43,8 +43,8 @@ class Application(Base):
     ai_analysis = Column(JSONB, nullable=True)  # The AI's holistic assessment of this application — a summary/evaluation beyond just the score
     is_starred = Column(Boolean, default=False)  # Whether the application is marked as important by a recruiter
     is_flagged = Column(Boolean, default=False)  # Whether the application is flagged for review (e.g., potential issues)
-    flag_reason = Column(String, nullable=True)  # Reason for flagging the application, if applicable
-    tags = Column(ARRAY(String), nullable=True)  # Custom tags/labels assigned to the application for categorization
+    flag_reason = Column(TEXT, nullable=True)  # Reason for flagging the application, if applicable
+    tags = Column(ARRAY(TEXT), nullable=True)  # Custom tags/labels assigned to the application for categorization
     last_activity_at = Column(DateTime(timezone=True), nullable=True)  # Timestamp of the last activity on this application
     
     candidate = relationship("Candidate",back_populates="applications")

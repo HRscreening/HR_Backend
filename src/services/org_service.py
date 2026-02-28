@@ -38,9 +38,14 @@ class OrgnaziationService:
             if not new_org: 
                 raise DomainError("Failed to create organization.",status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
             
+            await self.db.commit()
             return new_org
             
         except DomainError as de:
             self.logger.error(f"Domain error while creating organization: {de}") 
             raise
+        except Exception as e:
+            await self.db.rollback()
+            self.logger.error(f"Failed to create organization: {str(e)}")
+            raise DomainError("Failed to create organization.", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
   

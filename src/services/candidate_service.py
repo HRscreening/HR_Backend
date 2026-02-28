@@ -115,6 +115,13 @@ class CandidateService(BaseCandidateService):
 
 
 
+
+
+
+
+
+
+
 class CandidateService_ForWorker(BaseCandidateService):
     def __init__(self,candidate_repository:CandidateRepository,application_repository:ApplicationRepository,resume_repository:ResumeRepository,db: AsyncSession):
         super().__init__(candidate_repository,application_repository,db)
@@ -191,5 +198,6 @@ class CandidateService_ForWorker(BaseCandidateService):
             self.logger.info(f"Candidate extraction successful for resume_id={resume_id}, candidate_id={new_candidate.id}")
             
         except Exception as e:
+            await self.db.rollback()
             self.logger.error(f"Candidate extraction failed for resume_id={resume_id}: {str(e)}")
             raise

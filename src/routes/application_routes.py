@@ -4,7 +4,7 @@ from uuid import UUID
 from src.dependency import get_application_service,ApplicationService
 from src.models.enums import ApplicationStatus
 from src.schemas.candidate_schemas import CandidateCreateSchema,CandidateUpdateSchema
-from src.schemas.application_schema import UpdateApplicationStatusRequest ,FlagApplicationRequest
+from src.schemas.application_schema import UpdateApplicationStatusRequest ,FlagApplicationRequest,MoveApplicationRequest
 
 router = APIRouter(prefix="/api/application", tags=["Application Management"])
 
@@ -206,4 +206,19 @@ async def delete_application(application_id: UUID, request: Request,application_
         "status": "success",
         "message": "Application deleted successfully"
     }
-    
+
+
+
+
+@router.post("/move-to-round/{application_id}",status_code=status.HTTP_200_OK)
+async def move_application_to_round(application_id: UUID, data:MoveApplicationRequest,application_service: ApplicationService = Depends(get_application_service)):
+    await application_service.move_to_round(
+        application_id=application_id,
+        round_number=data.target_round,
+        job_id=data.job_id
+    )
+
+    return {
+        "status": "success",
+        "message": f"Application moved to round {data.target_round} successfully"
+    }

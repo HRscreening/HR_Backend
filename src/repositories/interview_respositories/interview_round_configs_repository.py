@@ -1,0 +1,56 @@
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select,func
+from sqlalchemy.orm import selectinload
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.models import Interview_Round_Configs
+
+from typing import Optional,List
+from src.dtos.interviews_dtos.interview_round_config_dto import CreateInterviewRoundConfigDTO, UpdateInterviewRoundConfigDTO
+
+
+
+class InterviewRoundConfigsRepository:
+    def __init__(self,db: AsyncSession):
+        self.db = db
+    
+    async def create_interview_round_config(self, job_id: str, config_data: CreateInterviewRoundConfigDTO) -> Interview_Round_Configs:
+        interview_round_config = Interview_Round_Configs(
+            job_id=job_id,
+            round_number=config_data.round_number,
+            title=config_data.title,
+            interview_type=config_data.interview_type,
+            instructions=config_data.instructions,
+            duration_minutes=config_data.duration_minutes,
+            panelists=[panel.model_dump() for panel in config_data.panelists],
+            meet_link=config_data.meet_link,
+            start_date=config_data.start_date,
+            end_date=config_data.end_date
+        )
+        self.db.add(interview_round_config)
+        await self.db.flush() 
+        return interview_round_config
+
+    async def get_interview_round_config_by_id(self, round_config_id: str) -> Optional[Interview_Round_Configs]:
+        result = await self.db.execute(
+            select(Interview_Round_Configs).where(Interview_Round_Configs.id == round_config_id)
+        )
+        return result.scalar_one_or_none()
+
+    
+    async def get_interview_round_configs_by_job(self, job_id: str) -> List[Interview_Round_Configs]:
+        result = await self.db.execute(
+            select(Interview_Round_Configs).where(Interview_Round_Configs.job_id == job_id).order_by(Interview_Round_Configs.round_number)  
+        )
+        
+        return result.scalars().all()
+    
+    
+    async def get_interview_round_config_by_job_and_round(self, job_id: str, round_number: int) -> Optional[Interview_Round_Configs]:
+        result = await self.db.execute(
+            select(Interview_Round_Configs).where(
+                Interview_Round_Configs.job_id == job_id,
+                Interview_Round_Configs.round_number == round_number
+            )
+        )
+        return result.scalar_one_or_none()

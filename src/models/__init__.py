@@ -13,7 +13,7 @@ from src.models.document_model import Document
 from src.models.waitlist_model import Waitlist
 
 from src.models.interview_models.interviews import Interview
-from src.models.interview_models.interview_rouns_configs import Interview_Round_Configs
+from src.models.interview_models.interview_rounds_configs import Interview_Round_Configs
 from src.models.interview_models.interview_timeline_events import Interview_TimeLine_Events
 from src.models.interview_models.panelist_availability import Panelist_Availability
 from src.models.interview_models.calendly_connections import CalendlyCollection

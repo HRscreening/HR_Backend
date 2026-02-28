@@ -44,11 +44,13 @@ class Interview(Base):
         name="interview_status_enum",
         native_enum=True
     ),nullable=False,default=InterviewStatus.COLLECTING_AVAILABILITY,index=True)
+    
     scheduled_start = Column(DateTime(timezone=True), nullable=True,index=True)
     scheduled_end = Column(DateTime(timezone=True), nullable=True)
     
     booking_token = Column(TEXT, nullable=True)  # Token for interview scheduling/booking systems
     booking_token_expires_at = Column(DateTime(timezone=True), nullable=True)  # Expiration time for the booking token
+    
     cancelled_at = Column(DateTime(timezone=True), nullable=True)  # Timestamp for when the interview was cancelled, if applicable
     cancellation_reason = Column(TEXT, nullable=True)  # Reason for cancellation, if applicable
     

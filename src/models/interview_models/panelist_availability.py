@@ -20,14 +20,27 @@ from src.models.enums import PanelistResponseStatus
 
 class Panelist_Availability(Base):
     __tablename__ = "panelist_availability"
-    __table_args__ = (UniqueConstraint("interview_id", "panelist_email", name="uq_interview_panelist"),)
-
+    __table_args__ = (
+    UniqueConstraint(
+        "round_config_id",
+        "panelist_email",
+        name="uq_round_panelist"
+        ),
+    )
+    
+    
     id = Column(UUID(as_uuid=True), primary_key=True, index=True,default=uuid.uuid4)
 
-    # if same candidate  can be in multiple orgs then no need for organization_id unique constraint
     interview_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("interviews.id",),  
+        ForeignKey("interviews.id"),
+        nullable=False,
+        index=True,
+    )
+    # if same candidate  can be in multiple orgs then no need for organization_id unique constraint
+    round_config_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("interview_round_configs.id"),  
         nullable=False,
         index=True,
     )
@@ -51,4 +64,5 @@ class Panelist_Availability(Base):
         nullable=False,
     )
     updated_at = Column(DateTime(timezone=True),server_default=func.now(),onupdate=func.now(),nullable=False)
-    interview  = relationship("Interview",back_populates="panelist_availability")
+    interview = relationship("Interview", back_populates="panelist_availability")
+    round_config = relationship("Interview_Round_Configs",back_populates="panelist_availability")
