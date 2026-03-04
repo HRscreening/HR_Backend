@@ -3,15 +3,17 @@ from  configs.log_config import get_logger
 from src.services.errors.base import DomainError
 from src.repositories.interview_respositories.interview_round_configs_repository import InterviewRoundConfigsRepository
 from src.repositories.interview_respositories.interview_event_repository import InterviewEventRepository
+from src.repositories.interview_respositories.interview_slots_repository import InterviewSlotsRepository
 # from dtos.interviews_dtos.interviews_dto import 
 from src.repositories.interview_respositories.panelist_repository import PanelistRepository
 from src.repositories.interview_respositories.interview_repository import InterviewRepository
 from src.services.email_services.panel.panel_email_service import PanelEmailService,panel_email_service
+from src.services.interview_services.slot_computation_service import SlotComputationService
 from src.utils.jwt import jwt_service,JWTService
-from src.models.enums import PanelistResponseStatus
+from src.models.enums import PanelistResponseStatus, PanelMode, CalendarProvider
 from datetime import datetime, timezone, timedelta
 from src.dtos.interviews_dtos.panel_dto import AvailableSlot
-from jwt import ExpiredSignatureError, InvalidTokenError
+from src.repositories.interview_respositories.calendar_repository import CalendarRepository
 
 
 class PanelistService:
@@ -20,6 +22,8 @@ class PanelistService:
         interview_event_repository:InterviewEventRepository,
         interview_repository:InterviewRepository,
         panelist_repository:PanelistRepository,
+        slots_repository:InterviewSlotsRepository,
+        calendar_repository: CalendarRepository,
         db: AsyncSession):
         
         
@@ -28,6 +32,8 @@ class PanelistService:
         self.interview_round_config_repository = interview_round_config_repository
         self.interview_repository = interview_repository
         self.panelist_repository = panelist_repository
+        self.slots_repository = slots_repository
+        self.calendar_repository = calendar_repository
         self.panel_email_service : PanelEmailService = panel_email_service
         self.jwt_service : JWTService = jwt_service
     
@@ -75,12 +81,13 @@ class PanelistService:
                 "status": "closed",
                 "message": "The availability submission period for this interview round has ended.",
             }
-
-        if now < round_config.start_date:
-            return {
-                "status": "not_started",
-                "message": "The availability submission period has not started yet. Please check back later.",
-            }
+        
+        # ! Allowing early submissions, as it can be helpful for scheduling. HR can always resend the link if needed.
+        # if now < round_config.start_date:
+        #     return {
+        #         "status": "not_started",
+        #         "message": "The availability submission period has not started yet. Please check back later.",
+        #     }
 
         return None  # Form is open
         
@@ -129,6 +136,20 @@ class PanelistService:
 
         if status_response:
             return status_response
+        
+        
+        # TODO : Add this also later
+        # if round_config.Panel_owner:
+        # TODO : Remove or condn after making default calendar provider dynamic
+        calendar_connection = await self.calendar_repository.get_calendar_connection_by_email_and_provider(
+            provider_email=panelist_email,provider= CalendarProvider.GOOGLE
+            )
+        
+        if not calendar_connection:
+            return {
+                "status": "no_calendar",
+                "provider": CalendarProvider.GOOGLE, # should fetch from round_config.calendar_provider, but currenltly config have no such field TODO: Add
+            }
 
         # ⭐ Form is open → return details
         return {
@@ -192,15 +213,51 @@ class PanelistService:
             
             await self.db.flush()
             
-            # TODO: Notify HR
+            # Timeline: panelist submitted availability
+            await self.interview_event_repository.create_interview_event(
+                interview_id=str(interview_id),
+                event_type="PANELIST_AVAILABILITY_SUBMITTED",
+                actor=panelist_email,
+                details={
+                    "panelist_email": panelist_email,
+                    "slots_count": len(available_slots_json),
+                },
+            )
             
             
-            all_panelists = await self.panelist_repository.get_all_panelists_by_round_config_id(round_config_id)    
-            
-            
-            if all(p.response_status == PanelistResponseStatus.SUBMITTED for p in all_panelists):
-                # TODO: Enque background job to find common slots and update round config + send emails to panelists with final slots and update config with final slots and slots available
-                pass
+            # ─── Slot computation based on panel_mode ─────────────────────
+            slot_computation_service = SlotComputationService(
+                slots_repo=self.slots_repository,
+                round_config_repo=self.interview_round_config_repository,
+                interview_repo=self.interview_repository,
+                event_repo=self.interview_event_repository,
+                db=self.db,
+            )
+
+            if round_config.panel_mode == PanelMode.SEQUENTIAL:
+                # SEQUENTIAL: each panelist is independent — compute immediately
+                success = await slot_computation_service.compute_single_panelist_slots(
+                    interview_id=interview_id,
+                    round_config_id=round_config_id,
+                    panelist_email=panelist_email,
+                    available_slots_json=available_slots_json,
+                )
+                if not success:
+                    self.logger.warning(f"No computable slots from panelist {panelist_email} for round_config {round_config_id}")
+            else:
+                # PANEL: need ALL panelists before we can compute intersection
+                all_panelists = await self.panelist_repository.get_all_panelists_by_round_config_id(round_config_id)
+                if all(p.response_status == PanelistResponseStatus.SUBMITTED for p in all_panelists):
+                    success = await slot_computation_service.compute_and_store_slots(
+                        interview_id=interview_id,
+                        round_config_id=round_config_id,
+                    )
+                    if not success:
+                        self.logger.warning(f"Slot computation returned no slots for round_config {round_config_id}")
+                else:
+                    self.logger.info(
+                        f"PANEL mode: waiting for remaining panelists to submit for round_config {round_config_id}"
+                    )
             
             await self.db.commit()
             

@@ -20,12 +20,11 @@ class JobStatus(enum.Enum):
 
 
 class ApplicationStatus(enum.Enum):
-    IN_REVIEW = "in_review"
+    REJECTED = "rejected"
     APPLIED = "applied"
     SHORTLISTED = "shortlisted"
-    INTERVIEW_SCHEDULED = "interview_scheduled"
     OFFER_EXTENDED = "offer_extended"
-    REJECTED = "rejected"
+    DROP_OFF = "drop_off"
     HIRED = "hired"
 
 
@@ -95,4 +94,21 @@ class PanelistResponseStatus(enum.Enum):
     SUBMITTED = "Submitted"
     EXPIRED = "Expired"
     PENDING = "Pending"
-    
+
+
+class PanelMode(enum.Enum):
+    PANEL = "panel"            # All panelists together — intersection of slots
+    SEQUENTIAL = "sequential"  # Each panelist separately — union of slots, N separate bookings
+
+
+class FeedbackRating(enum.Enum):
+    STRONG_YES = "strong_yes"
+    YES = "yes"
+    NEUTRAL = "neutral"
+    NO = "no"
+    STRONG_NO = "strong_no"
+
+
+class CalendarProvider(enum.Enum):
+    GOOGLE = "google"
+    MICROSOFT = "microsoft"

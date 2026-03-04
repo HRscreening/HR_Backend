@@ -94,5 +94,60 @@ class JWTService:
         return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
     
     
+    def create_candidate_booking_token(
+    self,
+    interview_id: str,
+        candidate_email: str,
+        expiration_minutes: int,
+    ) -> str:
+        now = datetime.now(timezone.utc)
+        payload = {
+            "interview_id": interview_id,
+            "candidate_email": candidate_email,
+            "token_type": "candidate_booking",
+            "iat": now,
+            "exp": now + timedelta(minutes=expiration_minutes),
+        }
+        return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
+
+    def create_candidate_reschedule_token(
+        self,
+        interview_id: str,
+        candidate_email: str,
+        expiration_minutes: int,
+    ) -> str:
+        now = datetime.now(timezone.utc)
+        payload = {
+            "interview_id": interview_id,
+            "candidate_email": candidate_email,
+            "token_type": "candidate_reschedule",
+            "iat": now,
+            "exp": now + timedelta(minutes=expiration_minutes),
+        }
+        return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
+
+    def create_panelist_feedback_token(
+        self,
+        panelist_email: str,
+        interview_id: str,
+        expiration_minutes: int,
+    ) -> str:
+        now = datetime.now(timezone.utc)
+        payload = {
+            "panelist_email": panelist_email,
+            "interview_id": interview_id,
+            "token_type": "panelist_feedback",
+            "iat": now,
+            "exp": now + timedelta(minutes=expiration_minutes),
+        }
+        return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
+    
+    
+    def encode_oauth_state(self,payload: dict):
+        return jwt.encode(payload, self.secret_key,)
+
+    def decode_oauth_state(self,state: str):
+        return jwt.decode(state, self.secret_key, algorithms=self.algorithm)
+
     
 jwt_service = JWTService()

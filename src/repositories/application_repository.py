@@ -8,7 +8,7 @@ from fastapi import Depends, status,UploadFile,BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
 
-from src.models import Organization,User,Job,Rubric,Application,BulkUploadBatches,Score,Resume
+from src.models import Organization,User,Job,Rubric,Application,BulkUploadBatches,Score,Resume,Interview
 from src.models.enums import ApplicationStatus
 from pydantic import EmailStr
 from typing import Optional,List
@@ -92,6 +92,18 @@ class ApplicationRepository:
             select(Application).where(Application.id.in_(application_ids))
         )
         return result.scalars().all()
+    
+    async def get_current_interview_round_for_application(self, application_id: int) -> int:
+        result = await self.db.execute(
+            select(Interview)
+            .where(Interview.application_id == application_id)
+            .order_by(Interview.round_number.desc())
+            .limit(1)
+        )
+        interview = result.scalar_one_or_none()
+        if interview:
+            return interview.round_number
+        return 0
     
     # TODO : remove this
     async def commit(self):

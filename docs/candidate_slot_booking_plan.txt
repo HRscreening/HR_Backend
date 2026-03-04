@@ -1,0 +1,395 @@
+===================================================================================
+DESKZERO — CANDIDATE SLOT BOOKING SYSTEM: IMPLEMENTATION PLAN
+===================================================================================
+Date: March 1, 2026
+Author: DeskZero Engineering
+Status: Planned — Part 1 (Panel Availability) Complete
+===================================================================================
+
+
+-------------------------------------------------------------------
+SECTION 1: CURRENT STATE (WHAT IS ALREADY DONE)
+-------------------------------------------------------------------
+
+  ✅ panelist_availability table exists and is working
+  ✅ Panelists submit availability via the panel form
+  ✅ Each Interview is linked to an Interview_Round_Config
+  ✅ Multiple panelists can be assigned to the same round
+  ✅ interviews.booking_token column exists (ready to use)
+  ✅ interview_round_configs.slots_available column exists
+  ✅ interview_round_configs.candidate_slot_booking_link exists
+  ✅ Panelist email sending is working
+  ✅ move_to_round() flow exists in application_service.py
+  ✅ JWT utility exists in src/utils/jwt.py
+  ✅ Email service exists in src/utils/email_service.py
+
+
+-------------------------------------------------------------------
+SECTION 2: WHAT WE ARE BUILDING
+-------------------------------------------------------------------
+
+A fully custom candidate slot booking system that:
+
+  1. Computes individual bookable slots from panelist availability
+  2. Stores each slot as a separate DB row (one per panelist)
+  3. Generates a secure, expiring, application-scoped booking link
+  4. Sends the link to the candidate via email
+  5. Lets the candidate view available slots and pick one
+  6. Atomically books the slot (prevents double booking)
+  7. Assigns the panelist, updates interview status
+  8. Sends confirmation emails to both candidate and panelist
+  9. Logs every event in interview_timeline_events
+
+
+-------------------------------------------------------------------
+SECTION 3: DATA FLOW (END TO END)
+-------------------------------------------------------------------
+
+  [HR moves application to a round]
+          ↓
+  move_to_round() creates an Interview row
+  + sends panelist availability request emails
+          ↓
+  [All panelists submit availability via panel form]
+  → stored in panelist_availability table
+          ↓
+  [Background job: compute_interview_slots]
+  → reads all panelist_availability rows for the interview
+  → expands each slot window into flat rows
+  → inserts into interview_slots table
+  → sets interview.status = READY_TO_BOOK
+  → generates booking_token JWT (encodes interview_id,
+    application_id, expires in N days)
+  → sets interview.booking_token + booking_token_expires_at
+  → sends booking link email to candidate
+          ↓
+  [Candidate clicks link in email]
+  → GET /api/candidate/booking-form?token=<JWT>
+  → backend decodes token, validates expiry + status
+  → returns list of available slots grouped by date
+          ↓
+  [Candidate selects a slot]
+  → POST /api/candidate/book-slot?token=<JWT>
+    body: { slot_id: "uuid" }
+  → backend decodes token
+  → SELECT ... FOR UPDATE SKIP LOCKED on interview_slots row
+  → if already booked → 409 Conflict
+  → if free → mark slot booked, update interview:
+      status = SCHEDULED
+      scheduled_start = slot.slot_start
+      scheduled_end   = slot.slot_end
+      panelist_email  = slot.panelist_email
+  → log SLOT_BOOKED event in interview_timeline_events
+  → send confirmation email to candidate
+  → send confirmation email to panelist
+          ↓
+  [Interview is now SCHEDULED ✅]
+
+
+-------------------------------------------------------------------
+SECTION 4: NEW DATABASE TABLE — interview_slots
+-------------------------------------------------------------------
+
+  Table: interview_slots
+
+  Column                    Type          Notes
+  ------------------------- ------------- --------------------------
+  id                        UUID (PK)     auto-generated
+  interview_id              UUID (FK)     → interviews.id
+  panelist_availability_id  UUID (FK)     → panelist_availability.id
+  panelist_email            VARCHAR       denormalized for speed
+  panelist_name             VARCHAR       denormalized for emails
+  slot_start                TIMESTAMPTZ   start of the bookable slot
+  slot_end                  TIMESTAMPTZ   end of the bookable slot
+  is_booked                 BOOLEAN       default False
+  booked_at                 TIMESTAMPTZ   nullable, set on booking
+  created_at                TIMESTAMPTZ   auto
+
+  Indexes:
+    - (interview_id, is_booked) — for fast slot lookup
+    - (interview_id, slot_start) — for date-grouped display
+
+  Key design decision:
+    Each panelist × each slot window = ONE row.
+    If Panelist A and Panelist B are both free 2–3 PM,
+    that is TWO rows in this table, not one.
+    This directly enables "two candidates can book 2–3 PM"
+    because each row is independently lockable.
+
+  Example rows for one interview:
+
+  id    | panelist_email     | slot_start          | slot_end            | is_booked
+  ------|--------------------|--------------------|---------------------|----------
+  row1  | alice@company.com  | 2026-03-10 14:00   | 2026-03-10 15:00   | false
+  row2  | bob@company.com    | 2026-03-10 14:00   | 2026-03-10 15:00   | false
+  row3  | alice@company.com  | 2026-03-10 15:00   | 2026-03-10 16:00   | false
+
+  → Two candidates can book 2–3 PM (row1 and row2 are separate)
+  → One candidate books 3–4 PM with Alice (row3)
+
+
+-------------------------------------------------------------------
+SECTION 5: FILES TO CREATE
+-------------------------------------------------------------------
+
+  NEW FILES:
+  ----------
+  src/models/interview_models/interview_slots.py
+    → SQLAlchemy model for interview_slots table
+
+  src/repositories/interview_respositories/interview_slots_repository.py
+    → get_available_slots(interview_id)
+    → book_slot(slot_id, interview_id)   ← uses SELECT FOR UPDATE
+
+  src/services/interview_services/slot_computation_service.py
+    → compute_interview_slots(interview_id)
+    → expand panelist_availability JSONB → flat slot rows
+    → bulk insert into interview_slots
+    → generate booking token, update interview
+
+  src/routes/interview_routes/candidate_booking_route.py
+    → GET  /api/candidate/booking-form?token=...
+    → POST /api/candidate/book-slot?token=...
+    → Uses unprotected_router (no auth header required)
+
+  alembic/versions/<timestamp>_add_interview_slots_table.py
+    → Migration to create interview_slots table
+
+  NEW DTOs (add to existing dto files):
+  --------------------------------------
+  CandidateBookingFormResponseDTO
+    → round_title, interview_type, duration_minutes,
+      instructions, slots_by_date (grouped list)
+
+  AvailableSlotResponseDTO
+    → slot_id, slot_start, slot_end
+      (panelist identity hidden from candidate by default)
+
+  BookSlotRequestDTO
+    → slot_id (UUID)
+
+  BookSlotResponseDTO
+    → scheduled_start, scheduled_end, confirmation_message
+
+
+-------------------------------------------------------------------
+SECTION 6: FILES TO MODIFY
+-------------------------------------------------------------------
+
+  src/services/interview_services/panelist_service.py
+    → After all panelists submit:
+      check if all expected panelists have responded
+      if yes → trigger compute_interview_slots(interview_id)
+
+  src/utils/jwt.py
+    → Add: create_candidate_booking_token(interview_id,
+                                          application_id,
+                                          expiry_days)
+    → Add: decode_candidate_booking_token(token)
+             raises 401 if expired or tampered
+
+  src/services/application_service.py
+    → In move_to_round():
+      slots_available and candidate_slot_booking_link
+      are no longer set manually.
+      They are set automatically by slot_computation_service
+      once all panelists have submitted.
+      Remove or guard the manual assignment.
+
+  src/models/interview_models/interviews.py
+    → Confirm these columns exist (add if missing):
+        booking_token             VARCHAR nullable
+        booking_token_expires_at  TIMESTAMPTZ nullable
+        scheduled_start           TIMESTAMPTZ nullable
+        scheduled_end             TIMESTAMPTZ nullable
+        panelist_email            VARCHAR nullable
+        status                    ENUM (add READY_TO_BOOK,
+                                        SCHEDULED states)
+
+  src/models/enums.py
+    → Add to InterviewStatus enum:
+        READY_TO_BOOK = "ready_to_book"
+        SCHEDULED     = "scheduled"
+        (if not already present)
+
+
+-------------------------------------------------------------------
+SECTION 7: CONCURRENCY CONTROL STRATEGY
+-------------------------------------------------------------------
+
+  The critical section is book_slot().
+
+  Implementation:
+  ---------------
+  async def book_slot(slot_id, interview_id, db):
+      # Step 1: Lock the row — no other transaction can
+      #         touch this row until we commit or rollback
+      slot = await db.execute(
+          SELECT interview_slots
+          WHERE id = slot_id
+          AND interview_id = interview_id
+          FOR UPDATE SKIP LOCKED   ← key clause
+      )
+
+      # Step 2: If SKIP LOCKED returned nothing, another
+      #         transaction holds the lock → already being booked
+      if not slot:
+          raise DomainError(409, "Slot is currently being booked")
+
+      # Step 3: Check if already confirmed booked
+      if slot.is_booked:
+          raise DomainError(409, "Slot already taken")
+
+      # Step 4: Mark as booked atomically within this transaction
+      slot.is_booked = True
+      slot.booked_at = datetime.utcnow()
+      await db.commit()
+
+  Why SKIP LOCKED instead of plain FOR UPDATE:
+    FOR UPDATE would make the second request WAIT for the lock.
+    SKIP LOCKED makes the second request immediately return nothing.
+    → Better UX: candidate B gets instant "slot taken" feedback
+      instead of hanging.
+
+
+-------------------------------------------------------------------
+SECTION 8: BOOKING TOKEN DESIGN
+-------------------------------------------------------------------
+
+  Token type: JWT (signed with our SECRET_KEY)
+
+  Payload:
+  {
+    "interview_id":   "uuid",
+    "application_id": "uuid",
+    "type":           "candidate_booking",
+    "exp":            <unix timestamp, e.g. +7 days>
+  }
+
+  Properties:
+    ✅ Expiring — candidate cannot book after expiry
+    ✅ Signed   — cannot be tampered to change interview_id
+    ✅ Typed    — "candidate_booking" type prevents reuse
+                  of other JWT types (auth tokens etc.)
+    ✅ One per round — each Interview row has its own token
+    ✅ Invalidated after booking — once interview.status =
+       SCHEDULED, backend rejects further booking attempts
+       with 409 "Interview already scheduled"
+
+  Token is embedded in the email link:
+    https://deskzero.app/schedule?token=<JWT>
+
+  The frontend passes the token as a query param to our API.
+  No session, no login required for the candidate.
+
+
+-------------------------------------------------------------------
+SECTION 9: EMAIL TRIGGERS
+-------------------------------------------------------------------
+
+  Trigger 1: Booking Link to Candidate
+    When: compute_interview_slots() completes
+    To:   candidate email (via application → candidate)
+    Body: "Your interview slot selection is ready.
+           Click here to choose your preferred time:
+           [BOOKING LINK]
+           Link expires on: <date>"
+
+  Trigger 2: Booking Confirmation to Candidate
+    When: book_slot() succeeds
+    To:   candidate email
+    Body: "Your interview is confirmed.
+           Date: <scheduled_start>
+           Duration: <duration_minutes> minutes
+           We will send you a calendar invite shortly."
+
+  Trigger 3: Booking Confirmation to Panelist
+    When: book_slot() succeeds
+    To:   slot.panelist_email
+    Body: "A candidate has booked an interview with you.
+           Candidate: <candidate name>
+           Round: <round_title>
+           Date: <scheduled_start>
+           Application ID: <application_id>"
+
+
+-------------------------------------------------------------------
+SECTION 10: IMPLEMENTATION ORDER (STEP BY STEP)
+-------------------------------------------------------------------
+
+  STEP 1 — DB Model
+    Create src/models/interview_models/interview_slots.py
+    Create alembic migration
+    Run: alembic upgrade head
+    Verify table in Supabase dashboard
+
+  STEP 2 — JWT helpers
+    Add create_candidate_booking_token() to src/utils/jwt.py
+    Add decode_candidate_booking_token() to src/utils/jwt.py
+    Write unit tests for both
+
+  STEP 3 — Slot Computation Service
+    Create src/services/interview_services/slot_computation_service.py
+    Parse panelist_availability.available_slots JSONB
+    Flatten to (start, end, panelist_email, panelist_availability_id)
+    Bulk insert into interview_slots
+    Update interview status + booking_token
+
+  STEP 4 — Panelist Service Trigger
+    Modify panelist_service.py
+    After save: check if all panelists submitted
+    If yes: call compute_interview_slots()
+
+  STEP 5 — Slot Repository
+    Create interview_slots_repository.py
+    Implement get_available_slots()
+    Implement book_slot() with SELECT FOR UPDATE SKIP LOCKED
+
+  STEP 6 — Booking Service
+    Create/fill interview_booking_service.py
+    get_booking_form_details(token)
+    book_slot(token, slot_id)
+
+  STEP 7 — DTOs
+    Add CandidateBookingFormResponseDTO
+    Add AvailableSlotResponseDTO
+    Add BookSlotRequestDTO / BookSlotResponseDTO
+
+  STEP 8 — Routes
+    Create candidate_booking_route.py
+    GET  /api/candidate/booking-form
+    POST /api/candidate/book-slot
+    Register on unprotected_router
+
+  STEP 9 — Email Templates
+    Add booking link email template
+    Add booking confirmation email template (candidate)
+    Add booking confirmation email template (panelist)
+
+  STEP 10 — End to End Test
+    Simulate full flow manually:
+      submit availability → check slots created → check email
+      → hit booking-form endpoint → pick slot → check DB
+      → hit same slot again → expect 409
+      → check interview.status = SCHEDULED
+
+  STEP 11 — Concurrent Booking Test
+    Fire two simultaneous POST /book-slot for same slot_id
+    Verify exactly one succeeds and one gets 409
+
+
+-------------------------------------------------------------------
+SECTION 11: OUT OF SCOPE FOR THIS PHASE
+-------------------------------------------------------------------
+
+  ❌ Calendar invite (.ics) generation — Phase 2
+  ❌ Video conference link generation (Zoom/Meet) — Phase 2
+  ❌ Candidate rescheduling / cancellation — Phase 3
+  ❌ Panelist rescheduling — Phase 3
+  ❌ Slot reminder emails (24hr before) — Phase 3
+  ❌ Admin dashboard for viewing all scheduled interviews — Phase 3
+
+
+===================================================================================
+END OF DOCUMENT
+===================================================================================

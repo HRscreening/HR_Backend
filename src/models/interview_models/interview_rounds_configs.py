@@ -13,7 +13,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB,UUID,VARCHAR,TEXT
 
 from configs.postgress_db import Base
-from src.models.enums import InterviewType
+from src.models.enums import InterviewType, PanelMode
 
 
 
@@ -53,13 +53,23 @@ class Interview_Round_Configs(Base):
     slots_available = Column(Boolean, nullable=False, default=False)  # Indicates if there are still slots available for this round
     candidate_slot_booking_link = Column(String, nullable=True)  # Optional: link to the slot booking system (e.g., Calendly) for this round
     
+    timezone = Column(String, nullable=True, default="UTC")  # IANA timezone (e.g. "Asia/Kolkata") for display purposes; all storage is UTC
+
+    panel_mode = Column(
+        SAEnum(PanelMode, name="panel_mode_enum", native_enum=True),
+        nullable=False,
+        default=PanelMode.SEQUENTIAL,
+    )  # PANEL = intersection (all together), SEQUENTIAL = union (1-on-1 each)
+    
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
     )
     updated_at = Column(DateTime(timezone=True),server_default=func.now(),onupdate=func.now(),nullable=False)
+    
     job = relationship("Job", back_populates="interview_round_configs")
     interviews = relationship("Interview", back_populates="round_config")
     panelist_availability = relationship("Panelist_Availability",back_populates="round_config")
+    slots = relationship("Interview_Slot", back_populates="round_config", cascade="all, delete-orphan")
     

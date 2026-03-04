@@ -20,7 +20,7 @@ from src.schemas.rubric_schemas import (
     UpdateRubricRequest,
     read_rubric_criteria,
 )
-from src.schemas.job_schemas import NewJobSchema,JobOverviewResponseNew,JobOverviewInfo,DashboardInfo,CriteriaOverview,RubricVersionInfo
+from src.schemas.job_schemas import NewJobSchema,JobOverviewResponseNew,JobOverviewInfo,DashboardInfo,CriteriaOverview,RubricVersionInfo,   JobSettings,JobSettingsResposnse
 from src.services.errors.user_errors import JobNotFound, RubricNotFound
 from src.services.errors.pipeline_errors import (
     JDTooShort,
@@ -30,6 +30,7 @@ from src.repositories.job_repository import JobRepository
 from src.repositories.batch_repositoy import BatchRepository
 from src.repositories.application_repository import ApplicationRepository
 from src.repositories.resume_respositoy import ResumeRepository
+from src.repositories.interview_respositories.interview_round_configs_repository import InterviewRoundConfigsRepository
 from async_workers.producer import ARQProducer
 from src.repositories.org_repository import OrganizationRepository
 from src.utils.extract_pdf import extract_text_from_pdf
@@ -52,7 +53,7 @@ def _job_status_for_api(status) -> str:
 
 
 class JobService:        
-    def __init__(self,job_repositoy:JobRepository,batch_repository:BatchRepository,org_repository,application_repository:ApplicationRepository,resume_repository:ResumeRepository,job_producer:ARQProducer,db: AsyncSession):
+    def __init__(self,job_repositoy:JobRepository,batch_repository:BatchRepository,org_repository,application_repository:ApplicationRepository,resume_repository:ResumeRepository,interview_round_configs_repository:InterviewRoundConfigsRepository,job_producer:ARQProducer,db: AsyncSession):
         self.db = db 
         self.PUBLIC_URL = SUPABASE_PUBLIC_URL
         self.job_repository:JobRepository = job_repositoy
@@ -61,6 +62,7 @@ class JobService:
         self.batch_repository:BatchRepository = batch_repository    
         self.organization_repository:OrganizationRepository = org_repository
         self.job_producer: ARQProducer = job_producer
+        self.interview_round_config_repository : InterviewRoundConfigsRepository = interview_round_configs_repository 
         # self.job_producer: ARQProducer = job_producer
         self.file_manager:FileManagerService = fileManager
         self.logger = get_logger("JOB_SERVICE")
@@ -635,6 +637,7 @@ class JobService:
                         salary=job.salary,
                         location=job.location,
                         target_headcount=job.target_headcount,
+                        manual_rounds_count=job.manual_rounds_count,
                         current_batch_id=job.id, #! is active_processing id removed from db if yes then handle it accordingly
                     ),
                     dashboard=DashboardInfo(
@@ -663,6 +666,29 @@ class JobService:
             raise
 
 
+    async def get_job_settings(self, job_id: str) -> dict:
+        job = await self.job_repository.get_job_by_id(job_id)
+        if not job:
+            raise JobNotFound(status_code=404)
+
+
+        return JobSettingsResposnse(
+                job_settings=JobSettings(
+                title=job.title,
+                location=job.location,
+                salary=job.salary,
+                status=_job_status_for_api(job.status),
+                description=job.description,
+                target_headcount=job.target_headcount,
+                manual_rounds_count=job.manual_rounds_count,
+                
+                ),
+            voice_ai_enabled=job.voice_ai_enabled,
+            is_confidential=job.is_confidential,
+            job_metadata=job.job_metadata,
+            closing_reason=job.closing_reason,
+        )
+    
     async def get_rubric_export(self, job_id: str) -> dict:
         """
         Return the active rubric for a job as a JSON-serializable dict for download.
@@ -934,6 +960,7 @@ class JobService:
                 "created_at": app.created_at.isoformat(),
                 "updated_at": app.updated_at.isoformat(),
                 "ai_analysis": app.ai_analysis,
+                "current_round": app.current_round,
             }
 
             

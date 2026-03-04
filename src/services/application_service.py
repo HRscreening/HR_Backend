@@ -4,14 +4,16 @@ from  configs.log_config import get_logger
 from  configs.env_config import FRONTEND_URL
 from src.services.errors.base import DomainError
 from src.repositories.application_repository import ApplicationRepository
-from src.models.enums import ApplicationStatus
+from src.models.enums import ApplicationStatus, InterviewStatus
 from src.models.interview_models.interview_rounds_configs import Interview_Round_Configs
 from datetime import datetime, timezone, timedelta
 from src.schemas.candidate_schemas import CandidateCreateSchema
 from src.repositories.candidiate_repository import CandidateRepository
 from src.repositories.interview_respositories.panelist_repository import PanelistRepository
 from src.repositories.interview_respositories.interview_repository import InterviewRepository
+from src.repositories.job_repository import JobRepository
 from src.services.email_services.panel.panel_email_service import PanelEmailService,panel_email_service
+from src.services.email_services.candidate.candidate_email_service import CandidateEmailService, candidate_email_service
 from src.repositories.interview_respositories.interview_round_configs_repository import InterviewRoundConfigsRepository
 from src.repositories.interview_respositories.interview_event_repository import InterviewEventRepository
 from src.utils.jwt import JWTService,jwt_service
@@ -26,6 +28,7 @@ class ApplicationService:
         panelist_repository:PanelistRepository,
         interview_round_config_repository:InterviewRoundConfigsRepository,
         interview_event_repository:InterviewEventRepository,
+        job_repository:JobRepository,
         db: AsyncSession):
         
         
@@ -37,6 +40,8 @@ class ApplicationService:
         self.interview_round_config_repository = interview_round_config_repository
         self.interview_event_repository = interview_event_repository
         self.panel_email_service : PanelEmailService = panel_email_service
+        self.job_repository : JobRepository = job_repository
+        self.candidate_email_service : CandidateEmailService = candidate_email_service
         self.jwt_service : JWTService = jwt_service
         
         self.frontend_url = FRONTEND_URL
@@ -52,8 +57,12 @@ class ApplicationService:
         if not round_config.start_date or not round_config.end_date:
             raise DomainError(message="Start date and end date must be defined for the round config", status_code=400)
         
-        if round_config.start_date < datetime.now(timezone.utc):
-            raise DomainError(message="Round config start date must be in the future to move application to this round", status_code=400)
+        # TODO: Decide if we want to allow moving application to a round whose start date is in the past but end date is in the future,
+        # as sometimes interview rounds can be created with start date in the past by mistake but still want to use them if end date is in the future.
+        # For now, we will allow it but log a warning.
+
+        # if round_config.start_date < datetime.now(timezone.utc):
+        #     raise DomainError(message="Round config start date must be in the future to move application to this round", status_code=400)
         
         if round_config.end_date < datetime.now(timezone.utc):
             raise DomainError(message="Round config end date must be in the future to move application to this round", status_code=400)
@@ -359,8 +368,29 @@ class ApplicationService:
             round_config = await self.interview_round_config_repository.get_interview_round_config_by_job_and_round(job_id=job_id, round_number=round_number)
             
             if not round_config:
-                raise DomainError(message="There is no round config for this round,Add config first", status_code=404)
+                raise DomainError(message="There is no round config for this round,Add config first", status_code=408)
             
+            # ! not using  applicaion current_round field directly to validate if the move is valid or not, as sometimes application current_round can be out of sync with actual interview rounds created for the application, so validating based on actual interview rounds created and application current round both to make it more robust.
+            
+            total_possible_round = await self.job_repository.get_total_rounds_for_job(job_id=job_id)
+            
+            
+            if round_number > total_possible_round:
+                raise DomainError(message=f"Invalid round number, total possible rounds for this job is {total_possible_round}", status_code=400)
+            
+            current_round = await self.application_repository.get_current_interview_round_for_application(application_id=application_id)
+            
+            if current_round and round_number <= current_round:
+                raise DomainError(message="Application is already in this round or higher round, cannot move back to same or previous round", status_code=400)
+            
+            if current_round and round_number > current_round + 1:
+                    raise DomainError(message="Application can only be moved to the next round sequentially, cannot skip rounds", status_code=400)
+                
+            if application.status == ApplicationStatus.REJECTED:
+                raise DomainError(message="Cannot move application to next round as it is already rejected", status_code=400)
+            
+            if round_number == 1 and application.status != ApplicationStatus.SHORTLISTED:
+                raise DomainError(message="Application must be in shortlisted status to move to round 1", status_code=400)
             
             self._check_application_movable_to_new_round(application,round_config,round_number)
                   
@@ -370,20 +400,63 @@ class ApplicationService:
                 round_number=round_number
             ) 
             
+            # Timeline: interview created
+            await self.interview_event_repository.create_interview_event(
+                interview_id=str(new_interview.id),
+                event_type="INTERVIEW_CREATED",
+                actor="hr",
+                details={"round_number": round_number, "round_title": round_config.title},
+            )
             
             
-            if round_config.slots_available and round_config.candidate_slot_booking_link:
-                # send current availability email to candidate with booking link
-                await self.interview_event_repository.create_interview_event(
-                    interview_id=new_interview.id,
-                    event_type="SLOT_BOOKING_LINK_SENT",
-                    
+            
+            if round_config.slots_available:
+                # Slots already computed — send booking link directly to candidate
+                await self.db.refresh(application, ["candidate"])
+                candidate = application.candidate
+                if not candidate or not candidate.email:
+                    raise DomainError("Candidate email not found for this application", status_code=400)
+
+                remaining_seconds = (round_config.end_date - datetime.now(timezone.utc)).total_seconds()
+                token_expiry_min = max(60, int(remaining_seconds // 60))
+
+                booking_token = self.jwt_service.create_candidate_booking_token(
+                    interview_id=str(new_interview.id),
+                    candidate_email=candidate.email,
+                    expiration_minutes=token_expiry_min,
                 )
-                self.logger.info("Round Available slots: Sending slot booking link to candidate for interview_id={new_interview.id}")
-                pass
+                new_interview.booking_token = booking_token
+                new_interview.booking_token_expires_at = datetime.now(timezone.utc) + timedelta(minutes=token_expiry_min)
+                new_interview.status = InterviewStatus.READY_TO_BOOK
+
+                await self.interview_event_repository.create_interview_event(
+                    interview_id=str(new_interview.id),
+                    event_type="SLOT_BOOKING_LINK_SENT",
+                    actor="system",
+                    details={"candidate_email": candidate.email},
+                )
+
+                await self.db.commit()
+
+                # Send email (best-effort, after commit)
+                booking_link = f"{self.frontend_url}/interview/book?token={booking_token}"
+                try:
+                    await self.candidate_email_service.send_booking_link_email(
+                        candidate_email=candidate.email,
+                        candidate_name=candidate.full_name or candidate.email,
+                        interview_round_title=round_config.title,
+                        booking_link=booking_link,
+                    )
+                except Exception as e:
+                    self.logger.error(f"Failed to send booking link email: {e}")
+
+                self.logger.info(f"Slots available: Sent booking link to candidate for interview_id={new_interview.id}")
             
+            # TODO: Don't send mail again to those panelist whose status is still pending for this round_config, as they would have already received mail when application was moved to this round before.
+            # Only send mail to new panelist added or those whose status is expired.
             
-            else:   
+            else: 
+                
                 # Ask Panelist for new slots 
                 pannelist_data = []
                 remaining_seconds = (round_config.end_date - datetime.now(timezone.utc)).total_seconds()
@@ -423,6 +496,21 @@ class ApplicationService:
                 if not panelists:
                     raise DomainError(message="Failed to add panelists for this interview round,Please check panelist data and try again", status_code=500)
 
+                # Timeline: availability requested from panelists
+                await self.interview_event_repository.create_interview_event(
+                    interview_id=str(new_interview.id),
+                    event_type="PANELIST_AVAILABILITY_REQUESTED",
+                    actor="system",
+                    details={
+                        "panelist_count": len(panelists),
+                        "panelist_emails": [p.panelist_email for p in panelists],
+                    },
+                )
+                
+                                
+                application.current_round = round_number
+                application.last_activity_at = datetime.now(timezone.utc)
+
                 await self.db.commit()
                 
                  
@@ -436,10 +524,12 @@ class ApplicationService:
                     )
                     for panelist in panelists
                 ])
+
                 
-                    
-                
-            return "Application moved to round successfully"
+            return {
+                "new_round": round_number,
+                "message":"Application moved to round successfully"
+                }
         except Exception as e:
             self.logger.error(f"Failed to move application to round for application_id={application_id} to round_number={round_number}: {str(e)}")
             await self.db.rollback()

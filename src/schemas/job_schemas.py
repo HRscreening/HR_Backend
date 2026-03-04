@@ -196,4 +196,22 @@ class JobOverviewResponseNew(BaseModel):
     job: JobOverviewInfo
     dashboard: DashboardInfo
     criteria: CriteriaOverview
+    
+    
+class JobSettings(BaseModel):
+    title:str
+    description:Optional[str]
+    location: Optional[str]
+    salary: Optional[str]
+    status: JobStatus
+    target_headcount: int
+    manual_rounds_count: int
+    
+    
+class JobSettingsResposnse(BaseModel):
+    job_settings: JobSettings
+    voice_ai_enabled: bool
+    is_confidential: bool
+    job_metadata: Optional[Dict[str, Any]]
+    closing_reason: Optional[str]
 

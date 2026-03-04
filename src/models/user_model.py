@@ -55,3 +55,9 @@ class User(Base):
         foreign_keys="Job.hiring_manager_id",
         back_populates="hiring_manager",
     )
+
+    calendar_connections = relationship(
+        "CalendarConnection",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )

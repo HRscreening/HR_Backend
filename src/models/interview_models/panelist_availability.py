@@ -56,7 +56,7 @@ class Panelist_Availability(Base):
     available_slots = Column(JSONB, nullable=True)  # Optional: List of available time slots provided by the panelist (if they accepted)
     availability_token = Column(TEXT, nullable=False)  # e.g., 1 for first round, 2 for second round, etc.
     token_expires_at = Column(DateTime(timezone=True), nullable=False)  # Expiration time for the availability token
-    calendly_connected = Column(Boolean, nullable=False, default=False)  # Indicates if the panelist has connected their Calendly for automatic scheduling
+    calendar_connected = Column(Boolean, nullable=False, default=False)  # Indicates if the panelist has connected a calendar (Google/Microsoft) for automatic scheduling
     
     created_at = Column(
         DateTime(timezone=True),

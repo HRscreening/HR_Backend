@@ -36,6 +36,9 @@ class CriterionScoreSchema(BaseModel):
         # LLM returns {} when no sub_criteria — treat as None
         if v == {} or v is None:
             return None
+        # LLM sometimes returns a named dict — flatten to None, scoring is at criterion level only
+        if isinstance(v, dict) and not {"score", "reason", "evidence"}.intersection(v):
+            return None
         return v
 
 

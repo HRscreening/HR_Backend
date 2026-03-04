@@ -19,6 +19,8 @@ DATABASE_URL = os.environ.get("DATABASE_URL")  or "postgresql+asyncpg://postgres
 # redis_password = os.environ.get('REDIS_PASSWORD', '')
 
 # EMAIL Configuration
+COMPANY_EMAIL = os.getenv("COMPANY_EMAIL", "your_email@gmail.com")
+
 SENDER_EMAIL = os.getenv("SENDER_EMAIL", "your_email@gmail.com")
 SENDER_MAIL_PASSWORD = os.getenv("SENDER_MAIL_PASSWORD", "your_app_password")  # Use Gmail App Password
 
@@ -56,3 +58,13 @@ REDIS_PASSWORD = os.environ.get('REDIS_PASSWORD', None)
 DEFAULT_TIMEOUT_REDIS_WORKER = int(os.environ.get("DEFAULT_TIMEOUT_REDIS_WORKER", 600))  # default timeout for redis worker in seconds
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")  # Update this to your actual frontend URL
+
+
+
+# ------------------------- Calendar API Configuration -------------------------
+Calendar_Client_ID = os.getenv("Calendar_Client_ID", "your-google-client-id")
+Calendar_Client_Secret = os.getenv("Calendar_Client_Secret", "your-google-client-secret")
+Calendar_Redirect_URI = os.getenv("Calendar_Redirect_URI", "http://localhost:8000/api/oauth/google/calendar/callback")
+Google_Calendar_Meet_Creation_link = os.getenv("Google_Calendar_Meet_Creation_link", "https://www.googleapis.com/calendar/v3/calendars/primary/events")
+Google_Calendar_Access_Token = os.getenv("Google_Calendar_Access_Token", "your-google-calendar-access-token")
+Calendar_Refresh_Token = os.getenv("Calendar_Refresh_Token", "your-google-calendar-refresh-token")

@@ -36,7 +36,7 @@
 | `interview_round_configs` table | Full SQLAlchemy model + Alembic migration |
 | `interviews` table | Full model — `booking_token`, `scheduled_start`, `scheduled_end`, `status` enum |
 | `panelist_availability` table | Full model — `available_slots` JSONB, JWT token fields |
-| `interview_timeline_events` table | HR-visible interview timeline — tracks every stage/action per round, displayed in sidebar |
+| `interview_timeline_events` table | Full audit log model |
 | `move_to_round()` in `application_service.py` | Branch A (slot booking link) + Branch B (panel JWT emails) |
 | `panelist_service.py` | `get_panelist_form_details()` + `submit_panelist_availability()` |
 | `JWTService.create_panelist_availability_token()` | Used in Move To Round |
@@ -188,76 +188,14 @@ GET /applications/{application_id}/interviews
   - status
   - scheduled_start / scheduled_end
   - panelist_availability list (name, email, response_status)
-  - timeline (HR-visible chronological event log for this round)
+  - timeline_events (audit log for this round)
 ```
-
-### The Interview Timeline
-
-`interview_timeline_events` is **not** an internal audit log — it's the **HR-facing timeline** shown in the candidate sidebar. Every row becomes a visible entry in a chronological list that tells HR exactly what happened during this interview round and when.
-
-**What HR sees in the sidebar** (rendered as a vertical timeline):
-```
-● Round advanced to Round 1                     — Mar 2, 10:00 AM    (actor: hr@company.com)
-● Availability emails sent to 3 panelists       — Mar 2, 10:00 AM    (actor: system)
-● Panelist submitted availability                — Mar 2, 2:30 PM     (actor: alice@company.com)
-● Panelist submitted availability                — Mar 3, 9:15 AM     (actor: bob@company.com)
-● Panelist submitted availability                — Mar 3, 11:00 AM    (actor: carol@company.com)
-● Slots computed — 8 common slots found          — Mar 3, 11:00 AM    (actor: system)
-● Booking link sent to candidate                 — Mar 3, 11:01 AM    (actor: system)
-● Candidate booked slot: Mar 7, 2:00–3:00 PM    — Mar 4, 5:45 PM     (actor: candidate@email.com)
-● Reminder sent (T-24h)                          — Mar 6, 2:00 PM     (actor: system)
-● Reminder sent (T-1h)                           — Mar 7, 1:00 PM     (actor: system)
-● Interview started                              — Mar 7, 2:00 PM     (actor: system)
-● Interview ended                                — Mar 7, 3:00 PM     (actor: system)
-● Feedback requested from 3 panelists            — Mar 7, 3:00 PM     (actor: system)
-● Feedback submitted                             — Mar 7, 4:30 PM     (actor: alice@company.com)
-● Feedback submitted                             — Mar 8, 10:00 AM    (actor: bob@company.com)
-● Feedback submitted                             — Mar 8, 11:15 AM    (actor: carol@company.com)
-● All feedback collected                         — Mar 8, 11:15 AM    (actor: system)
-```
-
-**Timeline Event Types + Display Text**:
-
-| `event_type` | Display text (for HR) | `actor` | `details` JSONB |
-|---|---|---|---|
-| `ROUND_ADVANCED` | "Round advanced to Round {n}" | HR email | `{round_number, from_round}` |
-| `AVAILABILITY_EMAILS_SENT` | "Availability emails sent to {n} panelists" | system | `{panelist_emails: [...]}` |
-| `PANELIST_AVAILABILITY_SUBMITTED` | "Panelist submitted availability" | panelist email | `{slots_count}` |
-| `SLOT_COMPUTATION_SUCCESS` | "Slots computed — {n} common slots found" | system | `{slot_count, panel_mode}` |
-| `SLOT_COMPUTATION_FAILED` | "No common slots found — HR action needed" | system | `{reason}` |
-| `SLOT_BOOKING_LINK_SENT` | "Booking link sent to candidate" | system | `{candidate_email}` |
-| `CANDIDATE_BOOKED_SLOT` | "Candidate booked slot: {date/time range}" | candidate email | `{slot_start, slot_end, panelist_email?}` |
-| `CANDIDATE_RESCHEDULED` | "Candidate rescheduled to {new date/time}" | candidate email | `{old_start, new_start, new_end}` |
-| `CANDIDATE_REQUESTED_NEW_SLOTS` | "Candidate requested new time slots" | candidate email | `{}` |
-| `INTERVIEW_CANCELED_BY_CANDIDATE` | "Interview canceled by candidate" | candidate email | `{reason}` |
-| `PANELIST_REMOVED_NO_RESCHEDULE_NEEDED` | "Panelist {name} removed — quorum maintained" | HR email | `{panelist_email, reason}` |
-| `INTERVIEW_RESCHEDULED_PANELIST_CANCELED` | "Interview rescheduled — panelist unavailable" | HR email | `{panelist_email, reason}` |
-| `PANELIST_SWAPPED_RESCHEDULE_TRIGGERED` | "Panelist swapped: {old} → {new}" | HR email | `{old_email, new_email}` |
-| `INTERVIEW_RESCHEDULED_PANELIST_CONFLICT` | "Interview rescheduled — panelist time conflict" | HR email | `{panelist_email, reopen_scope}` |
-| `REMINDER_SENT` | "Reminder sent ({channel}, {timing})" | system | `{channel, recipient, timing}` |
-| `INTERVIEW_STARTED` | "Interview started" | system | `{}` |
-| `INTERVIEW_ENDED` | "Interview ended" | system | `{}` |
-| `FEEDBACK_REQUESTED` | "Feedback requested from {n} panelists" | system | `{panelist_emails: [...]}` |
-| `FEEDBACK_SUBMITTED` | "Feedback submitted" | panelist email | `{rating}` |
-| `ALL_FEEDBACK_COLLECTED` | "All feedback collected" | system | `{panelist_count}` |
-| `TRANSCRIPT_RECEIVED` | "Meeting transcript received" | system | `{source: "recall.ai"}` |
-| `ROUND_DECISION` | "Decision: {advance/reject/hire}" | HR email | `{decision, next_round?}` |
-
-Every service method that writes a timeline event must pass:
-- `interview_id` — which interview this belongs to
-- `event_type` — one of the above constants
-- `actor` — email of who triggered it (or `"system"` for automated events)
-- `details` — JSONB with context-specific data
-
-The sidebar fetches these via `GET /applications/{id}/interviews` and renders them in `created_at` order.
 
 ### Implementation
 
-1. Add `InterviewRepository.get_interviews_by_application_id(application_id)` — eager-load `panelist_availability` + `events` (ordered by `created_at`) + `round_config`.
+1. Add `InterviewRepository.get_interviews_by_application_id(application_id)` — eager-load `panelist_availability` + `events` + `round_config`.
 2. Add `GET /applications/{application_id}/interviews` route in a new `interview_routes/candidate_interview_route.py` (auth-protected).
 3. DTO: `ApplicationInterviewsResponseDTO` — list of `InterviewDetailDTO` (round, status, panelists, timeline).
-4. `TimelineEventDTO`: `{ event_type, display_text, actor, details, created_at }` — `display_text` is computed from event_type + details using a helper.
-5. Helper: `format_timeline_display(event_type: str, details: dict) -> str` in `src/utils/timeline_formatter.py` — maps event_type + details to the human-readable string shown to HR.
 
 ---
 
@@ -1260,9 +1198,6 @@ class FeedbackRating(enum.Enum):
 - `src/services/calendar_service.py` — new (.ics generation; Phase 2: Google/MS API)
 - `src/services/meeting_link_service.py` — new (Google Meet via service account, Teams via Graph)
 
-### Utils
-- `src/utils/timeline_formatter.py` — new: `format_timeline_display(event_type, details) -> str` — maps event_type + details JSONB to the human-readable display text shown to HR in the sidebar timeline
-
 ### Routes
 - `src/routes/interview_routes/candidate_booking_route.py` — new, **public**
   - `GET  /interview/book?token=` — booking form (PANEL or SEQUENTIAL)
@@ -1321,8 +1256,7 @@ class FeedbackRating(enum.Enum):
 9. `calendar_service.py` — `generate_ics()` only
 10. Candidate booking confirmation email + .ics attachment
 11. Wire Branch A in `move_to_round()` — send booking link email (`CandidateEmailService.send_booking_link_email()`)
-12. All timeline events wired — every service method creates `interview_timeline_events` rows with correct `event_type`, `actor`, `details` (these are HR-visible in the sidebar, not just internal logs)
-13. `timeline_formatter.py` — `format_timeline_display(event_type, details) -> str` helper for sidebar rendering
+12. All missing timeline events logged
 
 **Milestone**: Full end-to-end booking works for first time.
 
@@ -1330,14 +1264,14 @@ class FeedbackRating(enum.Enum):
 
 ### Sprint 2 — Rescheduling + Reminders
 
-14. `add_columns_to_interviews` Alembic migration (reschedule_token, scheduled_jobs, meet_link, recall_bot_id)
-15. `add_columns_to_round_configs` Alembic migration (min_panelists, voice_reminders_enabled, reschedule_cutoff_hours)
-16. `create_candidate_reschedule_token()` in `jwt.py`
-17. `POST /interview/reschedule` + `GET /interview/reschedule` endpoints
-18. `interview_reminders` model + migration + repository
-19. `reminder_service.py` — schedule/cancel/send + APScheduler wiring
-20. `POST /interviews/{id}/panelist-cancel` endpoint
-21. `POST /interview-round-configs/{id}/swap-panelist` endpoint
+13. `add_columns_to_interviews` Alembic migration (reschedule_token, scheduled_jobs, meet_link, recall_bot_id)
+14. `add_columns_to_round_configs` Alembic migration (min_panelists, voice_reminders_enabled, reschedule_cutoff_hours)
+15. `create_candidate_reschedule_token()` in `jwt.py`
+16. `POST /interview/reschedule` + `GET /interview/reschedule` endpoints
+17. `interview_reminders` model + migration + repository
+18. `reminder_service.py` — schedule/cancel/send + APScheduler wiring
+19. `POST /interviews/{id}/panelist-cancel` endpoint
+20. `POST /interview-round-configs/{id}/swap-panelist` endpoint
 
 **Milestone**: Rescheduling from both sides works; reminders fire on schedule.
 
@@ -1345,9 +1279,9 @@ class FeedbackRating(enum.Enum):
 
 ### Sprint 3 — HR Dashboard + Sidebar
 
-22. Epic 3: left-join interviews into `get_applications_by_job()`, add `interview_status` to DTO
-23. Epic 4: `GET /applications/{id}/interviews` + eager-load query + timeline DTO (HR-visible timeline, not audit log)
-24. Epic 8: `POST /applications/{id}/rounds/{n}/decision` endpoint
+21. Epic 3: left-join interviews into `get_applications_by_job()`, add `interview_status` to DTO
+22. Epic 4: `GET /applications/{id}/interviews` + eager-load query + DTO
+23. Epic 8: `POST /applications/{id}/rounds/{n}/decision` endpoint
 
 **Milestone**: HR can see live status, view details, advance/reject/hire.
 
@@ -1355,13 +1289,13 @@ class FeedbackRating(enum.Enum):
 
 ### Sprint 4 — Post-Interview Feedback + Day-Of Automation
 
-25. `interview_assessments` model + Alembic migration
-26. `interview_assessments_repository.py`
-27. `create_panelist_feedback_token()` in `jwt.py`
-28. `interview_assessment_service.py`
-29. `feedback_route.py` — GET + POST
-30. APScheduler jobs wired in `book_slot()`: Mark IN_PROGRESS, Mark AWAITING_FEEDBACK, Day-Of Reminder
-31. HR / panelist emails for feedback collected
+24. `interview_assessments` model + Alembic migration
+25. `interview_assessments_repository.py`
+26. `create_panelist_feedback_token()` in `jwt.py`
+27. `interview_assessment_service.py`
+28. `feedback_route.py` — GET + POST
+29. APScheduler jobs wired in `book_slot()`: Mark IN_PROGRESS, Mark AWAITING_FEEDBACK, Day-Of Reminder
+30. HR / panelist emails for feedback collected
 
 **Milestone**: Full post-interview feedback loop complete.
 
@@ -1369,11 +1303,11 @@ class FeedbackRating(enum.Enum):
 
 ### Sprint 5 — Meeting Links + Optional Features
 
-32. `meeting_link_service.py` — Google Calendar service account integration
-33. Wire meeting link into `book_slot()` for VIDEO_CALL type
-34. Recall.ai notetaker bot (behind `recallai_enabled` flag)
-35. Voice AI reminders via Bland.ai/Vapi (behind `voice_reminders_enabled` flag)
-36. OAuth calendar blocking Phase 2 (Google / MS — behind `calendar_integration_enabled` flag)
+31. `meeting_link_service.py` — Google Calendar service account integration
+32. Wire meeting link into `book_slot()` for VIDEO_CALL type
+33. Recall.ai notetaker bot (behind `recallai_enabled` flag)
+34. Voice AI reminders via Bland.ai/Vapi (behind `voice_reminders_enabled` flag)
+35. OAuth calendar blocking Phase 2 (Google / MS — behind `calendar_integration_enabled` flag)
 
 ---
 

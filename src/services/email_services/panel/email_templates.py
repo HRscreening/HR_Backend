@@ -163,4 +163,77 @@ class PanelEmailTemplates:
         return _base_html(content)
 
 
+    @staticmethod
+    def get_panelist_booking_confirmation_template(
+        panelist_name: str | None,
+        candidate_name: str,
+        interview_round_title: str,
+        interview_date: str,
+        interview_time: str,
+        meet_link: str | None,
+    ) -> str:
+        """HTML email notifying a panelist that a candidate has booked a slot."""
+
+        greeting = panelist_name if panelist_name else "Sir/Madam"
+
+        meet_row = ""
+        if meet_link:
+            meet_row = f"""\
+            <tr>
+                <td style="padding:12px 16px;background-color:#f9fafb;font-size:13px;color:#6b7280;font-weight:600;width:120px;">
+                Meet Link
+                </td>
+                <td style="padding:12px 16px;font-size:14px;color:#374151;">
+                <a href="{meet_link}" style="color:#4f46e5;text-decoration:none;">{meet_link}</a>
+                </td>
+            </tr>"""
+
+        content = f"""\
+            <p style="margin:0 0 16px;font-size:15px;color:#374151;line-height:1.7;">
+            Dear <strong>{greeting}</strong>,
+            </p>
+            <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.7;">
+            A candidate has booked an interview slot with you for the
+            <strong style="color:#4f46e5;">{interview_round_title}</strong> round.
+            </p>
+            <table role="presentation" cellpadding="0" cellspacing="0"
+                style="width:100%;margin-bottom:24px;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;">
+            <tr>
+                <td style="padding:12px 16px;background-color:#f9fafb;font-size:13px;color:#6b7280;font-weight:600;width:120px;border-bottom:1px solid #e5e7eb;">
+                Candidate
+                </td>
+                <td style="padding:12px 16px;font-size:14px;color:#374151;border-bottom:1px solid #e5e7eb;">
+                {candidate_name}
+                </td>
+            </tr>
+            <tr>
+                <td style="padding:12px 16px;background-color:#f9fafb;font-size:13px;color:#6b7280;font-weight:600;width:120px;border-bottom:1px solid #e5e7eb;">
+                Date
+                </td>
+                <td style="padding:12px 16px;font-size:14px;color:#374151;border-bottom:1px solid #e5e7eb;">
+                {interview_date}
+                </td>
+            </tr>
+            <tr>
+                <td style="padding:12px 16px;background-color:#f9fafb;font-size:13px;color:#6b7280;font-weight:600;width:120px;border-bottom:1px solid #e5e7eb;">
+                Time
+                </td>
+                <td style="padding:12px 16px;font-size:14px;color:#374151;border-bottom:1px solid #e5e7eb;">
+                {interview_time}
+                </td>
+            </tr>
+            {meet_row}
+            </table>
+            <p style="margin:0 0 16px;font-size:14px;color:#6b7280;line-height:1.7;">
+            Please ensure you are available at the scheduled time. If the interview is online,
+            keep your meeting link ready.
+            </p>
+            <p style="margin:24px 0 0;font-size:15px;color:#374151;line-height:1.7;">
+            Thank you,<br/>
+            <strong>HR Team</strong>
+            </p>"""
+
+        return _base_html(content)
+
+
 panelist_email_templates = PanelEmailTemplates()

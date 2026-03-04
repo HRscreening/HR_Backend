@@ -953,7 +953,7 @@ class ResumeService_ForWorker(BaseResumeService):
         applications = await self.application_repository.get_application_by_application_ids(
             application_ids={r.application_id for r in resumes}
         )
-        application_map = {a.id: a for a in applications}
+        application_map = {str(a.id): a for a in applications}  # str keys to match ResumeScoreResult.application_id (coerced to str)
         resume_map = {str(r.id): r for r in resumes}
 
 

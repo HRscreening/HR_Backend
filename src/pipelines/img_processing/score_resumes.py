@@ -57,8 +57,9 @@ BREAKDOWN RULE (CRITICAL)
 - The breakdown JSON structure MUST exactly match the rubric structure.
 - Use the same criterion keys as in the rubric.
 - Do NOT add or remove criteria.
-- If a criterion has no sub-criteria, return an EMPTY OBJECT.
-- NEVER return null for sub_criteria.
+- For EVERY criterion, ALWAYS set "sub_criteria" to an empty object {{}}.
+- NEVER return a named dict inside sub_criteria (e.g. {{"python": {{...}}}} is WRONG).
+- NEVER return null for sub_criteria — always use {{}}.
 
 
 ====================

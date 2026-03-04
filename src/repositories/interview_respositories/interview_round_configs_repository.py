@@ -23,13 +23,36 @@ class InterviewRoundConfigsRepository:
             instructions=config_data.instructions,
             duration_minutes=config_data.duration_minutes,
             panelists=[panel.model_dump() for panel in config_data.panelists],
-            meet_link=config_data.meet_link,
+            meet_link=str(config_data.meet_link) if config_data.meet_link else None,
             start_date=config_data.start_date,
-            end_date=config_data.end_date
+            end_date=config_data.end_date,
+            timezone=config_data.timezone,
         )
         self.db.add(interview_round_config)
         await self.db.flush() 
         return interview_round_config
+
+    async def bulk_create_interview_round_configs(self, job_id: str, configs: List[CreateInterviewRoundConfigDTO]) -> List[Interview_Round_Configs]:
+        """Create multiple round configs in a single flush."""
+        created = []
+        for config_data in configs:
+            row = Interview_Round_Configs(
+                job_id=job_id,
+                round_number=config_data.round_number,
+                title=config_data.title,
+                interview_type=config_data.interview_type,
+                instructions=config_data.instructions,
+                duration_minutes=config_data.duration_minutes,
+                panelists=[panel.model_dump() for panel in config_data.panelists],
+                meet_link=str(config_data.meet_link) if config_data.meet_link else None,
+                start_date=config_data.start_date,
+                end_date=config_data.end_date,
+                timezone=config_data.timezone,
+            )
+            self.db.add(row)
+            created.append(row)
+        await self.db.flush()
+        return created
 
     async def get_interview_round_config_by_id(self, round_config_id: str) -> Optional[Interview_Round_Configs]:
         result = await self.db.execute(

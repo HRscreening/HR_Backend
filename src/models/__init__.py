@@ -16,7 +16,8 @@ from src.models.interview_models.interviews import Interview
 from src.models.interview_models.interview_rounds_configs import Interview_Round_Configs
 from src.models.interview_models.interview_timeline_events import Interview_TimeLine_Events
 from src.models.interview_models.panelist_availability import Panelist_Availability
-from src.models.interview_models.calendly_connections import CalendlyCollection
+from src.models.interview_models.interview_slots import Interview_Slot
+from src.models.interview_models.calendar_connections import CalendarConnection
 
 
 __all__ = [
@@ -35,6 +36,7 @@ __all__ = [
     "Interview_Round_Configs",
     "Interview_TimeLine_Events",
     "Panelist_Availability",
-    "CalendlyCollection",
+    "Interview_Slot",
+    "CalendarConnection",
     "Waitlist",
 ]

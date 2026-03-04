@@ -195,6 +195,15 @@ class JobRepository:
         )
         max_version = result.scalar_one_or_none()
         return max_version if max_version else 0
+    
+    
+    async def get_total_rounds_for_job(self, job_id: str) -> int:
+        """Get the total number of interview rounds configured for a job."""
+        result = await self.db.execute(
+            select(Job).where(Job.id == job_id)
+        )
+        total_rounds = result.scalar_one_or_none()
+        return total_rounds.manual_rounds_count if total_rounds else 0
 
     # ─── Application Queries ─────────────────────────────────────────
 

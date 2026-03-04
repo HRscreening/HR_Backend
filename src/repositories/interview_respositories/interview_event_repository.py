@@ -26,3 +26,13 @@ class InterviewEventRepository:
         self.db.add(interview_event)
         await self.db.flush() 
         return interview_event
+
+    # TODO: Paginate for long timelines
+    async def get_events_by_interview_id(self, interview_id: str) -> List[Interview_TimeLine_Events]:
+        """Get all timeline events for an interview, ordered chronologically."""
+        result = await self.db.execute(
+            select(Interview_TimeLine_Events)
+            .where(Interview_TimeLine_Events.interview_id == interview_id)
+            .order_by(Interview_TimeLine_Events.created_at.asc())
+        )
+        return list(result.scalars().all())
