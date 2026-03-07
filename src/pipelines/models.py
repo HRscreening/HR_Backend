@@ -9,13 +9,21 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 # )
 
 
+from google import genai
 
+client = genai.Client()
 
 # Gemini model
 llm = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash",
     temperature=0,
     # max_output_tokens=2048
+)
+
+
+image_reader_model = ChatGoogleGenerativeAI(
+    model="gemini-3-flash-preview",
+    temperature=0,
 )
 
 
@@ -26,6 +34,8 @@ scoring_model = ChatGoogleGenerativeAI(
     temperature=0,
     # max_output_tokens=2048
 )
+
+
 
 
 

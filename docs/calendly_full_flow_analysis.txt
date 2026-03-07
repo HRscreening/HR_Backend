@@ -1,0 +1,373 @@
+===================================================================================
+CALENDLY — CAN WE PUT THE ENTIRE INTERVIEW SCHEDULING FLOW ON CALENDLY?
+===================================================================================
+Date: March 1, 2026
+Author: DeskZero Engineering
+Premise: Forget Part 1 (our panel form). Forget our availability DB.
+         Can we redesign the ENTIRE flow — panelist availability collection
+         AND candidate booking — 100% through Calendly?
+===================================================================================
+
+
+-------------------------------------------------------------------
+SECTION 1: WHAT "ALL ON CALENDLY" WOULD LOOK LIKE
+-------------------------------------------------------------------
+
+Step 1: HR creates a Calendly Round Robin event type per interview round.
+          e.g. "Technical Screen — Job #42"
+
+Step 2: HR adds all panelists as team members in that event type.
+        Each panelist connects their Google/Outlook calendar.
+        Calendly reads their calendar free/busy status automatically.
+
+Step 3: HR copies the Calendly Round Robin link and emails it to
+        the candidate.
+
+Step 4: Candidate opens Calendly page, picks a time slot, books.
+
+Step 5: Calendly fires invitee.created webhook to our backend.
+        We update our DB — set interview SCHEDULED, log panelist.
+
+This sounds simple. Let us now examine every point where it breaks.
+
+
+-------------------------------------------------------------------
+SECTION 2: WHERE IT BREAKS — PROBLEM BY PROBLEM WITH EXAMPLES
+-------------------------------------------------------------------
+
+PROBLEM 1: EVERY PANELIST NEEDS A PAID CALENDLY ACCOUNT
+--------------------------------------------------------
+
+For Calendly Round Robin to work, every panelist must:
+  - Have a Calendly account
+  - Be on a paid Calendly Teams or Professional plan
+  - Connect their Google/Outlook calendar to Calendly
+
+Pricing (2026 estimate): ~$16/member/month (Teams plan)
+
+Example:
+  Your platform has 3 companies as clients.
+  Company A has 4 panelists.
+  Company B has 6 panelists.
+  Company C has 3 panelists.
+  Total = 13 panelists × $16 = $208/month
+
+  This is not a DeskZero cost — you would need to either:
+    a) Ask each client company to buy Calendly seats for their
+       panelists (friction, they may refuse or already use a
+       different tool)
+    OR
+    b) Buy the seats yourself and bill it back (ongoing ops cost)
+
+  As you scale to 50 client companies, this becomes a
+  significant and unchained cost your product inherits.
+
+  In our custom system:
+    Zero per-panelist cost.
+    Panelists just open an email link — no account needed.
+
+
+PROBLEM 2: PANELISTS MUST SET AVAILABILITY IN CALENDLY, NOT YOUR APP
+----------------------------------------------------------------------
+
+In the "all on Calendly" model, panelists no longer use your form.
+Instead, they manage their availability inside Calendly's own UI
+(or by connecting their Google/Outlook calendar).
+
+This breaks your product experience in several ways:
+
+  A. You lose control of the availability collection UX.
+     Your branded panel form is gone. Panelists are redirected
+     to Calendly's interface to manage their schedule — a third
+     party tool they may not know, want, or have access to.
+
+  B. You lose the `available_slots` data in your DB entirely.
+     Right now, panelist_availability table stores exactly what
+     slots each panelist confirmed for each specific interview.
+     With Calendly, you have no record of this. If a panelist
+     says "I was supposed to be available at 2 PM on March 10"
+     and a dispute arises, you have no audit trail.
+
+  C. Availability is per-calendar, not per-interview-round.
+     In Calendly, a panelist's availability is their GENERAL
+     calendar availability — not "I'm available for Application
+     #1001's Technical Round between March 10–15."
+
+     Example:
+       Alice sets herself as available Mondays 2–4 PM in Calendly.
+       This means she's available for ALL candidates for ALL rounds
+       on ALL jobs she's assigned to, every Monday 2–4 PM.
+       She cannot say "I'm only available for THIS interview on
+       THIS specific date range."
+
+       In our system:
+         Alice submits availability specifically for interview_id=XYZ
+         for round_config_id=ABC. Her slot is scoped to that interview.
+         Other interviews don't touch her slot. It expires when that
+         interview is scheduled.
+
+  D. Calendly reads Google/Outlook calendar free/busy.
+     If Alice has a personal lunch marked as "busy" on her Google
+     calendar on March 10 at 1 PM, Calendly will hide that slot.
+     BUT if she forgot to block it, Calendly will show it as
+     available even if she's actually unavailable that day.
+     Your system asks her explicitly: "What slots work for you?"
+     Calendly infers: "What does her calendar say?"
+     Explicit is more reliable than inferred for interview scheduling.
+
+
+PROBLEM 3: ONE CALENDLY EVENT TYPE PER INTERVIEW ROUND PER JOB
+---------------------------------------------------------------
+
+Calendly has no concept of "rounds." Each event type is a flat,
+standalone meeting template.
+
+To represent your data model in Calendly, you would need to create:
+  One Calendly Round Robin event type per interview round per job.
+
+Example:
+  Job: Senior Backend Engineer (Job #42)
+    Round 1: Technical Screen → Calendly event: "Job42-Round1"
+    Round 2: System Design    → Calendly event: "Job42-Round2"
+    Round 3: Culture Fit      → Calendly event: "Job42-Round3"
+
+  Job: Product Manager (Job #43)
+    Round 1: Case Study       → Calendly event: "Job43-Round1"
+    Round 2: HR Discussion    → Calendly event: "Job43-Round2"
+
+  5 jobs × 3 rounds average = 15 Calendly event types to create,
+  name, configure panelists for, and manage.
+
+  When a job is closed, those 3 event types must be deactivated.
+  When a panelist changes, the event type must be updated.
+  When a round's duration changes (e.g. from 60 min to 45 min),
+  the Calendly event type must be manually updated.
+
+  All of this is manual or requires API calls to manage dynamically.
+
+  In our system:
+    interview_round_configs table.
+    One row per round per job.
+    Duration, instructions, panelists — all in one DB record.
+    Updating it is a single PATCH /api/interview/update-round-config.
+
+
+PROBLEM 4: NO ROUND PROGRESSION GATING
+---------------------------------------
+
+In our system:
+  move_to_round() in application_service.py enforces:
+    - Candidate cannot be in Round 2 until Round 1 is COMPLETED
+    - Round must not be expired (start_date/end_date check)
+    - Round config must have panelists assigned
+    - Application must be in the right status
+
+  Only after these checks pass does the candidate receive any
+  booking link at all.
+
+In the Calendly model:
+  You have three Calendly links for three rounds.
+  Calendly has no concept of "unlock Round 2 only after Round 1 done."
+
+  You must still maintain all of this gating logic in your own
+  backend and only send the Round 2 Calendly link after Round 1
+  is confirmed complete.
+
+  So you still write all of move_to_round(). You just send a
+  Calendly URL instead of your own booking page URL.
+  The complexity savings are zero.
+
+  And if you are sending the link from your own backend anyway,
+  you can just as easily send your own booking page link.
+
+
+PROBLEM 5: LINK SECURITY — THE GENERIC LINK PROBLEM
+-----------------------------------------------------
+
+When HR uses Calendly, the link they send to a candidate is:
+  https://calendly.com/deskzero-portal/job42-round1
+
+This is the SAME link for every candidate applying to Job #42 Round 1.
+
+Example:
+  Candidate Rahul — Application #1001 — receives this link.
+  Candidate Priya — Application #1002 — receives the same link.
+  Rahul forwards his link to his friend Amit.
+  Amit books a slot.
+  Calendly confirms Amit's booking.
+  Our webhook receives: name="Amit Kumar", email="amit@gmail.com"
+
+  Amit has no application in our system.
+  We cannot map this booking to any application_id.
+  The slot is consumed. A panelist is blocked off.
+  Neither Rahul nor Priya got their interview.
+  The panelist wasted a slot on a non-candidate.
+
+  Workaround attempt — utm_source param:
+    Send Rahul:  .../job42-round1?utm_source=app_1001
+    Send Priya:  .../job42-round1?utm_source=app_1002
+
+    But utm_source is a plain text query param, not a signed token.
+    Rahul can change utm_source=app_1001 to utm_source=app_1002.
+    Calendly passes it through to the webhook as-is.
+    There is no verification. Anyone can forge it.
+
+  In our system:
+    booking_token = JWT signed with SECRET_KEY
+    Payload: { interview_id, application_id, type, exp }
+    Tampering the token → signature verification fails → 401.
+    Forwarding the token → same application_id is used → we detect
+    interview already SCHEDULED → 409.
+    Expiry → 401.
+    Full security with no external dependency.
+
+
+PROBLEM 6: WHAT YOUR WEBHOOK HANDLER MUST DO
+---------------------------------------------
+
+Even in the "all on Calendly" model, you still need a backend.
+When Calendly fires invitee.created, your webhook handler must:
+
+  1. Parse the event payload
+  2. Extract panelist email (assigned_to field in payload)
+  3. Extract candidate name + email
+  4. Extract utm_source if you're using it as application_id hint
+  5. Query your DB to find the right application + interview
+  6. Verify the application is in the right status
+  7. Update interview: status=SCHEDULED, panelist_email, scheduled_start
+  8. Log interview_timeline_events record
+  9. Send confirmation email to candidate (from your email service)
+  10. Send confirmation email to panelist (from your email service)
+  11. Handle retries — Calendly fires the webhook again if you return
+      a non-200 response; your handler must be idempotent
+
+  That is a full backend service to maintain.
+
+  Compare to our custom endpoint POST /api/candidate/book-slot:
+  Steps 1–11 above happen inside one function, one DB transaction,
+  no external retry logic, no webhook delivery uncertainty.
+
+  The webhook approach requires you to build:
+    - Webhook receiver endpoint
+    - Idempotency key handling (to prevent double-processing)
+    - Retry queue (if your handler fails, Calendly may not retry forever)
+    - Backfill job (if webhook was missed, how do you reconcile?)
+
+  These are solved problems — but they are non-trivial engineering
+  on top of what is already a solved problem in our custom system.
+
+
+PROBLEM 7: CALENDLY INVITEE.CANCELLED — WHAT HAPPENS ON CANCELLATION?
+----------------------------------------------------------------------
+
+When a candidate cancels on Calendly, Calendly fires invitee.cancelled.
+
+Your webhook must:
+  - Find the interview in your DB
+  - Revert interview.status to READY_TO_BOOK
+  - Clear scheduled_start, scheduled_end, panelist_email
+  - Free up the panelist's slot (but panelist_availability JSONB
+    in your DB doesn't track which slot was "used" by Calendly —
+    that data lives only in Calendly)
+  - Log BOOKING_CANCELLED event
+
+The "which slot was freed" problem:
+  In our system, interview_slots table has a row per slot.
+  On cancellation: UPDATE interview_slots SET is_booked=False WHERE id=slot_id
+  That slot immediately becomes available for other candidates.
+
+  In Calendly:
+    The slot is freed inside Calendly automatically.
+    But your DB has no interview_slots table (since Calendly owns them).
+    You have no record of the freed slot to re-offer to another candidate.
+    If Candidate #1 cancels, does a new booking link go to Candidate #2?
+    Who sends it? How? Calendly doesn't know about Candidate #2.
+
+  Rescheduling requires re-triggering your entire flow from the
+  backend (generate new Calendly link or your own link, send email,
+  etc.) — which is identical to what our custom system does.
+
+
+-------------------------------------------------------------------
+SECTION 3: WHAT CALENDLY GENUINELY REPLACES IN THIS SCENARIO
+-------------------------------------------------------------------
+
+If we put everything on Calendly and accept all trade-offs above,
+here is what Calendly actually replaces:
+
+  REPLACED:
+    The candidate-facing booking page (a date picker UI)
+    The slot availability API (GET /api/candidate/booking-form)
+    The slot selection endpoint (POST /api/candidate/book-slot)
+    The interview_slots table
+
+  NOT REPLACED (you still build all of this):
+    panelist_availability collection (move to Calendly UI = new UX problem)
+    move_to_round() gating logic
+    JWT booking token security OR accept insecure utm params
+    Webhook receiver + idempotency + retry handling
+    interview_timeline_events logging
+    Confirmation email sending (Calendly sends its own basic email but
+    not your branded, data-rich email with candidate name, round info, etc.)
+    Cancellation and rescheduling re-triggering
+    Calendly event type management per job per round
+    Per-seat billing management
+
+  The things Calendly replaces = ~3–4 days of backend + frontend work.
+  The things it does NOT replace = the full system minus 3–4 days.
+
+  You are paying $16/panelist/month permanently to save 3–4 days once.
+
+
+-------------------------------------------------------------------
+SECTION 4: HONEST COMPARISON TABLE
+-------------------------------------------------------------------
+
+  Feature / Concern               Custom Build      All on Calendly
+  ------------------------------- ----------------- --------------------------
+  Panelist availability UX        Our branded form   Calendly UI (3rd party)
+  Availability data in our DB     Full audit trail   No record
+  Slot scoped to interview         Yes               No (general calendar)
+  Panelist needs account           No               Yes (paid Calendly seat)
+  Round progression gating         In our code       In our code (unchanged)
+  Candidate link security          JWT signed         Insecure utm params
+  Slot capacity (overlapping)      Full capacity      Calendly collapses to 1
+  Panelist assignment timing       Atomic, at booking After webhook (delayed)
+  Cancellation slot recovery        Instant DB update Webhook + re-send flow
+  Cost                             Zero external      $16/panelist/month
+  Audit trail                      Full               Partial (webhook only)
+  Scalability (many jobs/rounds)   One DB table        N event types in Calendly
+  Portability (switch later)       Own your data       Locked into Calendly
+
+
+-------------------------------------------------------------------
+SECTION 5: FINAL ANSWER
+-------------------------------------------------------------------
+
+Yes, you CAN technically put the full flow on Calendly.
+It would work at small scale with one or two panelists per round
+and candidates who are trusted not to share or tamper links.
+
+It would NOT work reliably when:
+  - Multiple panelists have overlapping slots (capacity halved)
+  - Candidates forward their links (no application-scoped security)
+  - Webhooks are delayed or dropped (orphaned interview records)
+  - You need a full audit trail (panelist_availability data gone)
+  - You have many jobs/rounds (N event types to manage in Calendly)
+  - Your client companies refuse to buy Calendly seats for panelists
+
+What you are trading:
+  Save:  3–4 days of building a booking page + date picker frontend
+  Cost:  $16/panelist/month + webhook complexity + security gaps +
+         loss of data ownership + loss of UX control
+
+Part 1 is already built. The booking page is the only remaining piece.
+That is the smallest part of this system — not the right moment to
+hand control to an external vendor.
+
+CONCLUSION: Do not put the full flow on Calendly.
+Build the booking page. Own the full pipeline.
+
+===================================================================================
+END OF DOCUMENT
+===================================================================================

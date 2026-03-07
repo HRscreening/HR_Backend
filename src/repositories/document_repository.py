@@ -56,6 +56,11 @@ class DocumentRepository:
         await self.db.flush()
         return doc
 
+    async def add_document(self, document: Document) -> Document:
+            self.db.add(document)
+            await self.db.flush()  # to get the ID populated
+            return document
+
     async def get_document(self, document_id: UUID) -> Optional[Document]:
         """Get document by ID."""
         result = await self.db.execute(

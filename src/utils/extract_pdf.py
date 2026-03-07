@@ -92,3 +92,5 @@ class PDFTextExtractor:
         return parsed_text, page_count
 
 
+
+pdf_text_extractor = PDFTextExtractor()

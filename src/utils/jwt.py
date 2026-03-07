@@ -1,5 +1,7 @@
 import jwt
-from datetime import datetime, timedelta
+from fastapi import HTTPException
+from bson import ObjectId
+from datetime import datetime, timedelta,timezone
 from configs.env_config import SECRET_KEY, ALGORITHM, EXPIRATION_MINUTES
 from src.services.errors.base import DomainError
 
@@ -25,6 +27,7 @@ class JWTService:
 
     def decode_token(self, token: str) -> dict | None:
         try:
+            print(f"Secret: {self.secret_key}, Algorithm: {self.algorithm}")
             decoded = jwt.decode(
                 token,
                 self.secret_key,
@@ -32,28 +35,117 @@ class JWTService:
             )
             return decoded
         except jwt.ExpiredSignatureError:
-            return None
+            raise DomainError(
+                "Token has expired.",
+                status_code=401
+            )
         except jwt.InvalidTokenError:
-            return None
+            raise DomainError(
+                "Invalid token.",
+                status_code=401
+            )
+        except Exception as e:
+            raise DomainError(
+                f"Token decoding failed: {str(e)}",
+                status_code=401
+            )
 
     
     async def verify_token(self,token: str):
-
-        if not token:
-            raise DomainError("Missing or invalid token",401)
+        pass
+        # if not token:
+        #     raise DomainError("Missing or invalid token",401)
         
-        payload = self.decode_jwt(token)
+        # payload = self.decode_jwt(token)
 
-        if not payload or "user_id" not in payload:
-            raise 
+        # if not payload or "user_id" not in payload:
+        #     raise 
         
         
 
-        user = await db["users"].find_one({"_id": ObjectId(payload["user_id"])})
+        # user = await db["users"].find_one({"_id": ObjectId(payload["user_id"])})
 
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+        # if not user:
+        #     raise HTTPException(status_code=404, detail="User not found")
 
-        # print(f"Authenticated user: {user}")
+        # # print(f"Authenticated user: {user}")
         
-        return user
+        # return user
+
+    
+    def create_panelist_availability_token(
+    self,
+        panelist_id: str,
+        expiration_minutes: int,
+        round_config_id: str,
+    ) -> str:
+
+        now = datetime.now(timezone.utc)
+
+        payload = {
+            "panelist_id": panelist_id,
+            "round_config_id": round_config_id,
+            "iat": now,
+            "exp": now + timedelta(minutes=expiration_minutes),
+        }
+
+        return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
+    
+    
+    def create_candidate_booking_token(
+    self,
+    interview_id: str,
+        candidate_email: str,
+        expiration_minutes: int,
+    ) -> str:
+        now = datetime.now(timezone.utc)
+        payload = {
+            "interview_id": interview_id,
+            "candidate_email": candidate_email,
+            "token_type": "candidate_booking",
+            "iat": now,
+            "exp": now + timedelta(minutes=expiration_minutes),
+        }
+        return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
+
+    def create_candidate_reschedule_token(
+        self,
+        interview_id: str,
+        candidate_email: str,
+        expiration_minutes: int,
+    ) -> str:
+        now = datetime.now(timezone.utc)
+        payload = {
+            "interview_id": interview_id,
+            "candidate_email": candidate_email,
+            "token_type": "candidate_reschedule",
+            "iat": now,
+            "exp": now + timedelta(minutes=expiration_minutes),
+        }
+        return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
+
+    def create_panelist_feedback_token(
+        self,
+        panelist_email: str,
+        interview_id: str,
+        expiration_minutes: int,
+    ) -> str:
+        now = datetime.now(timezone.utc)
+        payload = {
+            "panelist_email": panelist_email,
+            "interview_id": interview_id,
+            "token_type": "panelist_feedback",
+            "iat": now,
+            "exp": now + timedelta(minutes=expiration_minutes),
+        }
+        return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
+    
+    
+    def encode_oauth_state(self,payload: dict):
+        return jwt.encode(payload, self.secret_key,)
+
+    def decode_oauth_state(self,state: str):
+        return jwt.decode(state, self.secret_key, algorithms=self.algorithm)
+
+    
+jwt_service = JWTService()

@@ -53,7 +53,15 @@ class Resume(Base):
     status = Column(
         SAEnum(ResumeStatus, native_enum=True, name="resume_status_enum"),
         nullable=False,
-        default=ResumeStatus.UPLOADED
+        default=ResumeStatus.UPLOADED,
+        server_default=ResumeStatus.UPLOADED.value,
+    )
+    
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )
     
 

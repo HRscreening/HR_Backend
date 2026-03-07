@@ -10,6 +10,15 @@ from src.models.score_model import Score
 from src.models.ai_processing_log_model import AIProcessingLogs
 from src.models.bulk_upload_batches_model import BulkUploadBatches
 from src.models.document_model import Document
+from src.models.waitlist_model import Waitlist
+
+from src.models.interview_models.interviews import Interview
+from src.models.interview_models.interview_rounds_configs import Interview_Round_Configs
+from src.models.interview_models.interview_timeline_events import Interview_TimeLine_Events
+from src.models.interview_models.panelist_model import Panelist
+from src.models.interview_models.interview_slots import Interview_Slot
+from src.models.interview_models.calendar_connections import CalendarConnection
+
 
 __all__ = [
     "User",
@@ -23,4 +32,11 @@ __all__ = [
     "AIProcessingLogs",
     "BulkUploadBatches",
     "Document",
+    "Interview",
+    "Interview_Round_Configs",
+    "Interview_TimeLine_Events",
+    "Panelist",
+    "Interview_Slot",
+    "CalendarConnection",
+    "Waitlist",
 ]

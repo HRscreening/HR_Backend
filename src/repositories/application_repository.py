@@ -8,7 +8,7 @@ from fastapi import Depends, status,UploadFile,BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
 
-from src.models import Organization,User,Job,Rubric,Application,BulkUploadBatches,Score,Resume
+from src.models import Organization,User,Job,Rubric,Application,BulkUploadBatches,Score,Resume,Interview
 from src.models.enums import ApplicationStatus
 from pydantic import EmailStr
 from typing import Optional,List
@@ -17,13 +17,12 @@ class ApplicationRepository:
     def __init__(self,db: AsyncSession):
         self.db = db
     
-    async def create_application(self, job_id: str, candidate_id: int, resume_id: int) -> Application:
+    async def create_application(self, job_id: str, candidate_id: int = None, resume_id: int = None) -> Application:
         application = Application(
             job_id=job_id,
             candidate_id=candidate_id,
-            resume_id=resume_id,
+            current_resume_id=resume_id,
             status=ApplicationStatus.APPLIED,
-            applied_at=datetime.now(timezone.utc)
         )
         self.db.add(application)
         await self.db.flush() 
@@ -38,7 +37,7 @@ class ApplicationRepository:
     
     async def get_applications_by_candidate(self, candidate_id: int) -> List[Application]:
         result = await self.db.execute(
-            select(Application).where(Application.candidate_id == candidate_id).order_by(Application.applied_at.desc())
+            select(Application).where(Application.candidate_id == candidate_id).order_by(Application.created_at.desc())
         )
         return result.scalars().all()
         
@@ -81,9 +80,36 @@ class ApplicationRepository:
         rows = result.all()
         return rows
     
+    async def get_avg_match_score(self, job_id: str) -> Optional[float]:
+        result = await self.db.execute(
+            select(func.avg(Score.overall_score)).join(Application, Application.id == Score.application_id).where(Application.job_id == job_id)
+        )
+        avg_score = result.scalar_one_or_none()
+        return avg_score
+    
+    async def get_application_by_application_ids(self,application_ids: list[int]) -> List[Application]:
+        result = await self.db.execute(
+            select(Application).where(Application.id.in_(application_ids))
+        )
+        return result.scalars().all()
+    
+    async def get_current_interview_round_for_application(self, application_id: int) -> int:
+        result = await self.db.execute(
+            select(Interview)
+            .where(Interview.application_id == application_id)
+            .order_by(Interview.round_number.desc())
+            .limit(1)
+        )
+        interview = result.scalar_one_or_none()
+        if interview:
+            return interview.round_number
+        return 0
+    
+    # TODO : remove this
     async def commit(self):
         await self.db.commit()
 
+    # TODO : remove this
     async def rollback(self):
         await self.db.rollback()
 

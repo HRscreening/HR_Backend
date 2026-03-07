@@ -6,6 +6,7 @@ from sqlalchemy import (
     func,
     Boolean,
     ForeignKey,
+    Index,
 )
 from sqlalchemy import Enum as SAEnum
 import uuid
@@ -20,6 +21,12 @@ from .enums import AIProcessingStatus
 
 class AIProcessingLogs(Base):
     __tablename__ = "ai_processing_logs"
+    __table_args__ = (
+        Index('idx_ai_logs_created_at', 'created_at'),
+        Index('idx_ai_logs_entity', 'entity_type', 'entity_id'),
+        Index('idx_ai_logs_operation', 'operation_type'),
+        Index('idx_ai_logs_status', 'status'),
+    )
 
     id = Column(
         UUID(as_uuid=True),
@@ -34,11 +41,11 @@ class AIProcessingLogs(Base):
         nullable=True   # Nullable as Individual users might trigger processing without an organization context
     )
     
-    entity_type = Column(VARCHAR(100), nullable=False)  # e.g., 'job', 'application', 'candidate'
+    entity_type = Column(VARCHAR(50), nullable=False)  # e.g., 'job', 'application', 'candidate'
     entity_id = Column(UUID(as_uuid=True), nullable=False)  # ID of the record
 
     operation_type = Column(VARCHAR(100), nullable=False)  # e.g., 'JD_Parsing', 'Resume_Parsing', 'Candidate_Scoring'
-    ai_provider = Column(VARCHAR(100), nullable=False)  # e.g., 'OpenAI', 'Anthropic'
+    ai_provider = Column(VARCHAR(50), nullable=True)  # e.g., 'OpenAI', 'Anthropic'
     ai_model = Column(VARCHAR(100), nullable=False)  # e.g., 'gpt-4', 'claude-2'
     input_data = Column(JSONB, nullable=True)  # Data sent to the AI for processing
     output_data = Column(JSONB, nullable=True)  # Data received from the AI after processing
@@ -58,7 +65,6 @@ class AIProcessingLogs(Base):
     log_metadata = Column("metadata",JSONB, nullable=True)  # Any extra context that doesn't fit the fixed columns.
     triggered_by = Column(UUID(as_uuid=True),ForeignKey("users.id", ondelete="SET NULL"),nullable=True,index=True) # User ID who initiated the AI processing, if applicable.
     created_at = Column(DateTime(timezone=True),server_default=func.now(),nullable=False)
-    updated_at = Column(DateTime(timezone=True),server_default=func.now(),onupdate=func.now(),nullable=False)
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
 

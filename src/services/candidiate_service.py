@@ -4,7 +4,7 @@ from src.services.errors.base import DomainError
 from pydantic import EmailStr
 from src.repositories.candidiate_repository import CandidateRepository
 from src.repositories.application_repository import ApplicationRepository
-from src.schemas.candidate_schema import CandidateInfoSchema
+from schemas.candidate_schemas import CandidateInfoSchema
 
 
 class CandidateService:

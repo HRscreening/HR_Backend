@@ -110,3 +110,10 @@ class Job(Base):
         cascade="all, delete-orphan",
         order_by="Rubric.version",
     )
+    
+    interview_round_configs = relationship(
+        "Interview_Round_Configs",
+        back_populates="job",
+        cascade="all, delete-orphan",
+        order_by="Interview_Round_Configs.round_number",
+    )

@@ -11,51 +11,62 @@ from datetime import datetime, timezone
 from src.models import Organization,User,Job,Rubric,Application,Candidate
 from src.models.enums import ApplicationStatus
 from pydantic import EmailStr
-from src.schemas.candidate_schema import CandidateInfoSchema
+from src.schemas.candidate_schemas import CandidateCreateSchema,CandidateUpdateSchema
 from typing import Optional,List
 
 class CandidateRepository:
     def __init__(self,db: AsyncSession):
         self.db = db
     
-    async def create_candidate(self,candidate_info:CandidateInfoSchema , resume_id: str,org_id:str|None=None) -> Candidate:
+    async def create_candidate(self,candidate_info:CandidateCreateSchema ,org_id:str|None=None) -> Candidate:
         candidate = Candidate(
             full_name=candidate_info.full_name,
             email=candidate_info.email,
-            org_id=org_id,
             phone=candidate_info.phone,
-            organization_id=org_id,  
-            total_applications=1,  # Initialize total applications to 1 when creating a new candidate ,Assuming this is the first application for the candidate
-            
+            organization_id=org_id,              
         )
         self.db.add(candidate)
         await self.db.flush() 
         return candidate
     
-    async def get_candidate_by_email(self, email: EmailStr,org_id:str) -> Optional[Candidate]:
-        result = await self.db.execute(
-            select(Candidate).where(Candidate.email == email,Candidate.organization_id == org_id)
-        )
+    
+    async def get_candidate_by_email(self,email: EmailStr,org_id: str | None = None) -> Optional[Candidate]:
+
+        stmt = select(Candidate).where(Candidate.email == email)
+
+        if org_id is None:
+            stmt = stmt.where(Candidate.organization_id.is_(None))
+        else:
+            stmt = stmt.where(Candidate.organization_id == org_id)
+
+        result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
     
-    async def get_candidate_by_phone(self, phone: str,org_id:str) -> Optional[Candidate]:
-        result = await self.db.execute(
-            select(Candidate).where(Candidate.phone == phone,Candidate.organization_id == org_id)
-        )
+    async def get_candidate_by_phone(self, phone: str,org_id:str | None = None) -> Optional[Candidate]:
+        stmt = select(Candidate).where(Candidate.phone == phone)
+
+        if org_id is None:
+            stmt = stmt.where(Candidate.organization_id.is_(None))
+        else:
+            stmt = stmt.where(Candidate.organization_id == org_id)
+
+        result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
     
-    async def get_candidate_by_id(self, candidate_id: str,org_id:str) -> Optional[Application]:
-        result = await self.db.execute(
-            select(Candidate).where(Candidate.id == candidate_id,Candidate.organization_id == org_id)
-        )
+    async def get_candidate_by_id(self, candidate_id: str,org_id:str | None = None) -> Optional[Candidate]:
+        stmt = select(Candidate).where(Candidate.id == candidate_id)
+
+        if org_id is None:
+            stmt = stmt.where(Candidate.organization_id.is_(None))
+        else:
+            stmt = stmt.where(Candidate.organization_id == org_id)
+
+        result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
     
 
-    async def commit(self):
-        await self.db.commit()
-
-    async def rollback(self):
-        await self.db.rollback()
-
+        
+    async def refresh(self,instance):
+        await self.db.refresh(instance)
 
         
