@@ -24,13 +24,18 @@ class Interview_Slot(Base):
         nullable=False,
         index=True,
     )
-
-    panelist_email = Column(String, nullable=True, index=True)  # NULL = PANEL mode; populated = SEQUENTIAL mode
+    panelist_id = Column(
+            UUID(as_uuid=True),
+            ForeignKey("panelist.id", ondelete="SET NULL"),
+            nullable=True,
+            index=True,
+        )
 
     slot_start = Column(DateTime(timezone=True), nullable=False)
     slot_end = Column(DateTime(timezone=True), nullable=False)
 
     is_booked = Column(Boolean, nullable=False, default=False)
+    is_expired = Column(Boolean, nullable=False, default=False)
 
     booked_interview_id = Column(
         UUID(as_uuid=True),
@@ -38,7 +43,7 @@ class Interview_Slot(Base):
         nullable=True,
     )
     booked_at = Column(DateTime(timezone=True), nullable=True)
-    #TODO: Add is_expired column which will be set to true if the slot time has passed and it is not booked. This will help in optimizing the queries for available slots.
+    
     created_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -48,3 +53,5 @@ class Interview_Slot(Base):
     # Relationships
     round_config = relationship("Interview_Round_Configs", back_populates="slots")
     booked_interview = relationship("Interview", foreign_keys=[booked_interview_id])
+    panelist = relationship("Panelist",back_populates="slots")
+    

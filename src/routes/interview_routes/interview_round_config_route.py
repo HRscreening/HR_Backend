@@ -1,6 +1,6 @@
 from fastapi import APIRouter,Request,Depends,status
 from  typing import Optional
-from src.dtos.interviews_dtos.interview_round_config_dto import CreateInterviewRoundConfigDTO, UpdateInterviewRoundConfigDTO, BulkCreateInterviewRoundConfigDTO
+from src.dtos.interviews_dtos.interview_round_config_dto import CreateInterviewRoundConfigDTO, UpdateInterviewRoundConfigDTO, BulkCreateInterviewRoundConfigDTO,RequestPanelistsForSlotsDTO
 
 router = APIRouter(prefix="/api/interview", tags=["Interview Round Configurations Management"])
 from src.dependency import get_interview_round_config_service,InterviewRoundConfigService
@@ -57,6 +57,31 @@ async def update_round_config(request: Request,round_config_id:str, config_data:
     return updated_config
 
 
+
+@router.post("/request-all-panelist-for-slots/{round_config_id}",status_code=status.HTTP_200_OK)
+async def update_round_config(request: Request,round_config_id:str,interview_round_config_service: InterviewRoundConfigService = Depends(get_interview_round_config_service)):
+    user_id = request.state.user.id
+    ctx_type = request.state.context.type
+    
+    return await interview_round_config_service.request_all_panelist_for_slots(round_config_id=round_config_id)
+
+@router.post("/request-panelists-for-slots/{round_config_id}", status_code=status.HTTP_200_OK)
+async def update_round_config(
+    request: Request,
+    round_config_id: str,
+    body: RequestPanelistsForSlotsDTO,
+    interview_round_config_service: InterviewRoundConfigService = Depends(get_interview_round_config_service)
+):
+    user_id = request.state.user.id
+    ctx_type = request.state.context.type
+
+    return await interview_round_config_service.request_panelists_for_slots(
+        round_config_id,
+        body.panelist_ids
+    )
+
+
+
 @router.get("/timeline/{interview_id}", status_code=status.HTTP_200_OK)
 async def get_interview_timeline(
     request: Request,
@@ -65,6 +90,9 @@ async def get_interview_timeline(
 ):
     """Get formatted timeline events for an interview (HR dashboard)."""
     return await interview_service.get_timeline(interview_id=interview_id)
+
+
+
 
 @router.get("/{job_id}/rounds/overview", status_code=status.HTTP_200_OK)
 async def get_rounds_overview(request: Request, job_id: str, interview_round_config_service: InterviewRoundConfigService = Depends(get_interview_round_config_service)):

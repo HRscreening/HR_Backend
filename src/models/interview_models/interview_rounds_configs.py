@@ -44,7 +44,7 @@ class Interview_Round_Configs(Base):
     
     instructions = Column(TEXT, nullable=True)  # Instructions for the interview round, if any
     duration_minutes = Column(Integer, nullable=False)  
-    panelists = Column(JSONB, nullable=False)  # List of panelists with their details (e.g., name, email, role)
+
     meet_link = Column(String, nullable=True)  # Optional: link to the virtual meeting room for this round
     
     start_date = Column(DateTime(timezone=True), nullable=False)
@@ -70,6 +70,6 @@ class Interview_Round_Configs(Base):
     
     job = relationship("Job", back_populates="interview_round_configs")
     interviews = relationship("Interview", back_populates="round_config")
-    panelist_availability = relationship("Panelist_Availability",back_populates="round_config")
+    panelists = relationship("Panelist",back_populates="round_config")
     slots = relationship("Interview_Slot", back_populates="round_config", cascade="all, delete-orphan")
     

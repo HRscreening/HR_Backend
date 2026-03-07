@@ -32,7 +32,7 @@ from src.services.candidate_service import CandidateService
 from src.services.interview_services.calendar_service import CalendarService
 from src.utils.email_service import emailService 
 from src.utils.security import passwordService
-
+from src.utils.jwt import JWTService
 
 # --------------------- INTERVIEW SERVICES ----------------------
 from src.services.interview_services.interview_round_config_service import InterviewRoundConfigService
@@ -52,7 +52,9 @@ from src.services.oauth.oauth_service import OAuthService
 
 # ------------------------ DEPENDENCY INJECTION ------------------------
 
+def get_jwt_service():
 
+    return JWTService()
 
 def get_batch_repository(
     db: AsyncSession = Depends(get_db)
@@ -106,8 +108,11 @@ def get_interview_round_config_repository(db: AsyncSession = Depends(get_db)):
 def get_interview_event_repository(db: AsyncSession = Depends(get_db)):
     return InterviewEventRepository(db)
 
-def get_panelist_repository(db: AsyncSession = Depends(get_db)):
-    return PanelistRepository(db)
+def get_panelist_repository(
+    db: AsyncSession = Depends(get_db),
+    jwt_service = Depends(get_jwt_service)
+    ):
+    return PanelistRepository(db,jwt_service)
 
 def get_interview_repository(db: AsyncSession = Depends(get_db)):
     return InterviewRepository(db)
@@ -210,9 +215,10 @@ def get_calendar_service(
 def get_interview_round_config_service(
     interview_round_config_repository: InterviewRoundConfigsRepository = Depends(get_interview_round_config_repository),
     interview_event_repository: InterviewEventRepository = Depends(get_interview_event_repository),
+    panelist_repository: PanelistRepository = Depends(get_panelist_repository),
     db: AsyncSession = Depends(get_db)
 ):
-    return InterviewRoundConfigService(interview_round_config_repository=interview_round_config_repository,interview_event_repository=interview_event_repository, db=db)
+    return InterviewRoundConfigService(interview_round_config_repository=interview_round_config_repository,interview_event_repository=interview_event_repository,panelist_repository=panelist_repository, db=db)
 
 
 def get_panelist_service(

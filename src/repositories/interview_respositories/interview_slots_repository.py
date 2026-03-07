@@ -22,6 +22,7 @@ class InterviewSlotsRepository:
             .where(
                 Interview_Slot.round_config_id == round_config_id,
                 Interview_Slot.is_booked == False,
+                Interview_Slot.slot_start > datetime.now(timezone.utc), 
             )
             .order_by(Interview_Slot.slot_start)
         )
@@ -36,14 +37,16 @@ class InterviewSlotsRepository:
             .where(
                 Interview_Slot.round_config_id == round_config_id,
                 Interview_Slot.is_booked == False,
-                Interview_Slot.panelist_email.isnot(None),
+                Interview_Slot.panelist_id.isnot(None),
+                Interview_Slot.slot_start > datetime.now(timezone.utc),
             )
-            .order_by(Interview_Slot.panelist_email, Interview_Slot.slot_start)
+            .order_by(Interview_Slot.panelist_id, Interview_Slot.slot_start)
         )
         grouped: dict[str, list[Interview_Slot]] = defaultdict(list)
         for slot in result.scalars().all():
-            grouped[slot.panelist_email].append(slot)
+            grouped[slot.panelist_id].append(slot)
         return dict(grouped)
+
 
     async def get_slot_by_id(self, slot_id: UUID) -> Optional[Interview_Slot]:
         result = await self.db.execute(
@@ -135,6 +138,22 @@ class InterviewSlotsRepository:
         await self.db.flush()
         return result.rowcount
 
+
+    # Useful for one-to-one interview-slot relationships, and for checking if an interview has a booked slot and its details.
+    async def get_booked_slot_for_interview(self, interview_id: UUID) -> Interview_Slot:
+        """Get a single slots booked by a specific interview."""
+        result = await self.db.execute(
+            select(Interview_Slot)
+            .where(
+                Interview_Slot.booked_interview_id == interview_id,
+                Interview_Slot.is_booked == True,
+            )
+            .order_by(Interview_Slot.slot_start)
+        )
+        return result.scalar_one_or_none()
+    
+    
+    # useful if multiple slots can be booked for an interview (e.g. SEQUENTIAL mode with multiple panelists), otherwise get_booked_slot_for_interview is sufficient to return the single booked slot.
     async def get_booked_slots_for_interview(self, interview_id: UUID) -> list[Interview_Slot]:
         """Get all slots booked by a specific interview."""
         result = await self.db.execute(
@@ -146,3 +165,16 @@ class InterviewSlotsRepository:
             .order_by(Interview_Slot.slot_start)
         )
         return list(result.scalars().all())
+    
+    
+    async def get_booked_slot_by_interview_id(self, interview_id: UUID) -> Optional[Interview_Slot]:
+        """Get the slot booked for a specific interview."""
+        result = await self.db.execute(
+            select(Interview_Slot)
+            .where(
+                Interview_Slot.booked_interview_id == interview_id,
+                Interview_Slot.is_booked == True,
+            )
+            .order_by(Interview_Slot.slot_start)
+        )
+        return result.scalar_one_or_none()

@@ -91,6 +91,7 @@ class InterviewStatus(enum.Enum):
     
     
 class PanelistResponseStatus(enum.Enum):
+    NOT_REQUESTED = "Not Requested"
     SUBMITTED = "Submitted"
     EXPIRED = "Expired"
     PENDING = "Pending"

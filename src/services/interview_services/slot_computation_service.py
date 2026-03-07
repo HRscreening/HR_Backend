@@ -17,7 +17,7 @@ from configs.env_config import FRONTEND_URL
 from src.models.enums import PanelMode, InterviewStatus
 from src.models.interview_models.interview_slots import Interview_Slot
 from src.models.interview_models.interviews import Interview
-from src.models.interview_models.panelist_availability import Panelist_Availability
+from src.models.interview_models.panelist_model import Panelist
 from src.repositories.interview_respositories.interview_slots_repository import InterviewSlotsRepository
 from src.repositories.interview_respositories.interview_round_configs_repository import InterviewRoundConfigsRepository
 from src.repositories.interview_respositories.interview_repository import InterviewRepository
@@ -140,7 +140,6 @@ class SlotComputationService:
 
     async def compute_and_store_slots(
         self,
-        interview_id: UUID,
         round_config_id: UUID,
     ) -> bool:
         """
@@ -157,8 +156,8 @@ class SlotComputationService:
 
         # Load all panelist availability rows for this round config
         result = await self.db.execute(
-            select(Panelist_Availability)
-            .where(Panelist_Availability.round_config_id == round_config_id)
+            select(Panelist)
+            .where(Panelist.round_config_id == round_config_id)
         )
         all_panelists = list(result.scalars().all())
 
@@ -168,15 +167,15 @@ class SlotComputationService:
 
         duration = round_config.duration_minutes
         return await self._compute_panel_mode(
-            round_config, all_panelists, duration, interview_id
+            round_config, all_panelists, duration
         )
 
     # ─── SEQUENTIAL mode entry point (called per-panelist on each submit) ─
 
     async def compute_single_panelist_slots(
         self,
-        interview_id: UUID,
         round_config_id: UUID,
+        panelist_id: str,
         panelist_email: str,
         available_slots_json: list[dict],
     ) -> bool:
@@ -198,23 +197,13 @@ class SlotComputationService:
         discrete_slots = split_into_slots(parsed, duration)
 
         if not discrete_slots:
-            await self.event_repo.create_interview_event(
-                interview_id=str(interview_id),
-                event_type="SLOT_COMPUTATION_FAILED",
-                actor="system",
-                details={
-                    "reason": f"No computable slots from panelist {panelist_email}",
-                    "panel_mode": "sequential",
-                    "panelist_email": panelist_email,
-                },
-            )
             logger.warning(f"SEQUENTIAL: zero slots from {panelist_email} for round_config {round_config.id}")
             return False
 
         slot_models = [
             Interview_Slot(
                 round_config_id=round_config.id,
-                panelist_email=panelist_email,
+                panelist_id = UUID(panelist_id),
                 slot_start=start,
                 slot_end=end,
             )
@@ -225,16 +214,7 @@ class SlotComputationService:
         # Mark round as having available slots (idempotent — stays True once set)
         round_config.slots_available = True
 
-        await self.event_repo.create_interview_event(
-            interview_id=str(interview_id),
-            event_type="SLOT_COMPUTATION_SUCCESS",
-            actor="system",
-            details={
-                "slot_count": len(discrete_slots),
-                "panel_mode": "sequential",
-                "panelist_email": panelist_email,
-            },
-        )
+
 
         logger.info(
             f"SEQUENTIAL: {len(discrete_slots)} slots from {panelist_email} "
@@ -250,7 +230,7 @@ class SlotComputationService:
     async def _compute_panel_mode(
         self,
         round_config,
-        all_panelists: list[Panelist_Availability],
+        all_panelists: list[Panelist],
         duration_minutes: int,
         trigger_interview_id: UUID,
     ) -> bool:
@@ -319,7 +299,7 @@ class SlotComputationService:
     async def _compute_sequential_mode(
         self,
         round_config,
-        all_panelists: list[Panelist_Availability],
+        all_panelists: list[Panelist],
         duration_minutes: int,
         trigger_interview_id: UUID,
     ) -> bool:

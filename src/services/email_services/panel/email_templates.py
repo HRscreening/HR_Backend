@@ -235,5 +235,178 @@ class PanelEmailTemplates:
 
         return _base_html(content)
 
+    
+    
+    @staticmethod
+    def get_slot_released_template(
+    panelist_name: str | None,
+    candidate_name: str,
+    interview_round_title: str,
+    interview_date: str,
+    interview_time: str,
+    ) -> str:
+        """HTML email notifying a panelist that a candidate has released their booked slot."""
 
+        greeting = panelist_name if panelist_name else "Sir/Madam"
+
+        content = f"""\
+            <p style="margin:0 0 16px;font-size:15px;color:#374151;line-height:1.7;">
+            Dear <strong>{greeting}</strong>,
+            </p>
+
+            <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.7;">
+            This is to inform you that the candidate 
+            <strong>{candidate_name}</strong> has released their previously booked interview slot for the 
+            <strong style="color:#4f46e5;">{interview_round_title}</strong> round.
+            </p>
+
+            <table role="presentation" cellpadding="0" cellspacing="0"
+                style="width:100%;margin-bottom:24px;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;">
+
+            <tr>
+                <td style="padding:12px 16px;background-color:#f9fafb;font-size:13px;color:#6b7280;font-weight:600;width:120px;border-bottom:1px solid #e5e7eb;">
+                Candidate
+                </td>
+                <td style="padding:12px 16px;font-size:14px;color:#374151;border-bottom:1px solid #e5e7eb;">
+                {candidate_name}
+                </td>
+            </tr>
+
+            <tr>
+                <td style="padding:12px 16px;background-color:#f9fafb;font-size:13px;color:#6b7280;font-weight:600;width:120px;border-bottom:1px solid #e5e7eb;">
+                Date
+                </td>
+                <td style="padding:12px 16px;font-size:14px;color:#374151;border-bottom:1px solid #e5e7eb;">
+                {interview_date}
+                </td>
+            </tr>
+
+            <tr>
+                <td style="padding:12px 16px;background-color:#f9fafb;font-size:13px;color:#6b7280;font-weight:600;width:120px;">
+                Time
+                </td>
+                <td style="padding:12px 16px;font-size:14px;color:#374151;">
+                {interview_time}
+                </td>
+            </tr>
+
+            </table>
+
+            <p style="margin:0 0 16px;font-size:14px;color:#6b7280;line-height:1.7;">
+            The slot is now available again and may be booked by another candidate.
+            </p>
+
+            <p style="margin:24px 0 0;font-size:15px;color:#374151;line-height:1.7;">
+            Thank you for your continued support.<br/>
+            <strong>HR Team</strong>
+            </p>
+        """
+
+        return _base_html(content)
+
+    
+    @staticmethod
+    def get_meeting_rescheduled_email_template(
+    panelist_name: str | None,
+    candidate_name: str,
+    interview_round_title: str,
+    old_date: str,
+    old_time: str,
+    new_date: str,
+    new_time: str,
+    meet_link: str | None,
+    ) -> str:
+        """Email sent when a candidate reschedules their interview slot."""
+
+        greeting = panelist_name if panelist_name else "Sir/Madam"
+
+        meet_row = ""
+        if meet_link:
+            meet_row = f"""
+            <tr>
+                <td style="padding:12px 16px;background-color:#f9fafb;font-size:13px;color:#6b7280;font-weight:600;">
+                Meet Link
+                </td>
+                <td style="padding:12px 16px;font-size:14px;color:#374151;">
+                <a href="{meet_link}" style="color:#4f46e5;text-decoration:none;">{meet_link}</a>
+                </td>
+            </tr>"""
+
+        content = f"""
+            <p style="margin:0 0 16px;font-size:15px;color:#374151;line-height:1.7;">
+            Dear <strong>{greeting}</strong>,
+            </p>
+
+            <p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.7;">
+            The candidate <strong>{candidate_name}</strong> has rescheduled their interview for the
+            <strong style="color:#4f46e5;">{interview_round_title}</strong> round.
+            </p>
+
+            <p style="margin:0 0 10px;font-size:14px;color:#6b7280;">
+            <strong>Previous Schedule</strong>
+            </p>
+
+            <table role="presentation" cellpadding="0" cellspacing="0"
+                style="width:100%;margin-bottom:20px;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;">
+
+            <tr>
+                <td style="padding:12px 16px;background-color:#f9fafb;font-size:13px;color:#6b7280;font-weight:600;width:120px;border-bottom:1px solid #e5e7eb;">
+                Date
+                </td>
+                <td style="padding:12px 16px;font-size:14px;color:#374151;border-bottom:1px solid #e5e7eb;">
+                {old_date}
+                </td>
+            </tr>
+
+            <tr>
+                <td style="padding:12px 16px;background-color:#f9fafb;font-size:13px;color:#6b7280;font-weight:600;">
+                Time
+                </td>
+                <td style="padding:12px 16px;font-size:14px;color:#374151;">
+                {old_time}
+                </td>
+            </tr>
+            </table>
+
+            <p style="margin:0 0 10px;font-size:14px;color:#6b7280;">
+            <strong>New Schedule</strong>
+            </p>
+
+            <table role="presentation" cellpadding="0" cellspacing="0"
+                style="width:100%;margin-bottom:24px;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;">
+
+            <tr>
+                <td style="padding:12px 16px;background-color:#f9fafb;font-size:13px;color:#6b7280;font-weight:600;width:120px;border-bottom:1px solid #e5e7eb;">
+                Date
+                </td>
+                <td style="padding:12px 16px;font-size:14px;color:#374151;border-bottom:1px solid #e5e7eb;">
+                {new_date}
+                </td>
+            </tr>
+
+            <tr>
+                <td style="padding:12px 16px;background-color:#f9fafb;font-size:13px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;">
+                Time
+                </td>
+                <td style="padding:12px 16px;font-size:14px;color:#374151;border-bottom:1px solid #e5e7eb;">
+                {new_time}
+                </td>
+            </tr>
+
+            {meet_row}
+
+            </table>
+
+            <p style="margin:0 0 16px;font-size:14px;color:#6b7280;line-height:1.7;">
+            Please ensure you are available at the updated time for the interview.
+            </p>
+
+            <p style="margin:24px 0 0;font-size:15px;color:#374151;line-height:1.7;">
+            Thank you,<br/>
+            <strong>HR Team</strong>
+            </p>
+        """
+
+        return _base_html(content)
+    
 panelist_email_templates = PanelEmailTemplates()

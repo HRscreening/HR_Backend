@@ -45,11 +45,22 @@ class Interview(Base):
         native_enum=True
     ),nullable=False,default=InterviewStatus.COLLECTING_AVAILABILITY,index=True)
     
+    # TODO: Add summary,transcript,feedback fields later when we have the interview recording and feedback collection features implemented.
+    meet_link = Column(TEXT, nullable=True)  # Link to the video conferencing meeting (e.g., Zoom, Google Meet)
+    summary = Column(JSONB, nullable=True)  # AI Generated Summary coming from fireflies for now, can be used to store summary of the interview, key points discussed, etc.
+    transcript_id = Column(VARCHAR(255), nullable=True)  # To store the transcript ID from Fireflies, which can be used to fetch the transcript and other details later.
+    calendar_event_id = Column(VARCHAR(255), nullable=True)  # To store the calendar event ID for easy updates/deletions from calendar.
+    
     scheduled_start = Column(DateTime(timezone=True), nullable=True,index=True)
     scheduled_end = Column(DateTime(timezone=True), nullable=True)
     
     booking_token = Column(TEXT, nullable=True)  # Token for interview scheduling/booking systems
     booking_token_expires_at = Column(DateTime(timezone=True), nullable=True)  # Expiration time for the booking token
+    
+    rescheduling_token = Column(TEXT, nullable=True)  # Token for interview rescheduling
+    rescheduling_token_expires_at = Column(DateTime(timezone=True), nullable=True)  # Expiration time for the rescheduling token
+    
+    times_rescheduled = Column(Integer, default=0)  # Counter for how many times the interview has been rescheduled
     
     cancelled_at = Column(DateTime(timezone=True), nullable=True)  # Timestamp for when the interview was cancelled, if applicable
     cancellation_reason = Column(TEXT, nullable=True)  # Reason for cancellation, if applicable
@@ -72,4 +83,3 @@ class Interview(Base):
     
     application = relationship("Application", back_populates="interviews")
     round_config = relationship("Interview_Round_Configs", back_populates="interviews")
-    panelist_availability = relationship("Panelist_Availability", back_populates="interview", cascade="all, delete-orphan")

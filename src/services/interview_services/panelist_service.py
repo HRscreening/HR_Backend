@@ -42,22 +42,22 @@ class PanelistService:
     def _validate_and_extract_token_payload(
         self,
         availability_token: str
-    ) -> tuple[str, str, str]:
+    ) -> tuple[str, str]:
 
         self.logger.info(f"Validating availability token: {availability_token}")    
         payload = self.jwt_service.decode_token(availability_token)
 
-        interview_id = payload.get("interview_id",None)
-        panelist_email = payload.get("panelist_email",None)
+
+        panelist_id = payload.get("panelist_id",None)
         round_config_id = payload.get("round_config_id",None)
 
-        if not interview_id or not panelist_email or not round_config_id:
+        if not panelist_id or not round_config_id:
             raise DomainError(
                 "Invalid token payload.",
                 status_code=400
             )
         
-        return interview_id, panelist_email, round_config_id
+        return panelist_id, round_config_id
     
     def _check_panelist_form_open(self, round_config, panelist):
         now = datetime.now(timezone.utc)
@@ -95,32 +95,27 @@ class PanelistService:
     async def get_panelist_form_details(self, availability_token: str):
         
         availability_token = availability_token.replace("Bearer ", "")
-        interview_id, panelist_email, round_config_id = self._validate_and_extract_token_payload(availability_token)
-
-        interview = await self.interview_repository.get_interview_by_id(interview_id)   
         
-        if not interview:
-            raise DomainError("Interview not found for the provided token")
+        panelist_id, round_config_id = self._validate_and_extract_token_payload(availability_token)
 
-        if str(interview.round_config_id) != str(round_config_id):
-            raise DomainError("Token does not match interview configuration")
-                
-        round_config = await self.interview_round_config_repository.get_interview_round_config_by_id(
-            interview.round_config_id
-        )
+        round_config = await self.interview_round_config_repository.get_interview_round_config_by_id(round_config_id)
 
         if not round_config:
             raise DomainError(
                 "Interview round configuration not found for the provided token"
             )
 
-        panelist = await self.panelist_repository.get_panelist_by_round_config_and_email(
+        panelist = await self.panelist_repository.get_panelist_by_round_config_and_panelist_id(
             round_config_id=round_config.id,
-            panelist_email=panelist_email,
+            panelist_id=panelist_id,
         )
 
         if not panelist:
             raise DomainError("Panelist not found for the provided token")
+        
+        if str(panelist.round_config_id) != str(round_config_id):
+            raise DomainError("Panelist does not belong to the interview round configuration in the token")
+        
         
         if panelist.availability_token != availability_token:
             raise DomainError(
@@ -142,7 +137,7 @@ class PanelistService:
         # if round_config.Panel_owner:
         # TODO : Remove or condn after making default calendar provider dynamic
         calendar_connection = await self.calendar_repository.get_calendar_connection_by_email_and_provider(
-            provider_email=panelist_email,provider= CalendarProvider.GOOGLE
+            provider_email=panelist.email,provider= CalendarProvider.GOOGLE
             )
         
         if not calendar_connection:
@@ -174,12 +169,14 @@ class PanelistService:
                 )
             
             availability_token = availability_token.replace("Bearer ", "")
-            interview_id, panelist_email, round_config_id = self._validate_and_extract_token_payload(availability_token)
+            
+            panelist_id, round_config_id = self._validate_and_extract_token_payload(availability_token)
 
-            panelist = await self.panelist_repository.get_panelist_by_round_config_and_email(
+            panelist = await self.panelist_repository.get_panelist_by_round_config_and_panelist_id(
                 round_config_id=round_config_id,
-                panelist_email=panelist_email,
+                panelist_id=panelist_id,
             )
+            
             if not panelist:
                 raise DomainError("Panelist not found for the provided token")
             
@@ -206,25 +203,12 @@ class PanelistService:
                     for slot in available_slots
                 ]
 
-            panelist.available_slots = available_slots_json
             panelist.response_status = PanelistResponseStatus.SUBMITTED
-            panelist.responded_at = datetime.now(timezone.utc)
             panelist.availability_token = ""  # Invalidate the token after submission
             
             await self.db.flush()
-            
-            # Timeline: panelist submitted availability
-            await self.interview_event_repository.create_interview_event(
-                interview_id=str(interview_id),
-                event_type="PANELIST_AVAILABILITY_SUBMITTED",
-                actor=panelist_email,
-                details={
-                    "panelist_email": panelist_email,
-                    "slots_count": len(available_slots_json),
-                },
-            )
-            
-            
+
+
             # ─── Slot computation based on panel_mode ─────────────────────
             slot_computation_service = SlotComputationService(
                 slots_repo=self.slots_repository,
@@ -237,19 +221,18 @@ class PanelistService:
             if round_config.panel_mode == PanelMode.SEQUENTIAL:
                 # SEQUENTIAL: each panelist is independent — compute immediately
                 success = await slot_computation_service.compute_single_panelist_slots(
-                    interview_id=interview_id,
                     round_config_id=round_config_id,
-                    panelist_email=panelist_email,
+                    panelist_id=panelist_id,
+                    panelist_email=panelist.email,
                     available_slots_json=available_slots_json,
                 )
                 if not success:
-                    self.logger.warning(f"No computable slots from panelist {panelist_email} for round_config {round_config_id}")
+                    self.logger.warning(f"No computable slots from panelist {panelist.email} for round_config {round_config_id}")
             else:
                 # PANEL: need ALL panelists before we can compute intersection
                 all_panelists = await self.panelist_repository.get_all_panelists_by_round_config_id(round_config_id)
                 if all(p.response_status == PanelistResponseStatus.SUBMITTED for p in all_panelists):
                     success = await slot_computation_service.compute_and_store_slots(
-                        interview_id=interview_id,
                         round_config_id=round_config_id,
                     )
                     if not success:
@@ -258,6 +241,7 @@ class PanelistService:
                     self.logger.info(
                         f"PANEL mode: waiting for remaining panelists to submit for round_config {round_config_id}"
                     )
+
             
             await self.db.commit()
             

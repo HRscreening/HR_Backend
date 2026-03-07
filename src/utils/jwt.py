@@ -36,12 +36,12 @@ class JWTService:
             return decoded
         except jwt.ExpiredSignatureError:
             raise DomainError(
-                "Token has expired. Please log in again.",
+                "Token has expired.",
                 status_code=401
             )
         except jwt.InvalidTokenError:
             raise DomainError(
-                "Invalid token. Please log in again.",
+                "Invalid token.",
                 status_code=401
             )
         except Exception as e:
@@ -75,8 +75,7 @@ class JWTService:
     
     def create_panelist_availability_token(
     self,
-        panelist_email: str,
-        interview_id: str,
+        panelist_id: str,
         expiration_minutes: int,
         round_config_id: str,
     ) -> str:
@@ -84,9 +83,8 @@ class JWTService:
         now = datetime.now(timezone.utc)
 
         payload = {
-            "panelist_email": panelist_email,
+            "panelist_id": panelist_id,
             "round_config_id": round_config_id,
-            "interview_id": interview_id,
             "iat": now,
             "exp": now + timedelta(minutes=expiration_minutes),
         }

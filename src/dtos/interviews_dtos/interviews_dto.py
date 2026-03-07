@@ -7,7 +7,7 @@ from datetime import datetime
 
 class BookSlotRequest(BaseModel):
     """PANEL mode: candidate picks one slot from the shared pool."""
-    slot_id: UUID
+    slot_id: UUID | str
 
 
 class SequentialBookingItem(BaseModel):

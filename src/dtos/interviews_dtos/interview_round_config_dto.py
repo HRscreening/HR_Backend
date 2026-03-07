@@ -4,7 +4,7 @@ from src.models.enums import InterviewType
 from datetime import datetime
 import zoneinfo
 
-class Panelist(BaseModel):
+class PanelistDTO(BaseModel):
     name: str = Field(..., example="John Doe")
     email: EmailStr = Field(..., example="JohnDoe@example.com")
     role: str = Field(..., example="Interviewer")
@@ -17,7 +17,7 @@ class CreateInterviewRoundConfigDTO(BaseModel):
     interview_type: InterviewType = Field(..., example=InterviewType.VIDEO_CALL.value)
     instructions: Optional[str] = Field(None, example="Please be prepared to discuss your previous projects and answer technical questions.")
     duration_minutes: int = Field(..., example=60)
-    panelists: list[Panelist] = Field(default_factory=list)
+    panelists: list[PanelistDTO] = Field(default_factory=list)
     meet_link:  Optional[HttpUrl] = Field(None)
     start_date: datetime
     end_date: datetime
@@ -44,7 +44,7 @@ class UpdateInterviewRoundConfigDTO(BaseModel):
     interview_type: Optional[InterviewType] = Field(None, example=InterviewType.VIDEO_CALL.value)
     instructions: Optional[str] = Field(None, example="Please be prepared to discuss your previous projects and answer technical questions.")
     duration_minutes: Optional[int] = Field(None, example=60)
-    panelists: Optional[List[Panelist]] = None
+    panelists: Optional[List[PanelistDTO]] = None
     meet_link:  Optional[HttpUrl] = Field(None)
     timezone: Optional[str] = Field(None, example="Asia/Kolkata")
 
@@ -56,3 +56,5 @@ class UpdateInterviewRoundConfigDTO(BaseModel):
         return values
     
     
+class RequestPanelistsForSlotsDTO(BaseModel):
+    panelist_ids: List[str]

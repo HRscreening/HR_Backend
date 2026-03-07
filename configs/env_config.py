@@ -68,3 +68,4 @@ Calendar_Redirect_URI = os.getenv("Calendar_Redirect_URI", "http://localhost:800
 Google_Calendar_Meet_Creation_link = os.getenv("Google_Calendar_Meet_Creation_link", "https://www.googleapis.com/calendar/v3/calendars/primary/events")
 Google_Calendar_Access_Token = os.getenv("Google_Calendar_Access_Token", "your-google-calendar-access-token")
 Calendar_Refresh_Token = os.getenv("Calendar_Refresh_Token", "your-google-calendar-refresh-token")
+FireFlies_Bot = os.getenv("FireFlies_Bot", "fred@fireflies.ai")

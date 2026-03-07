@@ -59,5 +59,77 @@ class PanelEmailService(BaseEmailService):
         except Exception as e:
             self.logger.error(f"Failed to send booking confirmation to panelist {panelist_email}: {str(e)}")
 
+    async def send_slot_released_to_panelist(
+        self,
+        panelist_email=str,
+        panelist_name=str,
+        candidate_name=str,
+        interview_round_title=str,
+        old_scheduled_start=datetime,
+        old_scheduled_end=datetime,
+    ):
+        """Send a confirmation email to a panelist after a candidate books a slot."""
+        interview_date = _format_dt_for_email(old_scheduled_start).split(" at ")[0]
+        start_time = old_scheduled_start.strftime("%I:%M %p")
+        end_time = old_scheduled_end.strftime("%I:%M %p UTC")
+        interview_time = f"{start_time} – {end_time}"
+
+        subject = f"Interview Scheduled: {interview_round_title}"
+        body = self.panelist_email_templates.get_slot_released_template(
+            panelist_name=panelist_name,
+            candidate_name=candidate_name,
+            interview_round_title=interview_round_title,
+            interview_date=interview_date,
+            interview_time=interview_time,
+        )
+        try:
+            await self.send_email(receiver_email=panelist_email, subject=subject, body=body)
+            self.logger.info(f"Sent booking confirmation to panelist {panelist_email}")
+        except Exception as e:
+            self.logger.error(f"Failed to send booking confirmation to panelist {panelist_email}: {str(e)}")
+        
+    async def send_meeting_rescheduled_email_to_panelist(
+        self,
+        panelist_email: str,
+        panelist_name: str,
+        candidate_name: str,
+        interview_round_title: str,
+        old_scheduled_start: datetime,
+        old_scheduled_end: datetime,
+        new_scheduled_start: datetime,
+        new_scheduled_end: datetime,
+        new_meet_link: str | None
+    ):
+        """Send email to panelist when a candidate reschedules their interview."""
+
+        old_date = old_scheduled_start.strftime("%d %B %Y")
+        old_time = f"{old_scheduled_start.strftime('%I:%M %p')} – {old_scheduled_end.strftime('%I:%M %p')}"
+
+        new_date = new_scheduled_start.strftime("%d %B %Y")
+        new_time = f"{new_scheduled_start.strftime('%I:%M %p')} – {new_scheduled_end.strftime('%I:%M %p')}"
+
+        subject = f"Interview Rescheduled – {candidate_name} | {interview_round_title}"
+
+        body = self.panelist_email_templates.get_meeting_rescheduled_email_template(
+            panelist_name=panelist_name,
+            candidate_name=candidate_name,
+            interview_round_title=interview_round_title,
+            old_date=old_date,
+            old_time=old_time,
+            new_date=new_date,
+            new_time=new_time,
+            meet_link=new_meet_link,
+        )
+
+        try:
+            await self.send_email(
+                receiver_email=panelist_email,
+                subject=subject,
+                body=body
+            )
+            self.logger.info(f"Sent reschedule notification to panelist {panelist_email}")
+
+        except Exception as e:
+            self.logger.error(f"Failed to send reschedule email to panelist {panelist_email}: {str(e)}")
 
 panel_email_service = PanelEmailService()
