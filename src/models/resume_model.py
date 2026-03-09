@@ -9,7 +9,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 from configs.postgress_db import Base
-from sqlalchemy.dialects.postgresql import UUID,TEXT
+from sqlalchemy.dialects.postgresql import UUID, TEXT, VARCHAR
 from pgvector.sqlalchemy import Vector
 import uuid
 from sqlalchemy import Enum as SAEnum
@@ -50,6 +50,8 @@ class Resume(Base):
         nullable=False,
     )
     
+    extraction_method = Column(VARCHAR(20), nullable=True)  # "text", "ocr", "mixed", "extraction_failed"
+
     status = Column(
         SAEnum(ResumeStatus, native_enum=True, name="resume_status_enum"),
         nullable=False,

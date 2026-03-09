@@ -1,41 +1,29 @@
 from langchain_google_genai import ChatGoogleGenerativeAI
-# from langchain_openai import ChatOpenAI
-
-# llm = ChatOpenAI(
-#     # model="gpt-5-nano",   # ✅ or "gpt-5-nano" if your account has access
-#     model="gpt-4o-mini-2024-07-18",   # ✅ or "gpt-5-nano" if your account has access
-#     # temperature=0,
-#     max_tokens=1024
-# )
 
 
-from google import genai
-
-client = genai.Client()
-
-# Gemini model
+# Gemini model (used for JD parsing, OCR, PDF extraction)
 llm = ChatGoogleGenerativeAI(
     model="gemini-2.5-flash",
     temperature=0,
-    # max_output_tokens=2048
+    timeout=120,        # 120s HTTP request timeout — prevents indefinite hangs
+    max_retries=2,      # Retry up to 2 times on transient errors
 )
 
 
-image_reader_model = ChatGoogleGenerativeAI(
-    model="gemini-3-flash-preview",
-    temperature=0,
-)
-
-
-
+# Scoring model — uses gemini-2.5-flash (configurable via SCORING_MODEL env var).
+# flash-lite is NOT recommended: the scoring schema is deeply nested
+# (sections → criteria → sub_criteria + grounding_data) and flash-lite
+# frequently returns mismatched keys or malformed JSON.
+# Combined with with_structured_output() (native JSON mode), flash produces
+# schema-compliant output reliably.
+import os
+_scoring_model_name = os.environ.get("SCORING_MODEL", "gemini-2.5-flash")
 scoring_model = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash-lite",
-    # model="gemini-2.5-flash",
+    model=_scoring_model_name,
     temperature=0,
-    # max_output_tokens=2048
+    timeout=120,
+    max_retries=2,
 )
-
-
 
 
 

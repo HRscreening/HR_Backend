@@ -39,6 +39,7 @@ class CriterionV2(BaseModel):
     display_name: str = Field(..., min_length=1, max_length=150)
     weight: int = Field(default=0, ge=0, le=100)
     importance: int = Field(default=5, ge=1, le=10)
+    requirement_level: Optional[Literal["must", "should", "nice"]] = None
     priority: int = Field(..., ge=1)
     value: Optional[str] = None
     value_type: Literal["none"] = "none"
@@ -50,6 +51,8 @@ class CriterionV2(BaseModel):
 class RubricSectionV2(BaseModel):
     key: str = Field(..., min_length=1, max_length=80)
     label: str = Field(..., min_length=1, max_length=100)
+    weight: int = Field(default=0, ge=0, le=100)
+    importance: int = Field(default=5, ge=1, le=10)
     criteria: List[CriterionV2]
 
 
@@ -78,6 +81,7 @@ class ExtractedJDSchemaV2(BaseModel):
     domain_confidence: float = Field(..., ge=0.0, le=1.0)
     job_data: JobDataSchema
     threshold_score: int = Field(..., ge=0, le=100)
+    version: Optional[int] = 1
     sections: List[RubricSectionV2]
 
     @field_validator("domain")
@@ -104,6 +108,7 @@ class PipelineRubricOutput(BaseModel):
     domain: str = "other"
     domain_confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     threshold_score: int = Field(default=60, ge=0, le=100)
+    version: Optional[int] = 1
     sections: List[RubricSectionV2]
 
     @field_validator("domain")
@@ -224,6 +229,8 @@ def convert_v1_criteria_to_v2(criteria_dict: dict) -> dict:
         sections.append({
             "key": section_key,
             "label": label,
+            "weight": 60 if section_key == "mandatory_criteria" else 40,
+            "importance": 8 if section_key == "mandatory_criteria" else 5,
             "criteria": criteria_list,
         })
 

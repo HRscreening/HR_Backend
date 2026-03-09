@@ -15,6 +15,7 @@ Responsibilities:
 
 from configs.log_config import get_logger
 import json
+import re
 from typing import Any, Tuple, List
 
 from src.schemas.rubric_schemas import PipelineRubricOutput
@@ -25,6 +26,30 @@ logger = get_logger("rubric_post_processor")
 def _snake_to_display(name: str) -> str:
     """Convert snake_case to Title Case."""
     return " ".join(word.capitalize() for word in name.split("_") if word)
+
+def _to_snake(text: str) -> str:
+    """
+    Best-effort normalization to snake_case for stable rubric keys.
+    Keeps only [a-z0-9_] and collapses runs of underscores.
+    """
+    if text is None:
+        return ""
+    s = str(text).strip().lower()
+    s = re.sub(r"[^a-z0-9]+", "_", s)
+    s = re.sub(r"_+", "_", s).strip("_")
+    return s
+
+def _dedupe_name(name: str, used: set[str]) -> str:
+    """Ensure name uniqueness by appending _2, _3, ..."""
+    if name not in used:
+        used.add(name)
+        return name
+    i = 2
+    while f"{name}_{i}" in used:
+        i += 1
+    final = f"{name}_{i}"
+    used.add(final)
+    return final
 
 
 def _compute_weights_from_importance(items: list[dict], importance_key: str = "importance", max_imp: int = 10) -> list[dict]:
@@ -112,33 +137,56 @@ def post_process_rubric(raw_output: dict) -> dict:
                 section["criteria"] = criteria
 
             # Fix each criterion
-            for criterion in criteria:
+            used_criterion_names: set[str] = set()
+            for ci, criterion in enumerate(criteria):
                 if not isinstance(criterion, dict):
                     continue
+
+                # Ensure criterion has a stable snake_case name
+                if not criterion.get("name"):
+                    base = criterion.get("display_name") or criterion.get("label") or f"criterion_{ci + 1}"
+                    candidate = _to_snake(base) or f"criterion_{ci + 1}"
+                    criterion["name"] = candidate
+                criterion["name"] = _dedupe_name(str(criterion["name"]), used_criterion_names)
+
                 _fix_display_name(criterion)
                 _fix_value_consistency(criterion)
 
                 # Process sub-criteria
                 subs = criterion.get("sub_criteria")
                 if subs and isinstance(subs, list) and len(subs) > 0:
+                    used_sub_names: set[str] = set()
                     for sub in subs:
                         if not isinstance(sub, dict):
                             continue
+                        if not sub.get("name"):
+                            base = sub.get("display_name") or f"sub_criterion"
+                            candidate = _to_snake(base) or "sub_criterion"
+                            sub["name"] = candidate
+                        sub["name"] = _dedupe_name(str(sub["name"]), used_sub_names)
                         _fix_display_name(sub)
                         _fix_value_consistency(sub)
-                    criterion["sub_criteria"] = _compute_weights_from_importance(subs, "importance", 5)
+                    # Compute weights from importance, then sort by weight desc for stable ordering
+                    weighted_subs = _compute_weights_from_importance(subs, "importance", 5)
+                    weighted_subs = sorted(
+                        weighted_subs,
+                        key=lambda sc: (-(sc.get("weight") or 0), -(sc.get("importance") or 0), str(sc.get("name") or "")),
+                    )
+                    criterion["sub_criteria"] = weighted_subs
                 elif subs is not None and (not isinstance(subs, list) or len(subs) == 0):
                     criterion["sub_criteria"] = None
 
             # Normalize weights across criteria in this section based on importance
             if criteria:
-                section["criteria"] = _compute_weights_from_importance(criteria, "importance", 10)
-
-            # Fix priorities: ensure sequential and unique
-            sorted_criteria = sorted(criteria, key=lambda c: c.get("priority", 999))
-            for i, criterion in enumerate(sorted_criteria):
-                criterion["priority"] = i + 1
-            section["criteria"] = sorted_criteria
+                weighted_criteria = _compute_weights_from_importance(criteria, "importance", 10)
+                # Sort by computed weight desc (then importance) so weights are non-increasing by priority
+                weighted_criteria = sorted(
+                    weighted_criteria,
+                    key=lambda c: (-(c.get("weight") or 0), -(c.get("importance") or 0), str(c.get("name") or "")),
+                )
+                for i, criterion in enumerate(weighted_criteria):
+                    criterion["priority"] = i + 1
+                section["criteria"] = weighted_criteria
 
             # Ensure section label exists (default from key: snake_case → Title Case)
             if not section.get("label") and section.get("key"):
@@ -148,7 +196,20 @@ def post_process_rubric(raw_output: dict) -> dict:
         if not sections:
             sections = [{"key": "requirements", "label": "Requirements", "criteria": []}]
 
+        # Compute section-level weights from section importance
+        if len(sections) > 1:
+            sections = _compute_weights_from_importance(sections, "importance", 10)
+        elif len(sections) == 1:
+            sections[0]["weight"] = 100
+            sections[0]["importance"] = sections[0].get("importance", 10)
+
         raw_output["sections"] = sections
+
+        # Completeness check
+        warnings = check_rubric_completeness(raw_output)
+        if warnings:
+            for w in warnings:
+                logger.warning("Rubric completeness: %s", w)
 
         logger.info(
             "Post-processed rubric: domain=%s, sections=%d, total_criteria=%d",
@@ -319,6 +380,13 @@ def validate_rubric_json(payload: Any) -> Tuple[bool, List[str]]:
                     errors.append(f"sections[{si}].criteria weights should be non-increasing by priority/JD order")
                     break
 
+    # Validate section weights sum to 100 when ≥2 sections exist
+    section_weights = [s.get("weight", 0) for s in sections if isinstance(s, dict)]
+    if len(section_weights) >= 2:
+        total = sum(section_weights)
+        if total != 100 and total != 0:
+            errors.append(f"Section weights should sum to 100, got {total}")
+
     # --- Structural validation via pipeline schema (job_data not required) ---
     try:
         PipelineRubricOutput.model_validate(payload)
@@ -326,3 +394,46 @@ def validate_rubric_json(payload: Any) -> Tuple[bool, List[str]]:
         errors.append(f"schema validation failed: {e}")
 
     return (len(errors) == 0), errors
+
+
+def check_rubric_completeness(rubric: dict) -> List[str]:
+    """
+    Check that the rubric covers minimum expected dimensions.
+    Returns a list of warning strings (empty if complete).
+    """
+    warnings: List[str] = []
+
+    sections = rubric.get("sections", [])
+    if not sections:
+        warnings.append("Rubric has no sections")
+        return warnings
+
+    all_section_keys = {s.get("key", "") for s in sections if isinstance(s, dict)}
+    all_criterion_names = set()
+    for s in sections:
+        for c in s.get("criteria", []):
+            if isinstance(c, dict):
+                all_criterion_names.add(c.get("name", "").lower())
+
+    # Check for skills coverage
+    skills_keys = {"technical_skills", "core_skills", "required_skills", "skills"}
+    has_skills = bool(all_section_keys & skills_keys) or any(
+        "skill" in name for name in all_criterion_names
+    )
+    if not has_skills:
+        warnings.append("No skills-related section or criterion found")
+
+    # Check for experience coverage
+    experience_keys = {"experience", "work_experience"}
+    has_experience = bool(all_section_keys & experience_keys) or any(
+        "experience" in name or "years" in name for name in all_criterion_names
+    )
+    if not has_experience:
+        warnings.append("No experience-related section or criterion found")
+
+    # Check total criteria count
+    total_criteria = sum(len(s.get("criteria", [])) for s in sections)
+    if total_criteria < 2:
+        warnings.append(f"Rubric has only {total_criteria} criterion — may be too sparse")
+
+    return warnings

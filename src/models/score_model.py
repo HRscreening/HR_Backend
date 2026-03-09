@@ -17,9 +17,7 @@ from configs.postgress_db import Base
 
 class Score(Base):
     __tablename__ = "scores"
-    __table_args__ = (
-        UniqueConstraint('application_id', 'rubric_id', name='uq_app_rubric'),
-    )
+
 
     id = Column(
         UUID(as_uuid=True),
@@ -44,12 +42,11 @@ class Score(Base):
     )
 
     overall_score = Column(Numeric(5, 2), nullable=False)
+    raw_overall_score = Column(Numeric(5, 2), nullable=True)
     ai_confidence = Column(Numeric(3, 2), nullable=False)
 
-    grounding_data = Column(JSONB, nullable=True)
-    breakdown = Column(JSONB, nullable=True)
-    raw_overall_score = Column(Numeric(5, 2), nullable=True, index=True)  # The original overall score before any overrides, for auditing purposes.
-    scoring_method = Column(VARCHAR(50), nullable=True, index=True)  # E.g., "AI_Model_v1", "Recruiter_123", etc. Useful for tracking how the score was generated.
+    grounding_data = Column(JSONB, nullable=False)
+    breakdown = Column(JSONB, nullable=False)
     
     criteria = Column(JSONB, nullable=False) #A snapshot of the rubric criteria at the time of scoring. Ensures the score record is self contained even if the rubric changes later.
     threshold_score = Column(Numeric(5, 2), nullable=False) # The threshold that was in effect when this score was calculated. For historical reference.
@@ -64,8 +61,9 @@ class Score(Base):
 
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     
-    scored_by = Column(VARCHAR(50), nullable=True)  # Identifier for who or what scored the application (e.g., 'AI_Model_v1', 'Recruiter_123')
-    ai_model = Column(VARCHAR(255), nullable=True)  # Which AI model was used to generate this score, Useful for auditing and comparing model performance.
+    scored_by = Column(VARCHAR(255), nullable=True)  # Identifier for who or what scored the application (e.g., 'AI_Model_v1', 'Recruiter_123')
+    ai_model = Column(VARCHAR(255), nullable=True)  # Which AI model was used to generate this score
+    scoring_method = Column(VARCHAR(50), nullable=True)  # "weighted_v2" — audit trail for scoring algorithm version
     is_latest = Column(Boolean, default=True)  # Indicates if this is the latest score for the application-rubric pair
 
     rubric = relationship("Rubric", back_populates="scores")

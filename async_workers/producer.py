@@ -229,10 +229,10 @@ class ARQProducer:
     # Candidate Extraction Producer
     # =========================
     async def enqueue_candidate_extraction(
-    self,
-    resume_id: str,
-    candidate: CandidateInfoSchema | None,
-    batch_id: str,
+        self,
+        resume_id: str,
+        candidate: CandidateInfoSchema | None,
+        batch_id: str,
     ) -> str | None:
 
         cfg = self.candidate_extraction_config

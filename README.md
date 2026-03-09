@@ -118,6 +118,14 @@ alembic upgrade head
 python server.py
 ```
 
+### Development Mode (API + Worker)
+
+To run the FastAPI server **and** the RQ worker together:
+
+```bash
+./start_dev.sh
+```
+
 Or directly with uvicorn:
 ```bash
 uvicorn main:app --reload --port 8000

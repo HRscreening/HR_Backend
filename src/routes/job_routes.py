@@ -24,18 +24,20 @@ from fastapi import (
     status,
     File,
     UploadFile,
+    BackgroundTasks,
     Query,
 )
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
-from typing import Optional, List
 
 from configs.postgress_db import get_db
 from src.schemas.rubric_schemas import SetRubricRequest, UpdateRubricRequest, GenerateRubricPreviewRequest
-from src.schemas.job_schemas import JobOverviewResponse,JobOverviewResponseNew, RubricVersionsResponse
+from src.schemas.job_schemas import JobOverviewResponseNew, RubricVersionsResponse
 from src.services.resume_services import score_resumes_service
-from src.dependency import get_job_service, JobService
+from src.dependency import get_job_service, JobService, get_application_service
+from src.services.application_service import ApplicationService
+from src.utils.file_manager import fileManager
 
 
 router = APIRouter(prefix="/api/jobs", tags=["Job Management"])
@@ -305,13 +307,13 @@ async def get_job_overview(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Organization context missing org_id",
             )
-        return await job_service.get_job_overview2(
+        return await job_service.get_job_overview(
             job_id=str(job_id),
             organization_id=ctx.org_id,
         )
 
     if ctx.type == "personal":
-        return await job_service.get_job_overview2(
+        return await job_service.get_job_overview(
             job_id=str(job_id),
             organization_id=None,
         )
@@ -338,96 +340,48 @@ async def get_jd_status(
 
 # ─── 7. Process Applications (resume upload) ─────────────────────────
 
-# @router.post(
-#     "/process-applications-zip-file/{job_id}",
-#     status_code=status.HTTP_202_ACCEPTED,
-# )
-# async def process_applications(
-#     request: Request,
-#     job_id: UUID,
-#     background_tasks: BackgroundTasks,
-#     zip_file: UploadFile = File(...),
-#     job_service: JobService = Depends(get_job_service),
-# ):
-#     user_id = request.state.user.id
-#     ctx = request.state.context
-
-#     files = [zip_file]
-#     extracted_files = await fileManager.validate_and_extract(files)
-
-#     if ctx.type not in ("org", "personal"):
-#         raise HTTPException(
-#             status_code=status.HTTP_400_BAD_REQUEST,
-#             detail="Invalid context type",
-#         )
-
-#     msg = await job_service.process_applications(
-#         job_id=str(job_id),
-#         background_tasks=background_tasks,
-#         user_id=str(user_id),
-#         files=extracted_files,
-#         organization_id=ctx.org_id if ctx.type == "org" else None,
-#     )
-
-#     if not msg:
-#         raise HTTPException(
-#             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-#             detail="Failed to start application processing",
-#         )
-
-#     return {"status": "success", "message": msg}
-
-
-# ! uses keshav's version for scoring resumes
-@router.post("/process-applications-zip-file/{job_id}",status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/process-applications-zip-file/{job_id}",
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def process_applications(
     request: Request,
     job_id: UUID,
-    raw_files: List[UploadFile] = File(...),
-    job_service: JobService = Depends(get_job_service)
+    background_tasks: BackgroundTasks,
+    raw_files: list[UploadFile] = File(...),
+    job_service: JobService = Depends(get_job_service),
 ):
+    user_id = request.state.user.id
+    ctx = request.state.context
 
-    
-        user_id = request.state.user.id
-        ctx_type = request.state.context.type
-        
-        print
-        
-        # files = [zip_file]  # Wrap the single file in a list to reuse the validation function
-        # extracted_files = await fileManager.validate_and_extract(files)
-        
-        if ctx_type == "org":
-            msg = await job_service.process_applications_with_zip(
-                job_id=str(job_id),
-                user_id=str(user_id),
-                raw_files=raw_files,
-                organization_id=request.state.context.org_id,
-            )
-            
-        elif ctx_type == "personal":
-            msg = await job_service.process_applications_with_zip(
-                job_id=str(job_id),
-                user_id=str(user_id),
-                raw_files=raw_files,
-                organization_id=None,
-            )
-        else:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid context type",
-            )
-        
-        if not msg:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to start application processing",
-            )
-        
-        return {
-            "status": "success",
-            "message": msg,
-        }
-        
+    extracted_files = await fileManager.validate_and_extract(raw_files)
+
+    if ctx.type not in ("org", "personal"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid context type",
+        )
+
+    msg = await job_service.process_applications(
+        job_id=str(job_id),
+        background_tasks=background_tasks,
+        user_id=str(user_id),
+        files=extracted_files,
+        organization_id=ctx.org_id if ctx.type == "org" else None,
+    )
+
+    if not msg:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to start application processing",
+        )
+
+    return {
+        "status": "success",
+        "batch_id": msg.get("batch_id"),
+        "total_files": msg.get("total_files"),
+        "message": "Resume processing started",
+    }
 
 
 # ─── 8. Process Resumes (internal/testing) ───────────────────────────
@@ -448,28 +402,47 @@ async def trigger_scoring(
     )
 
 
-# ─── 9. Get Applications ─────────────────────────────────────────────
+# ─── 9. Batch Progress ───────────────────────────────────────────────
+
+@router.get("/{job_id}/batch-progress", status_code=status.HTTP_200_OK)
+async def get_batch_progress(
+    job_id: UUID,
+    batch_id: UUID = Query(None),
+    job_service: JobService = Depends(get_job_service),
+):
+    return await job_service.get_batch_progress(
+        job_id=str(job_id),
+        batch_id=str(batch_id) if batch_id else None,
+    )
+
+
+# ─── 10. Get Applications ────────────────────────────────────────────
+
+@router.delete("/{job_id}/applications/{application_id}", status_code=status.HTTP_200_OK)
+async def delete_application(
+    job_id: UUID,
+    application_id: UUID,
+    application_service: ApplicationService = Depends(get_application_service),
+):
+    """Delete an application and all associated data (scores, resumes) for this job."""
+    result = await application_service.delete_application(
+        application_id=str(application_id),
+        job_id=str(job_id),
+    )
+    return result
+
 
 @router.get("/get-applications/{job_id}", status_code=status.HTTP_200_OK)
-async def get_application(
+async def get_applications(
     job_id: UUID,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    job_service: JobService = Depends(get_job_service)
+    sort: str = Query("score_desc"),
+    job_service: JobService = Depends(get_job_service),
 ):
-    applications = await job_service.get_applications(
+    return await job_service.get_applications(
         job_id=str(job_id),
         page=page,
         page_size=page_size,
+        sort=sort,
     )
-
-    return applications
-
-
-@router.get("/settings/{job_id}", status_code=status.HTTP_200_OK)
-async def get_job_settings(
-    job_id: UUID,
-    job_service: JobService = Depends(get_job_service)
-):
-    settings = await job_service.get_job_settings(str(job_id))
-    return settings

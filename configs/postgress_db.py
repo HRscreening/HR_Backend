@@ -7,15 +7,13 @@ from contextlib import contextmanager
 from sqlalchemy.orm import Session
 
 
-# Supabase pooler (port 6543) uses pgbouncer transaction mode — disable prepared statement cache
+# Supabase pooler (pgbouncer) — disable prepared statement cache
 engine = create_async_engine(
     DATABASE_URL,
     echo=False,
     future=True,
     connect_args={"statement_cache_size": 0},
-    # Pooler connections can be dropped; pre-ping avoids stale connections causing runtime errors
-    pool_pre_ping=True,
-    # Recycle periodically to reduce "connection closed" mid-operation issues
+    pool_pre_ping=True,  # Required for pgbouncer to avoid stale connections
     pool_recycle=300,
 )
 
@@ -45,7 +43,7 @@ sync_engine = create_engine(
     SYNC_DATABASE_URL,
     echo=False,
     future=True,
-    pool_pre_ping=True
+    pool_pre_ping=True,  # Required for pgbouncer
 )
 
 sync_session_maker = sessionmaker(
