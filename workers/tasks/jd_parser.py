@@ -6,28 +6,42 @@ writes results to documents.ai_parsed_data and jobs.parsed_jd + jobs.job_metadat
 """
 
 import asyncio
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
-from sqlalchemy.orm import sessionmaker
 from uuid import UUID
 
-from configs.env_config import DATABASE_URL
 from configs.log_config import get_logger
-from src.models import Document, Job
-from src.models.enums import DocumentProcessingStatus
-from src.repositories.document_repository import DocumentRepository
-from src.utils.extract_pdf import extract_text_from_pdf
-from src.pipelines.generate_rubric import generate_rubric_from_jd
 from workers.connection import redis_conn
 
 logger = get_logger("jd_parser_worker")
 
-engine = create_async_engine(DATABASE_URL, echo=False, future=True)
-AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+# Engine is created lazily inside _parse_jd_async — NOT at module level.
+# Module-level create_async_engine initialises the asyncpg C extension in the
+# parent worker process; forked children then inherit corrupted state and crash
+# with SIGSEGV.  Creating the engine inside the async function guarantees it is
+# always built after fork (or inside a SimpleWorker that never forks).
+_engine = None
+_AsyncSessionLocal = None
+
+
+def _get_session_factory():
+    global _engine, _AsyncSessionLocal
+    if _AsyncSessionLocal is None:
+        from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+        from sqlalchemy.orm import sessionmaker
+        from configs.env_config import DATABASE_URL
+        _engine = create_async_engine(DATABASE_URL, echo=False, future=True)
+        _AsyncSessionLocal = sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
+    return _AsyncSessionLocal
 
 
 async def _parse_jd_async(job_id: str, document_id: str, file_path: str):
     """Async JD parsing logic."""
-    async with AsyncSessionLocal() as db:
+    from src.models import Document, Job
+    from src.models.enums import DocumentProcessingStatus
+    from src.repositories.document_repository import DocumentRepository
+    from src.pipelines.generate_rubric import generate_rubric_from_jd
+
+    session_factory = _get_session_factory()
+    async with session_factory() as db:
         doc_repo = DocumentRepository(db)
 
         try:

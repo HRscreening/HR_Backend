@@ -1,152 +1,221 @@
-# ! : This service uses synchronous DB session for workers.
-
-from configs.postgress_db import get_sync_db,AsyncSession
-from src.models import Resume, Application,BulkUploadBatches,Document,Rubric,Candidate,Score,Job
-from src.utils.extract_pdf import extract_text_from_pdf_sync
-from src.utils.manage_supabase_buckets import save_file_from_path
-import aiofiles
-import os
-from src.schemas.worker_task_schemas import ResumeParsingJobSchema
-from src.schemas.user_schemas import ResumeDataSchema,BatchResumeDataSchema,ScoreOutputSchema,CandidateInfoSchema
-from src.models.enums import ResumeStatus, DocumentProcessingStatus,BulkUploadStatus
-from configs.env_config import SUPABASE_PUBLIC_URL
-import os
-import mimetypes
-from sqlalchemy import select,func,update,and_
+import asyncio
 import json
-from workers.producer import enqueue_resumes_scoring,enqueue_candidate_extraction
-from src.services.errors.base import DomainError 
-from src.pipelines.process_resumes import run_gemini_batch
-from src.utils.jsonl_creator import write_resume_scoring_jsonl
-from langchain.messages import SystemMessage
-from src.pipelines.prompts import Prompts
-from src.pipelines.score_resumes import score_resume_async,score_resume_sync
+import logging
+import mimetypes
+import os
+
+from sqlalchemy import select, and_
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from configs.env_config import SUPABASE_PUBLIC_URL
+from configs.postgress_db import get_sync_db
+from src.models import Resume, Application, BulkUploadBatches, Document, Rubric, Candidate, Score, Job
+from src.models.enums import ResumeStatus, DocumentProcessingStatus, BulkUploadStatus
+# LAZY IMPORT: score_resume_async / score_resume_sync are imported inside the
+# functions that use them, NOT at module level.  Importing score_resumes.py
+# triggers src.pipelines.models which creates ChatGoogleGenerativeAI (gRPC).
+# RQ forks a child process for each job — gRPC state corrupted after fork
+# causes SIGSEGV (signal 11) on macOS.  Lazy import ensures models are only
+# initialised inside the already-forked child, avoiding the crash.
+from src.schemas.user_schemas import ResumeDataSchema, CandidateInfoSchema
+from src.services.errors.base import DomainError
+from src.utils.extract_pdf import extract_text_from_file_sync
+from src.utils.candidate_name import extract_candidate_full_name
+from src.utils.manage_supabase_buckets import download_to_tempfile
+from workers.producer import enqueue_resumes_scoring, enqueue_candidate_extraction
+from src.utils.pipeline_debug_log import pdlog
+
+logger = logging.getLogger(__name__)
 
 
     
 def parse_resume_service(
     *,
-    file_path: str,
+    storage_path: str,
     batch_id: str,
     redis_job_id: str | None = None,
 ):
+    """
+    Parse a resume from Supabase storage.
+
+    storage_path: full path including bucket, e.g. "resumes/job_id/filename.pdf"
+    File is already uploaded to Supabase at request time — no local file dependency.
+    """
+    file_name = os.path.basename(storage_path)
+    logger.info(f"[SERVICE] parse_resume_service START: file={file_name} batch={batch_id}")
+
+    tmp_path = None
     with get_sync_db() as db:
         try:
-            if not os.path.exists(file_path):
-                raise FileNotFoundError(f"File not found: {file_path}")
+            logger.info(f"[SERVICE] Downloading from Supabase: {storage_path}")
+            tmp_path = download_to_tempfile(storage_path)
 
-            parsed_text, page_count = extract_text_from_pdf_sync(file_path)
-            file_name = os.path.basename(file_path)
-            
-            job_id_result = db.execute(
+            logger.info(f"[SERVICE] Extracting text from: {file_name}")
+            parsed_text, page_count, extraction_method = extract_text_from_file_sync(tmp_path)
+            logger.info(
+                f"[SERVICE] Extracted: file={file_name} pages={page_count} "
+                f"method={extraction_method} chars={len(parsed_text)}"
+            )
+            pdlog.extraction(file_name, parsed_text, extraction_method, page_count)
+
+            logger.info(f"[SERVICE] Fetching batch {batch_id} from DB")
+            batch = db.execute(
                 select(BulkUploadBatches).where(BulkUploadBatches.id == batch_id)
-            )
-            batch = job_id_result.scalar_one_or_none()
-            
+            ).scalar_one_or_none()
+
             if not batch:
-                raise ValueError(f"Batch with id {batch_id} not found in DB")
-            
+                raise ValueError(f"Batch {batch_id} not found in DB")
+
             job_id = batch.job_id
+            logger.info(f"[SERVICE] Batch found: job_id={job_id} total_files={batch.total_files}")
 
-            print("\n",file_path,"\n")
-            uploaded_file_url = save_file_from_path(
-                local_file_path=file_path,
-                bucket_name="resumes",
-                destination_path=f"{job_id}/{file_name}"
-            )
-
-            application = Application(
-                job_id=job_id,
-            )
+            application = Application(job_id=job_id)
             db.add(application)
             db.flush()
+            logger.info(f"[SERVICE] Application created: id={application.id}")
 
             resume = Resume(
                 application_id=application.id,
-                raw_file_url=uploaded_file_url,
+                raw_file_url=storage_path,
                 parsed_text=parsed_text,
                 page_count=page_count,
-                status=ResumeStatus.PARSED
+                extraction_method=extraction_method,
+                status=ResumeStatus.PARSED,
             )
             db.add(resume)
             db.flush()
+            logger.info(f"[SERVICE] Resume created: id={resume.id}")
 
-            mime_type, _ = mimetypes.guess_type(file_path)
+            mime_type, _ = mimetypes.guess_type(file_name)
             mime_type = mime_type or "application/pdf"
 
             document = Document(
                 entity_type="resume",
                 entity_id=resume.id,
                 document_type="Resume",
-                file_name=os.path.basename(file_path),
-                file_size_bytes=os.path.getsize(file_path),
+                file_name=file_name,
+                file_size_bytes=os.path.getsize(tmp_path),
                 mime_type=mime_type,
                 storage_provider="supabase",
-                file_path=str(uploaded_file_url),
-                file_url=f"{SUPABASE_PUBLIC_URL}/{uploaded_file_url}",
+                file_path=storage_path,
+                file_url=f"{SUPABASE_PUBLIC_URL}/{storage_path}",
                 extracted_text=parsed_text,
-                parsing_status=DocumentProcessingStatus.PARSED,
+                parsing_status=DocumentProcessingStatus.PARSED.value,
             )
-            
             db.add(document)
-            
-            application.current_resume_id = resume.id
-            
-            
-            #TODO: Update the batch table with the count of processed files and any errors if needed. This can help in tracking the progress of the batch processing.
-            
-            if batch:
-                batch.success_count += 1
-            
-            parse_result = f"{file_name} parsed successfully"
-            batch.processing_results = (batch.processing_results or "") + json.dumps({
-                "file_name": file_name,
-                "result": parse_result
-            }) + "\n"
-            
-            db.commit()
 
-        except Exception:
+            application.current_resume_id = resume.id
+            batch.success_count += 1
+            batch.processed_count += 1
+
+            results = batch.processing_results
+            if not isinstance(results, dict):
+                results = {}
+            results[file_name] = f"parsed successfully (method={extraction_method})"
+            batch.processing_results = results
+
+            db.commit()
+            logger.info(
+                f"[SERVICE] DB committed: file={file_name} "
+                f"batch success_count={batch.success_count}/{batch.total_files}"
+            )
+
+        except Exception as e:
+            logger.error(f"[SERVICE] parse_resume_service FAILED: file={file_name} error={e!r}")
             db.rollback()
             raise
 
+        finally:
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+
 
 def mark_fail_job(batch_id: str, file_name: str, error_msg: str):
+    logger.info(f"[SERVICE] mark_fail_job: file={file_name} batch={batch_id}")
     with get_sync_db() as db:
         result = db.execute(
-            select(BulkUploadBatches).where(BulkUploadBatches.id == batch_id)  
+            select(BulkUploadBatches).where(BulkUploadBatches.id == batch_id)
         )
         batch = result.scalar_one_or_none()
-        
+
         if batch:
             batch.failed_count += 1
-            batch.processing_results = (batch.processing_results or "") + json.dumps({
-                "file_name": file_name,
-                "result": f"Failed: {error_msg}"
-            }) + "\n"
+            batch.processed_count += 1
+
+            results = batch.processing_results
+            if not isinstance(results, dict):
+                results = {}
+            results[file_name] = f"failed: {error_msg}"
+            batch.processing_results = results
+
+            err = batch.error_log
+            if not isinstance(err, dict):
+                err = {}
+            err[file_name] = error_msg
+            batch.error_log = err
             db.commit()
+            logger.info(
+                f"[SERVICE] mark_fail_job committed: file={file_name} "
+                f"batch failed_count={batch.failed_count}/{batch.total_files}"
+            )
+        else:
+            logger.error(f"[SERVICE] mark_fail_job: batch {batch_id} not found in DB")
 
 
 def finalize_batch_parsed(batch_id: str):
+    """
+    Finalize a parsing batch: enqueue scoring for all successfully parsed resumes.
+    Uses DB counts exclusively — Redis counters are unreliable due to stale retries.
+    Safe to call after every job; the FOR UPDATE lock ensures only one winner.
+    """
+    logger.info(f"[FINALIZE_DB] finalize_batch_parsed START: batch={batch_id}")
+
     with get_sync_db() as db:
         batch = db.execute(
             select(BulkUploadBatches)
             .where(BulkUploadBatches.id == batch_id)
-            .with_for_update()   # 🔒 critical
+            .with_for_update()
         ).scalar_one_or_none()
 
         if not batch:
+            logger.error(f"[FINALIZE_DB] batch {batch_id} not found in DB — cannot finalize")
             return
 
-        # ✅ batch not fully processed yet
-        if batch.total_files != (batch.failed_count + batch.success_count):
-            return
+        logger.info(
+            f"[FINALIZE_DB] DB state: total_files={batch.total_files} "
+            f"success_count={batch.success_count} failed_count={batch.failed_count} "
+            f"status={batch.status}"
+        )
 
-        # ✅ idempotency guard USING EXISTING STATUS
+        # Idempotency guard
         if batch.status == BulkUploadStatus.COMPLETED:
+            logger.info(f"[FINALIZE_DB] batch {batch_id} already completed — skipping")
             return
+
+        # Check DB counts only — no Redis dependency.
+        # Use >= instead of == to handle edge cases where counts may be slightly
+        # over-incremented (e.g., success on retry after a previous failure was counted).
+        processed = batch.success_count + batch.failed_count
+        if processed < batch.total_files:
+            logger.info(
+                f"[FINALIZE_DB] batch {batch_id} still incomplete: "
+                f"total={batch.total_files} success={batch.success_count} failed={batch.failed_count} "
+                f"processed={processed} — waiting"
+            )
+            return
+
+        if processed > batch.total_files:
+            logger.warning(
+                f"[FINALIZE_DB] batch {batch_id} over-counted: "
+                f"total={batch.total_files} success={batch.success_count} failed={batch.failed_count} "
+                f"processed={processed} — proceeding with finalization anyway"
+            )
 
         job_id = batch.job_id
+        logger.info(f"[FINALIZE_DB] All {batch.total_files} files done. Fetching parsed resumes for job {job_id}")
 
         resumes = db.execute(
             select(Resume)
@@ -155,29 +224,36 @@ def finalize_batch_parsed(batch_id: str):
                 Application.job_id == job_id,
                 Resume.status == ResumeStatus.PARSED
             )
-            .with_for_update()   
+            .with_for_update()
         ).scalars().all()
 
-        resume_ids = []
+        resume_ids = [str(r.id) for r in resumes]
+        logger.info(f"[FINALIZE_DB] Found {len(resume_ids)} resumes to score")
 
         for resume in resumes:
             resume.status = ResumeStatus.QUEUED_FOR_SCORING
-            resume_ids.append(resume.id)
 
         if resume_ids:
             enqueue_resumes_scoring(
                 job_id=str(job_id),
-                resume_ids=resume_ids
+                resume_ids=resume_ids,
+                upload_batch_id=str(batch.id),
             )
+            batch.scoring_total = len(resume_ids)
+            batch.scoring_status = BulkUploadStatus.PROCESSING
+            logger.info(f"[FINALIZE_DB] Enqueued scoring for {len(resume_ids)} resumes")
+        else:
+            logger.warning(f"[FINALIZE_DB] No resumes to score — all failed parsing?")
 
-        # 🔒 single-winner state transition
         batch.status = BulkUploadStatus.COMPLETED
         db.commit()
+        logger.info(f"[FINALIZE_DB] batch {batch_id} finalized and committed")
 
 
 # Should be for worker but now testing as an API
 # TODO: For workers we will be passing batch_id only
 async def score_resumes_service(job_id: str, db: AsyncSession):
+    from src.pipelines.score_resumes import score_resume_async
     try:
         result = await db.execute(
             select(Resume)
@@ -207,11 +283,22 @@ async def score_resumes_service(job_id: str, db: AsyncSession):
         if not rubric:
             raise DomainError(f"No active rubric found for job {job_id}")
 
-        resumes = [ResumeDataSchema(application_id=r.application_id,resume_id=r.id ,resume_text=r.parsed_text) for r in resumes]
-        
+        # Extract candidate info first
+        from src.pipelines.extract_candidate_info import extract_candidate_info_async
+        candidate_infos = {}
+        for r in resumes:
+            try:
+                ci = await extract_candidate_info_async(r.parsed_text or "")
+                candidate_infos[str(r.id)] = ci
+            except Exception:
+                candidate_infos[str(r.id)] = CandidateInfoSchema()
+
+        resumes = [ResumeDataSchema(application_id=r.application_id, resume_id=r.id, resume_text=r.parsed_text) for r in resumes]
+
         res = await score_resume_async(
             resumes=resumes,
-            criteria=rubric.criteria
+            criteria=rubric.criteria,
+            candidate_infos=candidate_infos,
         )
         
         
@@ -232,15 +319,13 @@ def score_resumes_service_sync(
     batch_id: str,
     redis_job_id: str | None = None
 ):
+    from src.pipelines.score_resumes import score_resume_sync
     if not resume_ids:
         raise DomainError("Empty resume batch received")
 
     with get_sync_db() as db:
         
-        print(f"""
-              Resume scoring service called with db_job_id={db_job_id}, batch_id={batch_id}, resume_ids={resume_ids}
-              """
-        )
+        logger.info(f"[SCORING] start: db_job_id={db_job_id} batch_id={batch_id} resume_count={len(resume_ids)}")
 
         job = db.execute(
             select(Job).where(Job.id == db_job_id)
@@ -291,88 +376,172 @@ def score_resumes_service_sync(
             
         
 
-        # 3️⃣ Prepare LLM input
+        # 3️⃣ Dedup: skip resumes that already have a score for this rubric
+        already_scored = set()
+        existing_scores = db.execute(
+            select(Score.application_id).where(
+                Score.rubric_id == rubric.id,
+                Score.application_id.in_({r.application_id for r in resumes}),
+                Score.is_active.is_(True),
+            )
+        ).scalars().all()
+        already_scored = set(existing_scores)
+
+        resumes_to_score = [r for r in resumes if r.application_id not in already_scored]
+
+        if not resumes_to_score:
+            logger.info(f"All resumes already scored for rubric {rubric.id}, skipping")
+            return {
+                "status": "BATCH_SKIPPED",
+                "batch_id": batch_id,
+                "scored_count": 0,
+                "skipped_count": len(resumes),
+            }
+
+        # 4️⃣ Extract candidate info separately (Step 1 of 2-step pipeline)
+        # Uses LLM with native structured output for name/email/phone.
+        # Lazy import to avoid gRPC fork issues (same as score_resume_sync).
+        from src.pipelines.extract_candidate_info import extract_candidate_info_sync
+
+        resume_map = {r.id: r for r in resumes_to_score}
+        candidate_infos: dict[str, CandidateInfoSchema] = {}
+
+        for r in resumes_to_score:
+            try:
+                ci = extract_candidate_info_sync(r.parsed_text or "")
+                candidate_infos[str(r.id)] = ci
+                logger.info(
+                    f"[CANDIDATE_EXTRACT] resume={r.id} name={ci.full_name!r} "
+                    f"email={ci.email!r} phone={ci.phone!r}"
+                )
+                pdlog.candidate_info(str(r.id), ci.full_name, ci.email, ci.phone, source="llm+heuristic")
+            except Exception as e:
+                logger.warning(f"[CANDIDATE_EXTRACT] Failed for resume={r.id}: {e}")
+                pdlog.error("candidate_extraction", str(r.id), str(e))
+                candidate_infos[str(r.id)] = CandidateInfoSchema()
+
+        # 5️⃣ Prepare LLM input for scoring (Step 2 of 2-step pipeline)
         resume_payload = [
             ResumeDataSchema(
-                application_id=r.application_id,  # derived here
+                application_id=r.application_id,
                 resume_id=r.id,
                 resume_text=r.parsed_text
             )
-            for r in resumes
+            for r in resumes_to_score
         ]
 
-        # 4️⃣ ONE batch LLM call
+        # 6️⃣ ONE batch LLM scoring call (uses with_structured_output — native JSON mode)
         score_results = score_resume_sync(
             resumes=resume_payload,
-            criteria=rubric.criteria
+            criteria=rubric.criteria,
+            candidate_infos=candidate_infos,
         )
-        
+
         applications = {
             a.id: a
             for a in db.execute(
                 select(Application).where(
                     Application.id.in_(
-                        {r.application_id for r in resumes}
+                        {r.application_id for r in resumes_to_score}
                     )
                 )
             ).scalars()
         }
 
-        resume_map = {r.id: r for r in resumes}
-        
-        # 5️⃣ Persist results
+        # Log final scores to debug file
+        rubric_section_keys = [s.get("key", "") for s in (rubric.criteria.get("sections") or [])]
         for item in score_results:
- 
-            # Can add a check for existing score for the resume and decide to update or skip based on that. For now assuming one score per resume.
-            appl = db.execute(
-                select(Application).where(Application.id == item.application_id)
-            ).scalar_one_or_none()
-            
+            pdlog.scoring_final(
+                resume_id=str(item.resume_id),
+                overall_score=item.score.overall_score,
+                section_scores=item.score.breakdown if isinstance(item.score.breakdown, dict) else {},
+            )
+
+        # 7️⃣ Persist results
+        for item in score_results:
             appl = applications.get(item.application_id)
-            
             if appl:
                 appl.ai_analysis = item.score.ai_analysis
-                
-            candidate_info = item.score.candidate_info
-            
 
-            if candidate_info and candidate_info.full_name :
-                print(f"Enqueuing candidate extraction for resume_id={item.resume_id} with candidate info: {candidate_info}")
-                enqueue_candidate_extraction(
-                    resume_id=item.resume_id,
-                    batch_id=batch_id,
-                    candidate=item.score.candidate_info
-                )
-            
-            
             resume = resume_map.get(item.resume_id)
 
             if resume:
                 resume.status = ResumeStatus.SCORED
 
-            
-            
+            # Use candidate info from Step 1 extraction
+            candidate_info = candidate_infos.get(str(item.resume_id), CandidateInfoSchema())
+
+            # Fallback to old heuristic if LLM extraction found nothing
+            if not candidate_info.full_name:
+                inferred = extract_candidate_full_name((resume.parsed_text if resume else "") or "")
+                if inferred:
+                    candidate_info.full_name = inferred
+
+            if candidate_info and (candidate_info.full_name or candidate_info.email or candidate_info.phone):
+                enqueue_candidate_extraction(
+                    resume_id=item.resume_id,
+                    batch_id=batch_id,
+                    candidate=candidate_info,
+                )
+
+            # breakdown is already a dict (section_scores from post-processor)
+            breakdown_data = item.score.breakdown
+            if hasattr(breakdown_data, 'model_dump'):
+                breakdown_data = breakdown_data.model_dump()
+
+            grounding_data = item.score.grounding_data
+            if hasattr(grounding_data, 'model_dump'):
+                grounding_data = grounding_data.model_dump()
+            if not isinstance(grounding_data, dict):
+                grounding_data = {}
+
+            # Store distinguishing_factors inside grounding_data for API access
+            if hasattr(item.score, 'distinguishing_factors') and item.score.distinguishing_factors:
+                grounding_data["distinguishing_factors"] = item.score.distinguishing_factors
+
+            # Store extracted candidate_info so UI can show name/email/phone
+            # even before candidate_extraction worker runs
+            if candidate_info:
+                grounding_data["candidate_info"] = {
+                    "full_name": getattr(candidate_info, "full_name", None),
+                    "email": getattr(candidate_info, "email", None),
+                    "phone": getattr(candidate_info, "phone", None),
+                }
+
             db.add(
                 Score(
                     application_id=item.application_id,
                     rubric_id=rubric.id,
                     overall_score=item.score.overall_score,
+                    raw_overall_score=item.score.raw_overall_score,
                     ai_confidence=item.score.ai_confidence,
-                    breakdown=item.score.breakdown.model_dump(),
-                    grounding_data=item.score.grounding_data,
+                    breakdown=breakdown_data,
+                    grounding_data=grounding_data,
                     scored_by="AI",
                     threshold_score=rubric.threshold_score,
                     criteria=rubric.criteria,
-                    ai_model = "Gemini-2.5-Flash-lite"
+                    ai_model=os.environ.get("SCORING_MODEL", "Gemini-2.5-Flash"),
+                    scoring_method=item.score.scoring_method,
                 )
             )
 
         db.commit()
 
+        scored_count = len(score_results)
+        failed_count = len(resumes_to_score) - scored_count
+
+        if failed_count > 0:
+            logger.warning(
+                f"[SCORING] batch={batch_id}: {failed_count}/{len(resumes_to_score)} "
+                f"resumes failed LLM scoring (silently skipped)"
+            )
+
         return {
             "status": "BATCH_COMPLETED",
             "batch_id": batch_id,
-            "scored_count": len(score_results)
+            "scored_count": scored_count,
+            "failed_count": failed_count,
+            "total_in_batch": len(resumes_to_score),
         }
 
 
@@ -386,10 +555,7 @@ def extract_candidate_service(
 
     with get_sync_db() as db:
 
-        print(
-            f"Received candidate extraction task for resume_id={resume_id} "
-            f"with extracted info: {candidate_info}"
-        )
+        logger.info(f"[CANDIDATE] extract for resume_id={resume_id}")
 
         resume = db.execute(
             select(Resume).where(Resume.id == resume_id)
@@ -462,7 +628,7 @@ def extract_candidate_service(
         )
 
         db.add(new_candidate)
-        db.flush()  
+        db.flush()
 
         resume.candidate_id = new_candidate.id
         application.candidate_id = new_candidate.id
@@ -470,617 +636,408 @@ def extract_candidate_service(
         db.commit()
 
 
+# =============================================================================
+# Async Worker Service — used by ARQ async_workers
+# =============================================================================
 
-# ! : Decide  whether to keep above part or not
+class ResumeService_ForWorker:
+    """
+    Async resume service for ARQ workers.
+    Provides async versions of parse/score operations using the async DB session.
+    """
 
-from configs.postgress_db import AsyncSession
-from src.utils.extract_pdf import extract_text_from_pdf_sync
-import os
-from src.schemas.resume_schemas import ResumeDataSchema,ResumeDataSchemaURL
-from src.models.enums import ResumeStatus, DocumentProcessingStatus
-from src.models import Document
-from configs.env_config import SUPABASE_PUBLIC_URL
-import os
-import mimetypes
-from src.services.errors.base import DomainError 
-from src.pipelines.img_processing.score_resumes import score_resume_with_text
-from src.pipelines.img_processing.score_img_format_resumes import score_resume_with_url
-from src.repositories.resume_respositoy import ResumeRepository
-from configs.log_config import get_logger
-from src.utils.extract_pdf import pdf_text_extractor,PDFTextExtractor
-from src.schemas.score_schemas import ScoreRecordSchema,ResumeScoreFailure,ResumeScoreResult,Candidate_info_task,ResumeDataSchemaURL
-import asyncio
-
-
-from src.repositories.resume_respositoy import ResumeRepository
-from src.repositories.application_repository import ApplicationRepository
-from src.repositories.batch_repositoy import BatchRepository
-from src.repositories.job_repository import JobRepository
-from src.repositories.document_repository import DocumentRepository
-from src.utils.manage_supabase_buckets import supbase_file_manager,SupabaseFileHandler
-from async_workers.producer import ARQProducer 
-from src.repositories.score_repository import ScoreRepository
-from datetime import datetime
-from typing import Optional,List
-
-
-
-class BaseResumeService:
-    def __init__(self, job_repository: JobRepository, resume_repository: ResumeRepository, application_repository: ApplicationRepository, batch_repository: BatchRepository, document_repository: DocumentRepository, db: AsyncSession, *, job_producer: ARQProducer = None, score_repository: ScoreRepository = None):
-        self.db = db
-        self.resume_repository: ResumeRepository = resume_repository
-        self.job_repository: JobRepository = job_repository
-        self.application_repository: ApplicationRepository = application_repository
-        self.batch_repository: BatchRepository = batch_repository
-        self.pdf_text_extractor: PDFTextExtractor = pdf_text_extractor
-        self.supbase_file_manager: SupabaseFileHandler = supbase_file_manager
-        self.document_repository: DocumentRepository = document_repository
-        self.score_repository: ScoreRepository = score_repository
-        self.job_producer: ARQProducer = job_producer
-        
-
-
-
-
-
-
-# For API
-class ResumeService(BaseResumeService):
-    def __init__(self, job_repository: JobRepository, resume_repository: ResumeRepository, application_repository: ApplicationRepository, batch_repository: BatchRepository, document_repository: DocumentRepository, db: AsyncSession):
-        super().__init__(job_repository, resume_repository, application_repository, batch_repository, document_repository, db)
-        self.logger = get_logger("ResumeService")
-        
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
- 
-# For Workers - can have worker specific methods here and use the common methods from BaseResumeService
-class ResumeService_ForWorker(BaseResumeService):
-    def __init__(self, job_repository: JobRepository, resume_repository: ResumeRepository, application_repository: ApplicationRepository, batch_repository: BatchRepository, document_repository: DocumentRepository, job_producer: ARQProducer, score_repository: ScoreRepository, db: AsyncSession):
-        super().__init__(job_repository, resume_repository, application_repository, batch_repository, document_repository, db, job_producer=job_producer, score_repository=score_repository)
-        self.logger = get_logger("ResumeService_ForWorker")
-        self.parse_resume_logger = get_logger("Worker:ResumeService:ParseResume")
-        self.score_url_logger = get_logger("Worker:ResumeService:ScoreURL")
-        self.score_text_logger = get_logger("Worker:ResumeService:ScoreText")
-        
-        
-    async def parse_resume(
+    def __init__(
         self,
-        file_path: str,
-        batch_id: str,
-    )-> dict:
+        db: AsyncSession,
+        resume_repository,
+        score_repository,
+        job_producer,
+        application_repository,
+        batch_repository,
+        document_repository,
+        job_repository,
+    ):
+        self.db = db
+        self.resume_repository = resume_repository
+        self.score_repository = score_repository
+        self.job_producer = job_producer
+        self.application_repository = application_repository
+        self.batch_repository = batch_repository
+        self.document_repository = document_repository
+        self.job_repository = job_repository
+
+    async def parse_resume(self, file_path: str, batch_id: str):
         """
-        Parse a resume PDF file and store metadata in the database.
-        
-        Extracts text from the PDF, uploads it to Supabase, creates Application,
-        Resume, and Document records, and returns the parsing result.
-        
-        Args:
-            file_path (str): Path to the resume PDF file on disk
-            batch_id (str): ID of the batch this resume belongs to
-            
-        Returns:
-            dict: Dictionary with keys 'file_name' and 'msg' indicating parse success
-            
-        Raises:
-            FileNotFoundError: If the specified file does not exist
-            ValueError: If batch with given batch_id is not found in database
-            Exception: On database or file processing errors
+        Parse a resume from Supabase storage (async version).
+        file_path: storage path e.g. "resumes/job_id/filename.pdf"
         """
+        file_name = os.path.basename(file_path)
+        logger.info(f"[SERVICE] parse_resume START: file={file_name} batch={batch_id}")
+
+        tmp_path = None
         try:
-            if not os.path.exists(file_path):
-                raise FileNotFoundError(f"File not found: {file_path}")
+            # Download from Supabase (sync I/O -> thread)
+            logger.info(f"[SERVICE] Downloading from Supabase: {file_path}")
+            tmp_path = await asyncio.to_thread(download_to_tempfile, file_path)
 
-            parsed_text, page_count = extract_text_from_pdf_sync(file_path)
-            file_name = os.path.basename(file_path)
-            
-            batch = await self.batch_repository.get_batch_by_id(batch_id)
-            
+            # Extract text (sync I/O -> thread)
+            logger.info(f"[SERVICE] Extracting text from: {file_name}")
+            parsed_text, page_count, extraction_method = await asyncio.to_thread(
+                extract_text_from_file_sync, tmp_path
+            )
+            logger.info(
+                f"[SERVICE] Extracted: file={file_name} pages={page_count} "
+                f"method={extraction_method} chars={len(parsed_text)}"
+            )
+
+            # Fetch batch
+            batch_result = await self.db.execute(
+                select(BulkUploadBatches).where(BulkUploadBatches.id == batch_id)
+            )
+            batch = batch_result.scalar_one_or_none()
+
             if not batch:
-                raise ValueError(f"Batch with id {batch_id} not found in DB")
-            
+                raise ValueError(f"Batch {batch_id} not found in DB")
+
             job_id = batch.job_id
+            logger.info(f"[SERVICE] Batch found: job_id={job_id} total_files={batch.total_files}")
 
-            self.parse_resume_logger.info(f"Parsing resume at {file_path} for batch_id={batch_id}, job_id={job_id} at {datetime.now().isoformat()}")
-           
-            uploaded_file_url = self.supbase_file_manager.save_file_from_path(
-                local_path=file_path,
-                bucket="resumes",
-                destination_path=f"{job_id}/{file_name}"
-            )
+            # Create Application
+            application = Application(job_id=job_id)
+            self.db.add(application)
+            await self.db.flush()
+            logger.info(f"[SERVICE] Application created: id={application.id}")
 
-            application = await self.application_repository.create_application(
-                job_id=job_id,
-                candidate_id=None,  # will be linked later in candidate extraction step
-                resume_id=None  # will be linked after resume record is created
-            )
-            
-            
-            resume = await self.resume_repository.add_resume(
-                applicaion_id=application.id,
-                raw_file_url=uploaded_file_url,
+            # Create Resume
+            resume = Resume(
+                application_id=application.id,
+                raw_file_url=file_path,
                 parsed_text=parsed_text,
                 page_count=page_count,
-                status=ResumeStatus.PARSED
+                extraction_method=extraction_method,
+                status=ResumeStatus.PARSED,
             )
+            self.db.add(resume)
+            await self.db.flush()
+            logger.info(f"[SERVICE] Resume created: id={resume.id}")
 
-            mime_type, _ = mimetypes.guess_type(file_path)
+            # Create Document
+            mime_type, _ = mimetypes.guess_type(file_name)
             mime_type = mime_type or "application/pdf"
+            file_size = await asyncio.to_thread(os.path.getsize, tmp_path)
 
-            await self.document_repository.add_document(Document(
+            document = Document(
                 entity_type="resume",
                 entity_id=resume.id,
                 document_type="Resume",
-                file_name=os.path.basename(file_path),
-                file_size_bytes=os.path.getsize(file_path),
+                file_name=file_name,
+                file_size_bytes=file_size,
                 mime_type=mime_type,
                 storage_provider="supabase",
-                file_path=str(uploaded_file_url),
-                file_url=f"{SUPABASE_PUBLIC_URL}/{uploaded_file_url}",
+                file_path=file_path,
+                file_url=f"{SUPABASE_PUBLIC_URL}/{file_path}",
                 extracted_text=parsed_text,
                 parsing_status=DocumentProcessingStatus.PARSED.value,
-            ))
-            
-            
-            application.current_resume_id = resume.id
-            
-            
-            #TODO: Update the batch table with the count of processed files and any errors if needed. This can help in tracking the progress of the batch processing.
-            
-            parse_result = f"{file_name} parsed successfully"
-            
-            await self.batch_repository.increment_success(
-                batch_id=batch_id,
             )
-            
-            await self.db.commit()
-            
-            result = {
-                "file_name": file_name,
-                "msg": parse_result,
-            }
-            
-            
-            return result
+            self.db.add(document)
 
-        except Exception:
+            # Update application and batch
+            application.current_resume_id = resume.id
+            batch.success_count += 1
+
+            results = batch.processing_results or {}
+            results[file_name] = f"parsed successfully (method={extraction_method})"
+            batch.processing_results = results
+
+            await self.db.commit()
+            logger.info(
+                f"[SERVICE] DB committed: file={file_name} "
+                f"batch success_count={batch.success_count}/{batch.total_files}"
+            )
+
+        except Exception as e:
+            logger.error(f"[SERVICE] parse_resume FAILED: file={file_name} error={e!r}")
             await self.db.rollback()
-            self.parse_resume_logger.exception(f"Error parsing resume at {file_path} for batch_id={batch_id}")
             raise
-    
-   
-    # =========================================================
-    # PUBLIC ENTRYPOINT
-    # =========================================================
+
+        finally:
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
 
     async def score_parsed_text_resumes(
         self,
         db_job_id: str,
-        resume_ids: List[str],
+        resume_ids: list[str],
         batch_id: str,
-    ) -> Optional[dict]:
-
+    ):
+        """Score resumes that have parsed text (async version for ARQ workers)."""
+        from src.pipelines.score_resumes import score_resume_async
         if not resume_ids:
-            self.score_text_logger.warning(
-                f"Empty resume batch for batch_id={batch_id}"
-            )
-            return None
+            raise DomainError("Empty resume batch received")
 
         try:
-            # 1️⃣ Validate job
-            job = await self._validate_job(db_job_id)
-
-            # 2️⃣ Fetch resumes (with status transition)
-            resumes = await self._fetch_resumes(
-                db_job_id, resume_ids
+            logger.info(
+                f"[SCORING] start: db_job_id={db_job_id} batch_id={batch_id} "
+                f"resume_count={len(resume_ids)}"
             )
-            
+
+            # Fetch job
+            job_result = await self.db.execute(
+                select(Job).where(Job.id == db_job_id)
+            )
+            job = job_result.scalar_one_or_none()
+            if not job:
+                raise DomainError(f"Job {db_job_id} not found or not active")
+
+            # Fetch resumes in this batch
+            result = await self.db.execute(
+                select(Resume)
+                .join(Application, Resume.application_id == Application.id)
+                .where(
+                    Application.job_id == db_job_id,
+                    Resume.id.in_(resume_ids),
+                    Resume.status == ResumeStatus.QUEUED_FOR_SCORING,
+                )
+            )
+            resumes = result.scalars().all()
+
             if not resumes:
-                return None
+                raise DomainError(f"No parsed resumes found for batch {batch_id}")
 
-            rubric = await self._get_rubric(db_job_id)
-
-            # 3️⃣ Prepare payload
-            payload = self._build_payload_parsed_text(resumes)
-
-            # 4️⃣ Score using LLM
-            # ! Currently no retrying to LLM for failed Jobs Directly marking them failed b'coz it's not part of this flow to retry LLM failures. We can have a separate flow to retry LLM failures if needed.
-            # Either use Langraph pipelines or have our own retry mechanism here. Langraph has built in retry mechanism which we can leverage if we use their pipelines.
-            score_results, scoring_failed = await self._score_batch_parsed_text(
-                payload, rubric
-            )
-            
-            
-            self.logger.warning(f"Score results count: {len(score_results)}")
-            self.logger.warning(f"Returned IDs: {[r.resume_id for r in score_results]}")
-            self.logger.warning(f"Expected IDs: {[r.id for r in resumes]}")
-
-            # 5️⃣ Persist successes
-            candidate_tasks, processing_failed_ids = (
-                await self._persist_success_results(
-                    score_results,
-                    resumes,
-                    rubric,
-                    batch_id,
+            # Fetch active rubric
+            rubric_result = await self.db.execute(
+                select(Rubric).where(
+                    Rubric.job_id == db_job_id,
+                    Rubric.is_active.is_(True),
                 )
             )
+            rubric = rubric_result.scalar_one_or_none()
+            if not rubric:
+                raise DomainError(f"No active rubric found for job {db_job_id}")
 
-            # 6️⃣ Detect missing results
-            missing_ids = self._detect_missing_results(
-                score_results, resumes
+            # Dedup: skip resumes already scored for this rubric
+            existing_scores_result = await self.db.execute(
+                select(Score.application_id).where(
+                    Score.rubric_id == rubric.id,
+                    Score.application_id.in_({r.application_id for r in resumes}),
+                    Score.is_active.is_(True),
+                )
             )
-            processing_failed_ids.extend(missing_ids)
+            already_scored = set(existing_scores_result.scalars().all())
 
-            # 7️⃣ Handle processing failures
-            if processing_failed_ids:
-                self.score_text_logger.warning(
-                    f"Processinng failed for resume_ids: {[f.resume_id for f in scoring_failed]}"
-                )
-                await self._mark_processing_failures(
-                    processing_failed_ids, batch_id
-                )
-                
-            if scoring_failed:
-                self.score_text_logger.warning(
-                    f"Scoring failed for resume_ids: {[f.resume_id for f in scoring_failed]}"
-                )
-                scoring_failed_ids = [f.resume_id for f in scoring_failed]
-                await self._mark_processing_failures(
-                    scoring_failed_ids, batch_id
-                )
-                # ! Not enqueing again reason given above since we don't want to retry LLM failures in this flow. 
-                # If we want to retry only the scoring step without re-processing the resume, we can enqueue the failed resumes for scoring again without changing their status back to QUEUED_FOR_SCORING 
-                # since they are already parsed successfully and we only want to retry the scoring step.
-                # The job producer will handle enqueuing them to the appropriate scoring queue based on the scoring_type.
-                
-                # await self._retry_scoring_failures(
-                #     scoring_failed, db_job_id, batch_id,
-                #     scoring_type="text",
-                # )
+            resumes_to_score = [
+                r for r in resumes if r.application_id not in already_scored
+            ]
 
-            # 8️⃣ Commit all DB changes
+            if not resumes_to_score:
+                logger.info(f"All resumes already scored for rubric {rubric.id}, skipping")
+                return
+
+            # Step 1: Extract candidate info separately
+            from src.pipelines.extract_candidate_info import extract_candidate_info_async
+
+            resume_map = {r.id: r for r in resumes_to_score}
+            candidate_infos: dict[str, CandidateInfoSchema] = {}
+
+            for r in resumes_to_score:
+                try:
+                    ci = await extract_candidate_info_async(r.parsed_text or "")
+                    candidate_infos[str(r.id)] = ci
+                except Exception as e:
+                    logger.warning(f"[CANDIDATE_EXTRACT] Failed for resume={r.id}: {e}")
+                    candidate_infos[str(r.id)] = CandidateInfoSchema()
+
+            # Step 2: Prepare LLM input for scoring
+            resume_payload = [
+                ResumeDataSchema(
+                    application_id=r.application_id,
+                    resume_id=r.id,
+                    resume_text=r.parsed_text,
+                )
+                for r in resumes_to_score
+            ]
+
+            # Step 3: Async LLM scoring (uses with_structured_output — native JSON mode)
+            score_results = await score_resume_async(
+                resumes=resume_payload,
+                criteria=rubric.criteria,
+                candidate_infos=candidate_infos,
+            )
+
+            # Fetch applications for updating ai_analysis
+            app_result = await self.db.execute(
+                select(Application).where(
+                    Application.id.in_(
+                        {r.application_id for r in resumes_to_score}
+                    )
+                )
+            )
+            applications = {a.id: a for a in app_result.scalars()}
+
+            # Persist results
+            for item in score_results:
+                # score_resume_async returns dicts
+                if isinstance(item, dict) and "error" in item:
+                    logger.error(
+                        f"Scoring failed for resume_id={item.get('resume_id')}: "
+                        f"{item['error']}"
+                    )
+                    continue
+
+                app_id = item["application_id"]
+                resume_id = item["resume_id"]
+                score_output = item["score"]
+
+                appl = applications.get(app_id)
+                if appl:
+                    appl.ai_analysis = score_output.ai_analysis
+
+                # Use candidate info from Step 1
+                candidate_info = candidate_infos.get(str(resume_id), CandidateInfoSchema())
+
+                # Fallback to heuristic if LLM extraction found nothing
+                if not candidate_info.full_name:
+                    resume_obj = resume_map.get(resume_id)
+                    inferred = extract_candidate_full_name((resume_obj.parsed_text if resume_obj else "") or "")
+                    if inferred:
+                        candidate_info.full_name = inferred
+
+                if candidate_info and (candidate_info.full_name or candidate_info.email or candidate_info.phone):
+                    await self.job_producer.enqueue_candidate_extraction(
+                        resume_id=str(resume_id),
+                        candidate=candidate_info,
+                        batch_id=batch_id,
+                    )
+
+                resume = resume_map.get(resume_id)
+                if resume:
+                    resume.status = ResumeStatus.SCORED
+
+                breakdown_data = score_output.breakdown
+                if hasattr(breakdown_data, 'model_dump'):
+                    breakdown_data = breakdown_data.model_dump()
+
+                grounding_data = score_output.grounding_data
+                if hasattr(grounding_data, 'model_dump'):
+                    grounding_data = grounding_data.model_dump()
+                if not isinstance(grounding_data, dict):
+                    grounding_data = {}
+
+                if hasattr(score_output, 'distinguishing_factors') and score_output.distinguishing_factors:
+                    grounding_data["distinguishing_factors"] = score_output.distinguishing_factors
+
+                if candidate_info:
+                    grounding_data["candidate_info"] = {
+                        "full_name": getattr(candidate_info, "full_name", None),
+                        "email": getattr(candidate_info, "email", None),
+                        "phone": getattr(candidate_info, "phone", None),
+                    }
+
+                self.db.add(
+                    Score(
+                        application_id=app_id,
+                        rubric_id=rubric.id,
+                        overall_score=score_output.overall_score,
+                        raw_overall_score=getattr(score_output, 'raw_overall_score', None),
+                        ai_confidence=score_output.ai_confidence,
+                        breakdown=breakdown_data,
+                        grounding_data=grounding_data,
+                        scored_by="AI",
+                        threshold_score=rubric.threshold_score,
+                        criteria=rubric.criteria,
+                        ai_model=os.environ.get("SCORING_MODEL", "Gemini-2.5-Flash"),
+                        scoring_method=getattr(score_output, 'scoring_method', "weighted_v2"),
+                    )
+                )
+
             await self.db.commit()
 
-            # 9️⃣ Side effects AFTER commit
-            if candidate_tasks:
-                await asyncio.gather(*candidate_tasks)
-
-            # Retry scoring failures only (text scoring)
-            
-           
-
-            return self._build_summary(
-                resumes,
-                processing_failed_ids,
-                scoring_failed,
-                batch_id,
+            scored_count = sum(
+                1 for item in score_results
+                if not (isinstance(item, dict) and "error" in item)
             )
+            failed_count = len(resumes_to_score) - scored_count
+
+            if failed_count > 0:
+                logger.warning(
+                    f"[SCORING] batch={batch_id}: {failed_count}/{len(resumes_to_score)} "
+                    f"resumes failed LLM scoring (silently skipped)"
+                )
+
+            logger.info(f"[SCORING] batch={batch_id} completed: scored={scored_count}")
 
         except Exception:
             await self.db.rollback()
-            self.score_text_logger.exception(
-                f"Fatal error scoring batch {batch_id}"
-            )
             raise
-
-            
 
     async def score_url_resumes(
         self,
         db_job_id: str,
-        resume_ids: List[str],
+        resume_ids: list[str],
         batch_id: str,
-    ) -> Optional[dict]:
-
+    ):
+        """
+        Score resumes that don't have parsed text yet.
+        Downloads from URL, extracts text, then scores.
+        """
         if not resume_ids:
-            self.score_url_logger.warning(
-                f"Empty resume batch for batch_id={batch_id}"
-            )
-            return None
+            raise DomainError("Empty resume batch received")
 
         try:
-            # 1️⃣ Validate job
-            job = await self._validate_job(db_job_id)
-
-            # 2️⃣ Fetch resumes (with status transition)
-            resumes = await self._fetch_resumes(
-                db_job_id, resume_ids
+            # Fetch resumes
+            result = await self.db.execute(
+                select(Resume)
+                .join(Application, Resume.application_id == Application.id)
+                .where(
+                    Application.job_id == db_job_id,
+                    Resume.id.in_(resume_ids),
+                    Resume.status == ResumeStatus.QUEUED_FOR_SCORING,
+                )
             )
+            resumes = result.scalars().all()
+
             if not resumes:
-                return None
+                raise DomainError(f"No resumes found for batch {batch_id}")
 
-            rubric = await self._get_rubric(db_job_id)
+            # Download and extract text for resumes that don't have it
+            for resume in resumes:
+                if resume.parsed_text and resume.parsed_text.strip():
+                    continue
 
-            # 3️⃣ Prepare payload
-            payload = self._build_payload_url(resumes)
+                if not resume.raw_file_url:
+                    logger.warning(f"Resume {resume.id} has no URL or text, skipping")
+                    continue
 
-            # 4️⃣ Score using LLM
-            score_results, scoring_failed = await score_resume_with_url(
-                resumes=payload,
-                criteria=rubric.criteria,
-            )
-
-            # 5️⃣ Persist successes
-            candidate_tasks, processing_failed_ids = (
-                await self._persist_success_results(
-                    score_results,
-                    resumes,
-                    rubric,
-                    batch_id,
+                tmp_path = await asyncio.to_thread(
+                    download_to_tempfile, resume.raw_file_url
                 )
+                try:
+                    parsed_text, page_count, extraction_method = await asyncio.to_thread(
+                        extract_text_from_file_sync, tmp_path
+                    )
+                    resume.parsed_text = parsed_text
+                    resume.page_count = page_count
+                    resume.extraction_method = extraction_method
+                finally:
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+
+            await self.db.flush()
+
+            # Now score using the same method as text resumes
+            await self.score_parsed_text_resumes(
+                db_job_id=db_job_id,
+                resume_ids=resume_ids,
+                batch_id=batch_id,
             )
 
-            # 6️⃣ Detect missing results
-            missing_ids = self._detect_missing_results(
-                score_results, resumes
-            )
-            processing_failed_ids.extend(missing_ids)
-
-            # 7️⃣ Handle processing failures
-            if processing_failed_ids:
-                await self._mark_processing_failures(
-                    processing_failed_ids, batch_id
-                )
-                
-            # 10. Retry scoring failures only
-            if scoring_failed:
-                scoring_failed_ids = [f.resume_id for f in scoring_failed]
-                await self._mark_processing_failures(
-                    scoring_failed_ids, batch_id
-                )
-                # ! Not enqueing again reason given above since we don't want to retry LLM failures in this flow. 
-                # If we want to retry only the scoring step without re-processing the resume, we can enqueue the failed resumes for scoring again without changing their status back to QUEUED_FOR_SCORING 
-                # since they are already parsed successfully and we only want to retry the scoring step.
-                
-                # await self._retry_scoring_failures(
-                #     scoring_failed, db_job_id, batch_id,
-                #     scoring_type="url",
-                # )
-                
-
-            # 8️⃣ Commit all DB changes
-            await self.db.commit()
-            
-            
-
-            # 9️⃣ Side effects AFTER commit
-            if candidate_tasks:
-                await asyncio.gather(*candidate_tasks)
-
-            
-
-            return self._build_summary(
-                resumes,
-                processing_failed_ids,
-                scoring_failed,
-                batch_id,
-            )
-
+        except DomainError:
+            raise
         except Exception:
             await self.db.rollback()
-            self.score_url_logger.exception(
-                f"Fatal error scoring batch {batch_id}"
-            )
             raise
-
-    # =========================================================
-    # PRIVATE HELPERS
-    # =========================================================
-    
-    async def _validate_job(self, db_job_id):
-        """Validate that the job exists and is in a valid state for scoring."""
-        job = await self.job_repository.get_job_by_id(db_job_id)
-        if not job:
-            raise DomainError(f"Job {db_job_id} not found")
-        return job
-
-    async def _fetch_resumes(self, db_job_id, resume_ids):
-        """Fetch resumes for scoring, ensuring they are in the correct status, and transition them to 'SCORING_IN_PROGRESS' atomically to avoid double processing."""
-        resumes = await self.resume_repository.fetch_resumes_for_scoring(
-            job_id=db_job_id,
-            status=ResumeStatus.QUEUED_FOR_SCORING,
-            resume_ids=resume_ids,
-            new_status=ResumeStatus.SCORING_IN_PROGRESS,
-        )
-
-        if not resumes:
-            self.logger.warning("No eligible resumes found")
-        return resumes
-
-    async def _get_rubric(self, db_job_id):
-        """Fetch the active rubric for the job. This is needed to know the scoring criteria and threshold."""
-        rubric = await self.job_repository.get_active_rubric(db_job_id)
-        if not rubric:
-            self.logger.error(f"No active rubric found for job {db_job_id}")
-            raise DomainError("No active rubric found")
-        return rubric
-
-    def _build_payload_parsed_text(self, resumes):
-        """Build the payload for scoring parsed text resumes.Using ResumeDataSchema which has application_id, resume_id and parsed_text."""
-        return [
-            ResumeDataSchema(
-                application_id=r.application_id,
-                resume_id=r.id,
-                resume_text=r.parsed_text,
-            )
-            for r in resumes
-        ]
-        
-    def _build_payload_url(self, resumes):
-        """Build the payload for scoring URL resumes. Using ResumeDataSchemaURL which has application_id, resume_id and resume_url."""
-        return [
-            ResumeDataSchemaURL(
-                application_id=r.application_id,
-                resume_id=r.id,
-                resume_url=r.raw_file_url,
-            )
-            for r in resumes
-        ]
-
-    async def _score_batch_parsed_text(self, payload, rubric):
-        """Score a batch of parsed text resumes using the LLM pipeline."""
-        return await score_resume_with_text(
-            resumes=payload,
-            criteria=rubric.criteria,
-        )
-     
-    async def _persist_success_results(
-        self,
-        score_results,
-        resumes,
-        rubric,
-        batch_id,
-    ):
-        """
-        Persist successful scoring results to the database, update resume and application records, and enqueue candidate extraction tasks if needed.
-        """
-        applications = await self.application_repository.get_application_by_application_ids(
-            application_ids={r.application_id for r in resumes}
-        )
-        application_map = {str(a.id): a for a in applications}  # str keys to match ResumeScoreResult.application_id (coerced to str)
-        resume_map = {str(r.id): r for r in resumes}
-
-
-        candidate_tasks = []
-        processing_failed_ids = []
-
-        for item in score_results:
-            try:
-                # item = ResumeScoreResult(**raw)
-
-                appl = application_map.get(item.application_id)
-                if appl:
-                    appl.ai_analysis = item.score.ai_analysis
-
-                resume = resume_map.get(str(item.resume_id))
-                
-                if resume:
-                    resume.status = ResumeStatus.SCORED
-
-                await self.score_repository.add_score(
-                    application_id=item.application_id,
-                    criteria=rubric.criteria,
-                    model_name="Gemini-2.5-Flash-lite",
-                    rubric_id=rubric.id,
-                    score=item.score,
-                    scored_by="AI",
-                    threshold_score=rubric.threshold_score,
-                )
-
-                candidate_info = item.score.candidate_info
-                if candidate_info and candidate_info.full_name:
-                    candidate_tasks.append(
-                        self.job_producer.enqueue_candidate_extraction(
-                            resume_id=item.resume_id,
-                            batch_id=batch_id,
-                            candidate=candidate_info,
-                        )
-                    )
-
-            except Exception as e:
-                rid = item.resume_id
-                self.logger.exception(
-                    f"Processing error resume_id={rid},error is {str(e)}"
-                )
-                processing_failed_ids.append(rid)
-
-        return candidate_tasks, processing_failed_ids
-
-
-
-    def _detect_missing_results(self, score_results, resumes):
-        """Detect resumes that were expected to be scored but did not return any results, which can indicate a failure in the scoring process for those resumes. This is a safeguard to ensure we account for all resumes in the batch."""
-
-        returned_ids = {str(r.resume_id).lower() for r in score_results}
-        expected_ids = {str(r.id).lower() for r in resumes}
-
-        return list(expected_ids - returned_ids)
-
-
-
-    async def _mark_processing_failures(
-        self,
-        resume_ids,
-        batch_id,
-    ):
-        
-        self.logger.error(f"Marking processing failures for resume_ids: {resume_ids} in batch_id: {batch_id}")
-        """Mark resumes that failed processing with an error status and update the batch failure count."""
-        await self.resume_repository.update_resume_status(
-            resume_ids=resume_ids,
-            new_status=ResumeStatus.ERROR,
-        )
-
-        await self.batch_repository.increment_failure(
-            batch_id=batch_id,
-            increased_failed_count_by=len(resume_ids),
-        )
-
-
-    async def _retry_scoring_failures(
-        self,
-        failures,
-        db_job_id,
-        batch_id,
-        scoring_type: str = "text",
-    ):
-        """
-        Retry scoring for resumes that failed scoring. This can be used to retry only the scoring step without re-processing the resume. Depending on the failure reason, you might want to add more sophisticated retry logic or limits here.
-        Again Enqueuing the failed resumes for scoring without re-processing since the parsing was successful and we only want to retry the scoring step. The job producer will handle enqueuing them to the appropriate scoring queue based on the scoring_type.
-        """
-        failed_ids = [f.resume_id for f in failures]
-
-        await self.resume_repository.update_resume_status(
-            resume_ids=failed_ids,
-            new_status=ResumeStatus.QUEUED_FOR_SCORING,
-        )
-
-        if scoring_type == "url":
-            await self.job_producer.enqueue_url_scoring(
-                job_id=db_job_id,
-                resume_ids=failed_ids,
-                db_batch_id=batch_id,
-            )
-        else:
-            await self.job_producer.enqueue_text_scoring(
-                job_id=db_job_id,
-                resume_ids=failed_ids,
-                db_batch_id=batch_id,
-            )
-
-    def _build_summary(
-        self,
-        resumes,
-        processing_failed,
-        scoring_failed,
-        batch_id,
-    ):
-        """Build a summary of the scoring results for the batch, including counts of scored, processing failed, and scoring failed resumes."""
-        
-        success_count = sum(
-            1 for r in resumes if r.status == ResumeStatus.SCORED
-        )
-
-        return {
-            "status": "BATCH_COMPLETED",
-            "batch_id": batch_id,
-            "scored_count": success_count,
-            "failed_count": len(processing_failed)
-            + len(scoring_failed),
-        }

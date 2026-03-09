@@ -9,18 +9,20 @@ Key design principles:
   - Backward compatibility: reads v1 rubrics and converts them on-the-fly.
 """
 
-from fastapi import UploadFile, BackgroundTasks,status
+from fastapi import UploadFile, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timezone
 from typing import Optional, List
-from src.services.errors.base import DomainError
+
 from src.models import Job, Rubric, BulkUploadBatches
+from src.models.enums import BulkUploadStatus
 from src.schemas.rubric_schemas import (
     SetRubricRequest,
     UpdateRubricRequest,
     read_rubric_criteria,
 )
-from src.schemas.job_schemas import NewJobSchema,JobOverviewResponseNew,JobOverviewInfo,DashboardInfo,CriteriaOverview,RubricVersionInfo,   JobSettings,JobSettingsResposnse
+from src.schemas.job_schemas import JobOverviewResponse
+from src.services.errors.base import DomainError
 from src.services.errors.user_errors import JobNotFound, RubricNotFound
 from src.services.errors.pipeline_errors import (
     JDTooShort,
@@ -28,20 +30,21 @@ from src.services.errors.pipeline_errors import (
 )
 from src.repositories.job_repository import JobRepository
 from src.repositories.batch_repositoy import BatchRepository
-from src.repositories.application_repository import ApplicationRepository
-from src.repositories.resume_respositoy import ResumeRepository
-from src.repositories.interview_respositories.interview_round_configs_repository import InterviewRoundConfigsRepository
-from async_workers.producer import ARQProducer
 from src.repositories.org_repository import OrganizationRepository
 from src.utils.extract_pdf import extract_text_from_pdf
 from src.utils.file_manager import FileManagerService, fileManager
+from src.utils.manage_supabase_buckets import save_file_from_path
 from src.pipelines.generate_rubric import generate_rubric_from_jd
 from src.pipelines.jd_basic_analysis import analyze_jd_basic
 from workers.producer import enqueue_resumes_parsing
 from configs.env_config import SUPABASE_PUBLIC_URL
 from configs.log_config import get_logger
 from src.repositories.document_repository import DocumentRepository
+from src.utils.candidate_name import extract_candidate_full_name
 from uuid import UUID
+from sqlalchemy import select, func
+from src.models import Application, Score
+import os
 import time
 import json
 
@@ -52,19 +55,20 @@ def _job_status_for_api(status) -> str:
     return v if v == "draft" else v.lower()
 
 
-class JobService:        
-    def __init__(self,job_repositoy:JobRepository,batch_repository:BatchRepository,org_repository,application_repository:ApplicationRepository,resume_repository:ResumeRepository,interview_round_configs_repository:InterviewRoundConfigsRepository,job_producer:ARQProducer,db: AsyncSession):
-        self.db = db 
+class JobService:
+    def __init__(
+        self,
+        job_repositoy: JobRepository,
+        batch_repository: BatchRepository,
+        org_repository: OrganizationRepository,
+        db: AsyncSession,
+    ):
+        self.db = db
         self.PUBLIC_URL = SUPABASE_PUBLIC_URL
-        self.job_repository:JobRepository = job_repositoy
-        self.application_repository:ApplicationRepository = application_repository
-        self.resume_repository:ResumeRepository = resume_repository
-        self.batch_repository:BatchRepository = batch_repository    
-        self.organization_repository:OrganizationRepository = org_repository
-        self.job_producer: ARQProducer = job_producer
-        self.interview_round_config_repository : InterviewRoundConfigsRepository = interview_round_configs_repository 
-        # self.job_producer: ARQProducer = job_producer
-        self.file_manager:FileManagerService = fileManager
+        self.job_repository = job_repositoy
+        self.batch_repository = batch_repository
+        self.organization_repository = org_repository
+        self.file_manager: FileManagerService = fileManager
         self.logger = get_logger("JOB_SERVICE")
 
     # ─── Helpers ─────────────────────────────────────────────────────
@@ -72,61 +76,6 @@ class JobService:
     def _generate_batch_name(self, job_id: str) -> str:
         return f"application_processing_{job_id}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
 
-    async def validate_job(self, job_id: str, organization_id: Optional[str] = None) -> Job:
-        job = await self.job_repository.get_job_by_id(job_id=job_id)
-        if not job:
-            raise JobNotFound(status_code=404)
-        
-        if organization_id and job.organization_id != organization_id:
-            raise JobNotFound(status_code=404)
-
-        return job
-    
-     
-    async def add_new_job(self, data: NewJobSchema, user_id: str, org_id: Optional[str]):
-        
-        try:
-            new_job = await self.job_repository.create_job(job_data=data.job_data,user_id=user_id)
-            
-            if org_id:
-                organization = await self.organization_repository.get_organization_by_id(org_id)
-                if not organization:
-                    raise ValueError("Organization not found")
-                new_job.organization = organization
-           
-
-            job_id = new_job.id
-
-            existing_rubrics = await self.job_repository.get_all_rubrics(job_id=job_id)
-
-            new_version = 1
-            for rubric in existing_rubrics:
-                rubric.is_active = False
-                new_version = max(new_version, rubric.version + 1)
-            
-            # TODO: make a repo method to handle rubric versioning and creation in one transaction to avoid race conditions
-            # 5. Create rubric
-            new_rubric = Rubric(
-                version=new_version,
-                threshold_score=data.threshold_score,
-                criteria=data.criteria.model_dump(),
-                job_id=job_id,
-                is_active=True,
-            )
-
-            self.db.add(new_rubric)
-
-            # 6. Commit transaction
-            await self.db.commit()
-            await self.db.refresh(new_job)
-
-            return job_id
-        except Exception as e:
-            await self.db.rollback()
-            self.logger.exception(f"Error adding new job: {e}")
-            raise
-           
-    
     # ─── 1. Extract JD (preview only — NO DB writes) ──────────────────
 
     async def extract_jd(self, file: UploadFile) -> dict:
@@ -531,20 +480,51 @@ class JobService:
             if not job:
                 raise JobNotFound(status_code=404)
 
-            rubric = await self.job_repository.get_active_rubric(job_id)
-            if not rubric:
-                raise RubricNotFound(
-                    message="Active rubric not found",
-                    status_code=404,
-                )
+            # Rubrics are optional at this stage: we still want the job page to load
+            # so users can (re)create a rubric after a reset/cleanup.
+            rubrics = await self.job_repository.get_all_rubrics(job_id)
+            active_rubric = next((r for r in rubrics if r.is_active), None)
+            if not active_rubric and rubrics:
+                # Fallback: if none marked active, use latest by version
+                active_rubric = rubrics[0]
 
-            # Use backward-compatible reader
-            criteria_data = read_rubric_criteria(rubric.criteria)
+            # Use backward-compatible reader when present
+            criteria_data = read_rubric_criteria(active_rubric.criteria) if active_rubric else {}
 
             # Dashboard analytics
             analytics_result = await self.job_repository.get_applications_by_group(job_id)
             analytics = {status.value: count for status, count in analytics_result}
             total_applications = sum(analytics.values())
+
+            # Avg match score (optional; 0 when no scores)
+            avg_score = await self.db.scalar(
+                select(func.avg(Score.overall_score)).join(
+                    Application, Application.id == Score.application_id
+                ).where(Application.job_id == job_id)
+            )
+
+            latest_batch = await self.batch_repository.get_latest_batch_for_job(job_id)
+
+            # Criteria versions overview (works even when there is no rubric)
+            criteria_overview = {
+                "current_active_version": active_rubric.version if active_rubric else None,
+                "active_rubric_id": active_rubric.id if active_rubric else None,
+                "versions": [
+                    {
+                        "rubric_id": r.id,
+                        "version": r.version,
+                        "is_active": bool(r.is_active),
+                        "source": r.source,
+                        "created_at": r.created_at,
+                        "created_by_id": r.created_by_id,
+                        "created_via": r.created_via,
+                        "change_reason": r.change_reason,
+                        "change_type": r.change_type,
+                        "parent_rubric_id": r.parent_rubric_id,
+                    }
+                    for r in rubrics
+                ],
+            }
 
             response = {
                 "job": {
@@ -556,18 +536,16 @@ class JobService:
                     "salary": job.salary,
                     "location": job.location,
                     "target_headcount": job.target_headcount,
-                    "parsed_jd": job.parsed_jd,  # rrg_final when available
+                    "current_batch_id": latest_batch.id if latest_batch else None,
+                    "manual_rounds_count": job.manual_rounds_count or 0,
+                    "parsed_jd": job.parsed_jd,  # rrg_final when available (extra field; safe)
                 },
                 "dashboard": {
                     "total_applications": total_applications,
                     "by_status": analytics,
+                    "avg_score": float(avg_score) if avg_score is not None else 0.0,
                 },
-                "criteria": {
-                    "rubric_id": rubric.id,
-                    "version": rubric.version,
-                    "threshold_score": rubric.threshold_score,
-                    "criteria": criteria_data,
-                },
+                "criteria": criteria_overview,
                 "settings": {
                     "voice_ai_enabled": job.voice_ai_enabled,
                     "manual_rounds_count": job.manual_rounds_count,
@@ -579,116 +557,12 @@ class JobService:
             
             return response
 
-        except (JobNotFound, RubricNotFound):
+        except JobNotFound:
             raise
         except Exception as e:
             self.logger.exception("Error fetching job overview for %s: %s", job_id, e)
             raise
 
-    # ! For Keshav's Version
-    async def get_job_overview2(
-        self,
-        job_id: str,
-        organization_id: Optional[str] = None
-        ) -> JobOverviewResponseNew:
-        # ---------- Job ----------
-        
-        try:
-            job:Job | None = await self.job_repository.get_job_by_id(job_id=job_id)
-            
-            #TODO: should check orgid if job is org specific
-
-            if not job:
-                raise JobNotFound(status_code=404)
-
-            # ---------- Active Rubric (Criteria) ----------
-            
-            active_rubric_version = await self.job_repository.get_latest_rubric_version(job_id=job_id)
-            if not active_rubric_version:
-                raise RubricNotFound(
-                    message="No active rubric version found for the job",
-                    status_code=404
-                )
-                
-            rubric_versions = await self.job_repository.get_all_rubrics_versions(job_id=job_id)
-            
-            if not rubric_versions:
-                rubric_versions = []
-
-            # ---------- Dashboard Analytics ----------
-
-            analytics_result = await self.application_repository.get_applications_by_group(job_id=job_id)
-            analytics = {
-                status.value: count
-                for status, count in analytics_result
-            }
-            avg_match_score = await self.application_repository.get_avg_match_score(job_id=job_id)
-
-            total_applications = sum(analytics.values())
-
-            # ---------- Response ----------
-            return JobOverviewResponseNew(
-                    job=JobOverviewInfo(
-                        id=job.id,
-                        title=job.title,
-                        status=job.status,
-                        description=job.description,
-                        created_at=job.created_at,
-                        salary=job.salary,
-                        location=job.location,
-                        target_headcount=job.target_headcount,
-                        manual_rounds_count=job.manual_rounds_count,
-                        current_batch_id=job.id, #! is active_processing id removed from db if yes then handle it accordingly
-                    ),
-                    dashboard=DashboardInfo(
-                        total_applications=total_applications,
-                        by_status=analytics,
-                        avg_score=float(round(avg_match_score or 0.0, 2)),
-                    ),
-                    criteria=CriteriaOverview(
-                        current_active_version=active_rubric_version,
-                        active_rubric_id=active_rubric_version,
-                        versions=[
-                            RubricVersionInfo(
-                                rubric_id=rv["id"],     # map id → rubric_id
-                                version=rv["version"],
-                                is_active=rv.get("is_active", False),
-                                created_at=rv["created_at"],
-                                
-                            )
-                            for rv in rubric_versions
-                        ]
-                    )
-                )
-
-        except Exception as e:
-            self.logger.exception(f"Error fetching job overview for job_id {job_id}: {e}")
-            raise
-
-
-    async def get_job_settings(self, job_id: str) -> dict:
-        job = await self.job_repository.get_job_by_id(job_id)
-        if not job:
-            raise JobNotFound(status_code=404)
-
-
-        return JobSettingsResposnse(
-                job_settings=JobSettings(
-                title=job.title,
-                location=job.location,
-                salary=job.salary,
-                status=_job_status_for_api(job.status),
-                description=job.description,
-                target_headcount=job.target_headcount,
-                manual_rounds_count=job.manual_rounds_count,
-                
-                ),
-            voice_ai_enabled=job.voice_ai_enabled,
-            is_confidential=job.is_confidential,
-            job_metadata=job.job_metadata,
-            closing_reason=job.closing_reason,
-        )
-    
     async def get_rubric_export(self, job_id: str) -> dict:
         """
         Return the active rubric for a job as a JSON-serializable dict for download.
@@ -779,6 +653,13 @@ class JobService:
             if not job:
                 raise JobNotFound(status_code=404)
 
+            # Pre-check: ensure an active rubric exists before accepting files
+            active_rubric = await self.job_repository.get_active_rubric(str(job.id))
+            if not active_rubric:
+                raise DomainError(
+                    f"No active rubric found for this job. Please set up a rubric before uploading resumes."
+                )
+
             batch_name = self._generate_batch_name(job_id)
 
             files_uploaded_dir, saved_paths = await self.file_manager.stage_uploaded_files(
@@ -786,27 +667,57 @@ class JobService:
                 files=files,
             )
 
+            self.logger.info(
+                "[PROCESS_APPS] staged %d files for job_id=%s",
+                len(saved_paths),
+                job_id,
+            )
+
+            # Upload every file to Supabase NOW, before returning or enqueuing.
+            # Workers download from Supabase — no dependency on local disk state after this point.
+            storage_paths: list[str] = []
+            for local_path in saved_paths:
+                filename = os.path.basename(local_path)
+                storage_path = save_file_from_path(
+                    local_file_path=local_path,
+                    bucket_name="resumes",
+                    destination_path=f"{job_id}/{filename}",
+                )
+                storage_paths.append(storage_path)
+                self.logger.info("[PROCESS_APPS] uploaded %s → %s", filename, storage_path)
+                try:
+                    os.unlink(local_path)
+                except OSError:
+                    pass
+
             batch = BulkUploadBatches(
                 job_id=job.id,
                 uploaded_by_id=user_id,
                 batch_name=batch_name,
-                source_file_url=files_uploaded_dir,
-                total_files=len(files),
+                source_file_url=f"resumes/{job_id}",
+                total_files=len(storage_paths),
             )
             self.db.add(batch)
             await self.db.commit()
             await self.db.refresh(batch)
 
+            self.logger.info(
+                "[PROCESS_APPS] enqueueing batch_id=%s job_id=%s total=%d",
+                batch.id,
+                job.id,
+                len(storage_paths),
+            )
             background_tasks.add_task(
                 enqueue_resumes_parsing,
-                resume_paths=saved_paths,
+                storage_paths=storage_paths,
                 db_job_id=job.id,
                 batch_id=batch.id,
                 queue_name="resume_parsing",
             )
 
             return {
-                "directory_path": files_uploaded_dir,
+                "batch_id": str(batch.id),
+                "total_files": len(storage_paths),
                 "status": "queued",
             }
 
@@ -815,128 +726,40 @@ class JobService:
             self.logger.exception("Error processing applications for job %s: %s", job_id, e)
             raise
 
-    # ! Keshav's Version of processing application
-    async def process_applications_with_zip(
-        self,
-        job_id: str,
-        user_id: str,
-        raw_files: List[UploadFile],
-        organization_id: Optional[str] = None, #TODO: add it
-    ) -> dict:
-
-        try:
-            
-            if len(raw_files) == 0:
-                raise DomainError(
-                    message="No files uploaded",
-                    status_code=status.HTTP_400_BAD_REQUEST
-                )
-            
-            if len(raw_files) > 3:
-                raise DomainError(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    message="Too many files uploaded. Maximum is 3.",
-                )
-            
-            files = await fileManager.validate_and_extract(raw_files)
-            
-            
-            # 1. Fetch job
-            job : Job | None = await self.validate_job(job_id=job_id, organization_id=organization_id)
-
-
-            # 2. Prevent duplicate processing
-            #! activate for production
-            # if job.active_processing_queue_id:
-            #     raise DomainError(
-            #         message="An active application processing job already exists for this job.",
-            #         status_code=status.HTTP_409_CONFLICT
-            #     )
-
-            
-            batch_name = self._generate_batch_name(job_id=job_id)
-            
-            
-            # 4. Stage files to storage
-            files_uploaded_dir,saved_paths = await self.file_manager.stage_uploaded_files(
-                dir_name = batch_name,
-                files=files,
-            )
-            
-
-            # 5. Create processing job
-            batch = await self.batch_repository.create_batch(
-                job_id=job_id,
-                uploaded_by_id=user_id,
-                source_file_url=json.dumps(saved_paths), #TODO: change this to array in DB
-                batch_name=batch_name,
-                total_files=len(saved_paths)
-            )
-
-            # This field has been removed from DB
-            # job.active_processing_queue_id = batch.id
-            
-            await self.db.commit()
-            await self.db.refresh(job)
-
-
-            # TODO:
-            # For very large uploads (>500–1000 resumes),
-            # replace per-resume enqueueing with a single job that processes the batch in one go to avoid overwhelming Redis and the worker queue with too many jobs at once. The worker can then read the batch info, iterate over the files, and process them sequentially or in controlled parallelism.
-            # batch-orchestrator job that fans out work
-            # from a worker to keep API latency low.
-            await self.job_producer.enqueue_resumes_parsing(
-                resume_paths=saved_paths,
-                db_job_id=job.id,
-                batch_id=batch.id,
-                )
-
-            return {
-                # "processing_job_id": batch.id,
-                "directory_path": files_uploaded_dir,
-                "status": "queued"
-            }
-        
-        except Exception as e:
-            await self.db.rollback()
-            self.logger.exception(f"Error processing applications for job {job_id}: {e}")
-            raise
-    
-    
-    
-
     # ─── 8. Get Applications ─────────────────────────────────────────
-    
-    
+
     async def get_applications(
         self,
         job_id: str,
         page: int = 1,
         page_size: int = 20,
+        sort: str = "score_desc",
     ):
         if page < 1:
             page = 1
 
         offset = (page - 1) * page_size
 
-    
-        total = await self.application_repository.get_total_applications_count(job_id=job_id)
-        active_rubric = await self.job_repository.get_active_rubric(job_id=job_id)
-        
-        self.logger.info(f"Fetching applications for job {job_id} with active rubric {active_rubric.id if active_rubric else 'None'} (total applications: {total})")
-        
-        if not active_rubric:
-            raise RubricNotFound( message="Active rubric not found for the job", status_code=404 )
-        
-        # TODO: need to pass current rubric id of the job to fetch score on that basis either it can come from user too
-        applications = await self.application_repository.get_applications_of_job(job_id=job_id, current_rubric_id=active_rubric.id, page_size=page_size, offset=offset )
-        
-        response = []
+        total = await self.job_repository.get_total_applications_count(job_id)
+        active_rubric = await self.job_repository.get_active_rubric(job_id)
 
-        for app,score in applications:
-            # 🔹 active score only
-            active_score =  score if score else None
-            # 🔹 fetch ONLY current resume
+        if not active_rubric:
+            raise RubricNotFound(
+                message="Active rubric not found for the job",
+                status_code=404,
+            )
+
+        applications = await self.job_repository.get_applications_of_job(
+            job_id=job_id,
+            current_rubric_id=active_rubric.id,
+            page_size=page_size,
+            offset=offset,
+            sort=sort,
+        )
+
+        response = []
+        for app, score in applications:
+            active_score = score if score else None
             resume = app.resume if app.resume else None
 
             app_data = {
@@ -948,51 +771,82 @@ class JobService:
                 "offer_letter_url": app.offer_letter_url,
                 "flag_reason": app.flag_reason,
                 "tags": app.tags,
-                "last_activity_at": (
-                    app.last_activity_at.isoformat()
-                    if app.last_activity_at else None
-                ),
-                "deleted_at": (
-                    app.deleted_at.isoformat()
-                    if app.deleted_at else None
-                ),
+                "last_activity_at": app.last_activity_at.isoformat() if app.last_activity_at else None,
+                "deleted_at": app.deleted_at.isoformat() if app.deleted_at else None,
                 "status": app.status.value,
                 "created_at": app.created_at.isoformat(),
                 "updated_at": app.updated_at.isoformat(),
                 "ai_analysis": app.ai_analysis,
-                "current_round": app.current_round,
             }
 
-            
-            # ✅ candidate (minimal)
-            app_data["candidate"] = {
-                "id": str(app.candidate.id),
-                "full_name": app.candidate.full_name,
-                "email": app.candidate.email,
-                "phone": app.candidate.phone,
-            } if app.candidate else None
+            # Prefer linked candidate; fallback to extracted candidate_info from latest score (e.g. before candidate_extraction worker runs)
+            if app.candidate:
+                app_data["candidate"] = {
+                    "id": str(app.candidate.id),
+                    "full_name": app.candidate.full_name,
+                    "email": app.candidate.email,
+                    "phone": app.candidate.phone,
+                }
+            else:
+                candidate_info = None
+                if active_score and isinstance(active_score.grounding_data, dict):
+                    candidate_info = active_score.grounding_data.get("candidate_info")
+                if not (candidate_info and isinstance(candidate_info, dict)):
+                    candidate_info = {}
 
-            # ✅ resume (current only)
-            app_data["resume"] = {
-                "id": str(resume.id),
-                "raw_file_url": f"{self.PUBLIC_URL}/{resume.raw_file_url}",
-                "status": resume.status,
-                "page_count": resume.page_count,
-                "uploaded_at": resume.uploaded_at.isoformat(),
-            } if resume else None
+                # Final fallback: infer name from resume text if scoring/candidate extraction didn't populate it.
+                # This keeps the UI usable even when LLM candidate_info is null due to strictness.
+                if resume and isinstance(candidate_info, dict) and not candidate_info.get("full_name"):
+                    inferred = extract_candidate_full_name(resume.parsed_text or "")
+                    if inferred:
+                        candidate_info["full_name"] = inferred
 
-            # ✅ active score only
-            app_data["scores"] = {
-                    "is_active": active_score.is_active,
-                    "overall_score": active_score.overall_score,
-                    "ai_confidence": active_score.ai_confidence,
-                    "created_at": active_score.created_at.isoformat(),
-                    "grounding_data": active_score.grounding_data,
-                    "breakdown": active_score.breakdown,
-                    "is_overridden": active_score.is_overridden,
-                    "version": active_score.version,
-                    "is_latest": active_score.is_latest,
-                } if active_score else {}
+                if candidate_info and isinstance(candidate_info, dict) and any(candidate_info.get(k) for k in ("full_name", "email", "phone")):
+                    app_data["candidate"] = {
+                        "id": None,
+                        "full_name": candidate_info.get("full_name"),
+                        "email": candidate_info.get("email"),
+                        "phone": candidate_info.get("phone"),
+                    }
+                else:
+                    app_data["candidate"] = None
+
+            app_data["resume"] = (
+                {
+                    "id": str(resume.id),
+                    "raw_file_url": f"{self.PUBLIC_URL}/{resume.raw_file_url}",
+                    "status": resume.status.value,
+                    "page_count": resume.page_count,
+                    "uploaded_at": resume.uploaded_at.isoformat(),
+                }
+                if resume
+                else None
+            )
+
+            app_data["scores"] = (
+                [
+                    {
+                        "is_active": active_score.is_active,
+                        "overall_score": float(active_score.overall_score) if active_score.overall_score is not None else 0,
+                        "raw_overall_score": float(active_score.raw_overall_score) if active_score.raw_overall_score is not None else None,
+                        "ai_confidence": active_score.ai_confidence,
+                        "created_at": active_score.created_at.isoformat(),
+                        "grounding_data": active_score.grounding_data,
+                        "breakdown": active_score.breakdown,
+                        "distinguishing_factors": (
+                            active_score.grounding_data.get("distinguishing_factors")
+                            if active_score.grounding_data and isinstance(active_score.grounding_data, dict)
+                            else None
+                        ),
+                        "scoring_method": active_score.scoring_method,
+                        "is_overridden": active_score.is_overridden,
+                        "version": active_score.version,
+                        "is_latest": active_score.is_latest,
+                    }
+                ]
+                if active_score
+                else []
+            )
 
             response.append(app_data)
 
@@ -1002,8 +856,95 @@ class JobService:
                 "page": page,
                 "page_size": page_size,
                 "total": total,
-                "total_pages": (total + page_size - 1) // page_size
-            }
+                "total_pages": (total + page_size - 1) // page_size,
+            },
         }
 
-    
+    # ─── 9. Batch Progress ──────────────────────────────────────────
+
+    async def get_batch_progress(self, job_id: str, batch_id: str = None) -> dict:
+        """Return parsing + scoring progress for a batch upload."""
+        if batch_id:
+            batch = await self.batch_repository.get_batch_info(batch_id)
+        else:
+            batch = await self.batch_repository.get_latest_batch_for_job(job_id)
+
+        if not batch:
+            return {"status": "no_batch", "job_id": job_id}
+
+        # Parsing is done when the batch has been finalized (set atomically in finalize_batch_parsed).
+        # Falling back to counter check handles batches created before this field was reliable.
+        parsing_done = (
+            batch.status == BulkUploadStatus.COMPLETED
+            or (batch.success_count + batch.failed_count) >= batch.total_files
+        )
+
+        # Scoring is done when:
+        #   - parsing isn't done yet (can't score before parsing)
+        #   - OR nothing to score (all parsing failed → scoring_total = 0)
+        #   - OR scoring status is explicitly COMPLETED
+        #   - OR counters confirm all scored/failed
+        if not parsing_done:
+            scoring_done = False
+        elif batch.scoring_total == 0:
+            scoring_done = True  # nothing to score = done
+        else:
+            scoring_done = (
+                batch.scoring_status == BulkUploadStatus.COMPLETED
+                or (batch.scoring_completed + batch.scoring_failed) >= batch.scoring_total
+            )
+
+        all_done = parsing_done and scoring_done
+
+        if all_done:
+            phase = "completed"
+        elif parsing_done:
+            phase = "scoring"
+        else:
+            phase = "parsing"
+
+        # Build per-file status list from processing_results + error_log
+        file_statuses = []
+        if isinstance(batch.processing_results, dict):
+            for fname, msg in batch.processing_results.items():
+                file_statuses.append({
+                    "name": fname,
+                    "status": "failed" if msg.startswith("failed") else "parsed",
+                    "detail": msg,
+                })
+        if isinstance(batch.error_log, dict):
+            # Add any files in error_log that aren't already in processing_results
+            existing_names = {f["name"] for f in file_statuses}
+            for fname, reason in batch.error_log.items():
+                if fname not in existing_names:
+                    file_statuses.append({
+                        "name": fname,
+                        "status": "failed",
+                        "detail": reason,
+                    })
+
+        # Mark remaining files as "processing" (not yet in results)
+        completed_names = {f["name"] for f in file_statuses}
+        pending_count = max(0, batch.total_files - len(completed_names))
+
+        return {
+            "batch_id": str(batch.id),
+            "job_id": job_id,
+            "phase": phase,
+            "parsing": {
+                "total": batch.total_files,
+                "success": batch.success_count,
+                "failed": batch.failed_count,
+                "pending": pending_count,
+                "status": batch.status.value if batch.status else "pending",
+            },
+            "scoring": {
+                "total": batch.scoring_total,
+                "completed": batch.scoring_completed,
+                "failed": batch.scoring_failed,
+                "status": batch.scoring_status.value if batch.scoring_status else "pending",
+            },
+            "file_statuses": file_statuses,
+            "all_complete": all_done,
+            "created_at": batch.created_at.isoformat(),
+        }

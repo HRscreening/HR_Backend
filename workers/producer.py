@@ -1,79 +1,63 @@
 # app/workers/producer.py
 
+import os
 import uuid
 from typing import List
 from workers.connection import QUEUES, redis_conn
 from configs.log_config import get_logger
 from rq import Retry
-from src.schemas.user_schemas import BatchResumeDataSchema
-from src.utils.chunk_generator import  chunk_list
+from src.utils.chunk_generator import chunk_list
 from src.schemas.user_schemas import CandidateInfoSchema
 
 
 logger = get_logger("producer")
+
+SCORING_BATCH_SIZE = int(os.environ.get("SCORING_BATCH_SIZE", "5"))
+SCORING_MAX_CONCURRENCY = int(os.environ.get("SCORING_MAX_CONCURRENCY", "3"))
 
 
 # =========================
 # Public Producer API
 # =========================
 def enqueue_resumes_parsing(
-    resume_paths: List[str],
+    storage_paths: List[str],
     db_job_id: str,        # Postgres Job.id
     batch_id: str,         # Postgres BulkUploadBatches.id
     queue_name: str = "resume_parsing"
 ) -> str:
-
+    """
+    Enqueue one parsing task per resume.
+    storage_paths: Supabase storage paths (e.g. "resumes/job_id/filename.pdf").
+    Files are already uploaded to Supabase — workers download from there, not local disk.
+    """
     if queue_name not in QUEUES:
         raise ValueError(f"Invalid queue: {queue_name}")
 
     queue = QUEUES[queue_name]
-
-    # Redis batch metadata (tracking only)
-    redis_conn.hset(
-        f"batch:{str(batch_id)}",
-        mapping={
-            "total": len(resume_paths),
-            "completed": 0,
-            "failed": 0,
-            "status": "queued"
-        }
+    total = len(storage_paths)
+    logger.info(
+        f"[ENQUEUE] batch={batch_id} job={db_job_id} total_files={total} "
+        f"files={[os.path.basename(p) for p in storage_paths]}"
     )
 
-    for path in resume_paths:
+    for idx, storage_path in enumerate(storage_paths):
         redis_job_id = str(uuid.uuid4())
-
-        # Redis job state
-        redis_conn.hset(
-            f"job:{redis_job_id}",
-            mapping={
-                "status": "queued",
-                "batch_id": str(batch_id),
-                "db_job_id": str(db_job_id),
-                "file_path": path,
-                "type": "resume_parse"
-            }
-        )
-
         try:
             queue.enqueue(
                 "workers.tasks.resume_parser.parse_resume",
                 {
-                    "redis_job_id": str(redis_job_id),
+                    "redis_job_id": redis_job_id,
                     "batch_id": str(batch_id),
-                    "file_path": path
+                    "storage_path": storage_path,
                 },
-                retry=Retry(max=3, interval=[10, 30, 60])
+                job_timeout=300,  # 5 min per PDF hard kill
             )
-
+            logger.info(
+                f"[ENQUEUE] {idx + 1}/{total} queued: "
+                f"{os.path.basename(storage_path)} redis_job={redis_job_id}"
+            )
         except Exception as e:
-            logger.error(f"Failed to enqueue job {redis_job_id}: {e}")
-            redis_conn.hset(
-                f"job:{str(redis_job_id)}",
-                mapping={
-                    "status": "failed_to_enqueue",
-                    "error": str(e)
-                }
-            )
+            logger.error(f"[ENQUEUE] Failed to enqueue {storage_path}: {e}")
 
     return batch_id
 
@@ -84,8 +68,9 @@ def enqueue_resumes_parsing(
 def enqueue_resumes_scoring(
     job_id: str,
     resume_ids: list[str],
+    upload_batch_id: str = "",
     queue_name: str = "resume_scoring",
-    batch_size: int = 5
+    batch_size: int = SCORING_BATCH_SIZE,
 ) -> list[str]:
 
     if queue_name not in QUEUES:
@@ -110,6 +95,7 @@ def enqueue_resumes_scoring(
                     "total_resumes": len(batch),
                     "completed": 0,
                     "failed": 0,
+                    "upload_batch_id": upload_batch_id,
                 }
             )
 
@@ -126,7 +112,8 @@ def enqueue_resumes_scoring(
                     "redis_job_id": redis_job_id,
                     "batch_id": batch_id,
                 },
-                retry=Retry(max=3, interval=[10, 30, 60])
+                retry=Retry(max=3, interval=[10, 30, 60]),
+                job_timeout=600,  # 10 min — LLM calls can be slow; prevents one batch blocking others
             )
 
             created_batches.append(batch_id)

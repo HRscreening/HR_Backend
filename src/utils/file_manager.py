@@ -117,6 +117,7 @@ class FileManagerService:
         os.makedirs(job_dir, exist_ok=True)
 
         saved_paths: list[str] = []
+        used_names: set[str] = set()
 
         for file in files:
             if not file.filename:
@@ -124,7 +125,17 @@ class FileManagerService:
 
             self._validate_extension(file.filename)
 
-            dest_path = os.path.join(job_dir, file.filename)
+            safe_filename = self.sanitize_filename(file.filename)
+            # Ensure unique filenames within this batch to avoid overwriting (common in zips: resume.pdf).
+            base, ext = os.path.splitext(safe_filename)
+            candidate = safe_filename
+            i = 1
+            while candidate.lower() in used_names:
+                i += 1
+                candidate = f"{base}_{i}{ext}"
+            used_names.add(candidate.lower())
+
+            dest_path = os.path.join(job_dir, candidate)
 
             with open(dest_path, "wb") as buffer:
                 shutil.copyfileobj(file.file, buffer)
@@ -193,6 +204,7 @@ class FileManagerService:
 
     def _extract_zip_files(self, contents: bytes) -> List[UploadFile]:
         extracted: List[UploadFile] = []
+        used_names: set[str] = set()
 
         try:
             with zipfile.ZipFile(io.BytesIO(contents)) as zip_file:
@@ -208,6 +220,16 @@ class FileManagerService:
                 for name in names:
                     if name.endswith("/"):
                         continue
+                    # Skip common macOS junk entries that duplicate real files
+                    base = os.path.basename(name)
+                    if (
+                        name.startswith("__MACOSX/")
+                        or "/__MACOSX/" in name
+                        or base in {".DS_Store"}
+                        or base.startswith("._")
+                        or not base
+                    ):
+                        continue
                     self._validate_extension(name)
 
                 # extract after validation
@@ -215,10 +237,29 @@ class FileManagerService:
                     if name.endswith("/"):
                         continue
 
-                    safe_name = os.path.basename(name)
+                    base = os.path.basename(name)
+                    if (
+                        name.startswith("__MACOSX/")
+                        or "/__MACOSX/" in name
+                        or base in {".DS_Store"}
+                        or base.startswith("._")
+                        or not base
+                    ):
+                        continue
+
+                    safe_name = self.sanitize_filename(base)
+                    # Ensure uniqueness to avoid overwriting when multiple files share a name.
+                    root, ext = os.path.splitext(safe_name)
+                    candidate = safe_name
+                    i = 1
+                    while candidate.lower() in used_names:
+                        i += 1
+                        candidate = f"{root}_{i}{ext}"
+                    used_names.add(candidate.lower())
+
                     extracted.append(
                         UploadFile(
-                            filename=safe_name,
+                            filename=candidate,
                             file=io.BytesIO(zip_file.read(name)),
                         )
                     )

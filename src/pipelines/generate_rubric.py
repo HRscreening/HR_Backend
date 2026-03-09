@@ -19,7 +19,7 @@ from configs.log_config import get_logger
 from langchain_core.prompts import PromptTemplate
 from src.pipelines.llm_retry import retry_with_backoff
 from src.pipelines.models import llm
-from src.pipelines.rubric_prompts import RUBRIC_FROM_JD_PROMPT, RUBRIC_FIXER_PROMPT
+from src.pipelines.rubric_prompts import RUBRIC_FROM_JD_PROMPT_V2, RUBRIC_FIXER_PROMPT
 from src.pipelines.rubric_post_processor import (
     is_valid_json,
     post_process_rubric,
@@ -131,7 +131,7 @@ async def generate_rubric_from_jd(
 
     job_context_str = _build_job_context_string(job_data)
 
-    chain = RUBRIC_FROM_JD_PROMPT | llm
+    chain = RUBRIC_FROM_JD_PROMPT_V2 | llm
     fixer_chain = RUBRIC_FIXER_PROMPT | llm
 
     async def _op() -> Any:
@@ -173,6 +173,7 @@ async def generate_rubric_from_jd(
 
         ok, errors = validate_rubric_json(processed)
         if not ok:
+            logger.warning("Rubric validation failed (first pass): %s", "; ".join(errors[:12]))
             # One repair attempt using the model (only on failure)
             repaired_text = await _repair(candidate, errors)
             if not is_valid_json(repaired_text):
@@ -184,6 +185,7 @@ async def generate_rubric_from_jd(
             processed = post_process_rubric(repaired_payload)
             ok2, errors2 = validate_rubric_json(processed)
             if not ok2:
+                logger.warning("Rubric validation failed (after repair): %s", "; ".join(errors2[:12]))
                 raise RubricValidationFailed(message="; ".join(errors2[:10]))
 
         logger.info(

@@ -42,16 +42,27 @@ class BatchService(BaseBatchService):
             self.logger.error(f"Batch with id {batch_id} not found")
             raise DomainError(status_code=status.HTTP_404_NOT_FOUND, message="Batch not found")
         
-        
-          
+        status_val = batch.status.value if hasattr(batch.status, "value") else str(batch.status)
+        scoring_status_val = batch.scoring_status.value if hasattr(batch.scoring_status, "value") else str(batch.scoring_status)
+
+        failed_files_names = None
+        if isinstance(batch.error_log, dict):
+            failed_files_names = [{"name": k, "reason": v} for k, v in batch.error_log.items()]
+        elif isinstance(batch.error_log, list):
+            failed_files_names = batch.error_log
+
         return {
-            "processed_files":batch.processed_count,
-            "failed_files":batch.failed_count,
-            "total_files":batch.total_files,
-            "status":batch.status,
-            "created_at":batch.created_at,
+            "processed_files": batch.processed_count,
+            "failed_files": batch.failed_count,
+            "total_files": batch.total_files,
+            "status": status_val,
+            "created_at": batch.created_at,
+            "scoring_total": batch.scoring_total,
+            "scoring_completed": batch.scoring_completed,
+            "scoring_failed": batch.scoring_failed,
+            "scoring_status": scoring_status_val,
             # TODO: make this error_logs and return list of file names which failed with reason(optional) instead of whole logs | whole logs are for internal use and file names with reason can be shown to users in UI
-            "failed_files_names":batch.error_log if batch.error_log else None 
+            "failed_files_names": failed_files_names,
         }
         
     async def get_batch_failed_logs(self, batch_id: int) -> Optional[BulkUploadBatches]:

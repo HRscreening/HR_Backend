@@ -8,7 +8,7 @@ psycopg2-binary
 asyncpg
 alembic
 pydantic
-jwt
+PyJWT>=2.0.0
 email-validator
 pgvector
 psycopg2-binary
@@ -24,6 +24,7 @@ redis
 croniter==6.0.0                                                                                                                                   
 pytz==2025.2                                                                                                                                      
 rq==2.6.1
-watchfiles
-celery 
-redis
+pdf2image
+Pillow
+pymongo>=4.16.0
+arq

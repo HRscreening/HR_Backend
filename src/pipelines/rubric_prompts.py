@@ -97,6 +97,366 @@ OUTPUT SCHEMA (MUST MATCH)
 )
 
 
+# Enterprise-grade rubric prompt (V2): deterministic, requirement_level, strict grouping
+RUBRIC_FROM_JD_PROMPT_V2 = PromptTemplate(
+    template="""
+You are an enterprise-grade ATS rubric designer.
+
+Your task is to generate a stable, scoring-ready rubric from a Job Description (JD) and Job Context. The rubric must support consistent resume evaluation, ranking stability, and explainable scoring.
+
+This is a production system. Precision, structural stability, and determinism are mandatory.
+
+CORE DESIGN PHILOSOPHY
+
+Criteria = Scoring Dimensions
+Each criterion represents a high-level measurable capability (e.g., ML Engineering Depth, Client Engagement, Cloud Deployment).
+
+Sub-criteria = Atomic Evidence Signals
+Sub-criteria represent single, atomic, resume-verifiable requirements inside a criterion.
+
+No vague personality traits.
+Do NOT include subjective or unscorable traits such as:
+
+Passionate
+
+Hard-working
+
+Innovative thinker
+
+Self-starter
+Only include behaviors or skills that can be evidenced in resumes.
+
+No duplication.
+Do NOT repeat the same requirement across multiple sections.
+Consolidate related requirements under one logical criterion using sub-criteria.
+
+No hallucination.
+Use ONLY information explicitly present in:
+
+JD text
+
+Job Context
+Do NOT infer industry-standard requirements that are not written.
+
+OUTPUT STRUCTURE
+
+Return a rubric containing:
+
+job_id
+
+job_title
+
+rubric_id
+
+version (set to 1)
+
+threshold_score (number)
+
+source ("combined")
+
+criteria
+
+domain ("other")
+
+domain_confidence (0.5)
+
+criteria contains:
+
+sections (array)
+
+schema_version (set to 1)
+
+Each section must contain:
+
+key (snake_case)
+
+label (Title Case)
+
+importance (integer 1–10, see SECTION IMPORTANCE CALIBRATION below)
+
+criteria (array)
+
+Each criterion must contain:
+
+name (snake_case, unique within section)
+
+display_name (Title Case)
+
+importance (integer 1–10)
+
+requirement_level ("must" | "should" | "nice")
+
+priority (integer, sequential starting at 1)
+
+value (string or null)
+
+value_type ("none")
+
+sub_criteria (array; use [] if none)
+
+Each sub_criterion must contain:
+
+name (snake_case)
+
+display_name (Title Case)
+
+importance (integer 1–5)
+
+value (string or null)
+
+value_type ("none")
+
+Arrays must NEVER be null. Use [].
+
+SECTION IMPORTANCE CALIBRATION
+
+Each section receives an importance score (1-10) reflecting its overall weight toward the final candidate score.
+- required_qualifications: ALWAYS 9-10 (mandatory constraints are dealbreakers)
+- technical_skills / core_skills: 7-9 for roles where domain skills are central
+- experience: 6-8 depending on how much the JD emphasizes seniority
+- tools_platforms: 4-6 (supportive but rarely dealbreaker)
+- soft_skills: 3-5 (hard to verify from resumes)
+- preferred_qualifications: 3-5 (nice-to-have by definition)
+- certifications: 3-6 (depends on whether JD lists them as required or preferred)
+
+Do NOT assign identical importance to all sections unless the JD truly treats them equally.
+Section importance drives the weighted scoring formula, so calibrate carefully based on the JD.
+
+SECTION ORDER RULES
+
+If tech role, use this section order (only include relevant ones):
+
+required_qualifications
+
+technical_skills
+
+experience
+
+tools_platforms
+
+domain_knowledge
+
+soft_skills
+
+certifications
+
+preferred_qualifications
+
+If non-tech role:
+
+required_qualifications
+
+core_skills
+
+experience
+
+soft_skills
+
+preferred_qualifications
+
+Do NOT create unnecessary or empty sections.
+
+Do NOT create sections containing only one minor criterion.
+Combine logically related items when appropriate.
+
+REQUIRED QUALIFICATIONS RULE
+
+If JD contains explicit constraints, they MUST appear under required_qualifications:
+
+Examples:
+
+Years of experience (e.g., "7+ years")
+
+Degree requirement
+
+Location requirement
+
+Work authorization
+
+Clearance
+
+Working hours / timezone
+
+Travel %
+
+Salary constraints (if candidate-side)
+
+Numeric minimum experience requirements MUST appear in required_qualifications even if there is a separate experience section.
+
+CRITERIA DESIGN RULES
+
+Each criterion must represent a coherent, measurable capability dimension.
+
+Do NOT create overly broad criteria mixing unrelated skills.
+
+Do NOT create excessively narrow criteria for trivial single skills.
+
+Use sub-criteria only when multiple atomic requirements belong under one conceptual capability.
+
+Each sub-criterion must represent ONE atomic requirement.
+
+Do NOT use sub-criteria for:
+
+Binary constraints
+
+Numeric thresholds
+
+Standalone simple constraints
+
+IMPORTANCE CALIBRATION
+
+For each criterion (1–10):
+
+10 = Explicitly mandatory / dealbreaker
+8–9 = Strongly emphasized core requirement
+6–7 = Important but not explicitly mandatory
+4–5 = Good to have
+1–3 = Minor bonus
+
+For each sub-criterion (1–5):
+
+5 = Most critical signal in that group
+3 = Standard expectation
+1 = Minor detail
+
+CONSISTENCY RULES:
+
+If requirement_level = "must" → importance MUST be ≥ 8
+
+If requirement_level = "nice" → importance MUST be ≤ 5
+
+Sub-criteria importance must vary based on JD emphasis.
+
+Do NOT assign identical importance to all sub-criteria unless JD clearly treats them equally.
+
+PRIORITY RULE
+
+Within each section:
+
+Sort criteria by importance (descending)
+
+Assign priority starting at 1
+
+Increment by 1 without gaps
+
+Priority must strictly reflect descending importance
+
+VALUE FIELD RULES
+
+Use value ONLY when an explicit strict constraint exists.
+
+Examples:
+
+"7+ years"
+
+"Bachelor's in Computer Science"
+
+"Bangalore (onsite)"
+
+"8am–5pm EST"
+
+"30% travel"
+
+Value must be concise.
+Do NOT include descriptive sentences.
+If no strict constraint exists → set value = null.
+
+Always set value_type = "none".
+
+CONSTRAINT EXTRACTION RULE
+
+Extract ALL explicit constraints:
+
+Years of experience
+
+Degree level
+
+Location
+
+Work authorization
+
+Clearance
+
+Travel %
+
+Timezone / working hours
+
+Team size (if explicitly stated)
+
+Reporting structure (if explicitly stated)
+
+Do NOT infer unstated constraints.
+
+THRESHOLD SCORE RULE
+
+Set threshold_score based on seniority:
+
+Entry-level (0–3 years) → 55–60
+Mid-level (3–7 years) → 60–65
+Senior (7+ years) → 65–70
+Leadership / managerial → 70–75
+
+If unclear → default 60.
+
+ANTI-HALLUCINATION RULE
+
+Use ONLY JD text and Job Context.
+
+Do NOT invent requirements.
+
+Do NOT add common tools unless explicitly written.
+
+Do NOT expand scope beyond JD.
+
+STRICT OUTPUT RULES
+
+Return ONLY valid JSON.
+
+No markdown.
+
+No explanations.
+
+No comments.
+
+All numeric fields must be numbers.
+
+Arrays must never be null.
+
+Follow OUTPUT SCHEMA exactly.
+
+JD FORMAT HANDLING
+
+Job descriptions come in many formats. Adapt your parsing accordingly:
+
+- BULLET-LIST JD: Each bullet is typically one requirement. Map bullets to criteria/sub-criteria directly.
+- NARRATIVE/PARAGRAPH JD: Extract individual requirements from prose. Split compound sentences into separate criteria.
+- MINIMAL JD (< 5 requirements): Create fewer sections. Do NOT pad with invented requirements. A 3-criterion rubric is perfectly valid.
+- STRUCTURED JD (with clear headings like "Requirements", "Preferred"): Use headings as section boundaries.
+
+RUBRIC COMPLETENESS
+
+Every rubric MUST cover at minimum:
+- At least one skills-related section (technical_skills, core_skills, or equivalent)
+- At least one experience-related criterion (years, domain experience, or equivalent)
+
+If the JD lacks one of these entirely, create a minimal criterion with importance=3 and requirement_level="nice".
+
+INPUTS
+
+JOB DESCRIPTION
+{jd_text}
+
+JOB CONTEXT
+{job_context}
+
+OUTPUT SCHEMA (MUST MATCH)
+{format_instructions}
+""",
+    input_variables=["jd_text", "job_context"],
+    partial_variables={"format_instructions": rubric_parser.get_format_instructions()},
+)
+
+
 RUBRIC_FIXER_PROMPT = PromptTemplate(
     template="""
 You are an ATS rubric editor.
