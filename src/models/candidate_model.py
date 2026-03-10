@@ -45,8 +45,10 @@ class Candidate(Base):
     )
 
     full_name = Column(String, nullable=False)
-    email = Column(String, nullable=True)  
-    phone = Column(String, nullable=True)  
+    email = Column(String, nullable=True)
+    phone = Column(String, nullable=True)
+    current_title = Column(String, nullable=True)   # e.g. "Senior Software Engineer"
+    current_company = Column(String, nullable=True)  # e.g. "Google"
 
 
     total_applications = Column(Integer, default=0)

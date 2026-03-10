@@ -69,6 +69,8 @@ class ApplicationService:
                 "full_name": app.candidate.full_name,
                 "email": app.candidate.email,
                 "phone": app.candidate.phone,
+                "current_title": app.candidate.current_title,
+                "current_company": app.candidate.current_company,
             } if app.candidate else None
 
             # ✅ resume (current only)

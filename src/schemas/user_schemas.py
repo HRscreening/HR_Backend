@@ -30,6 +30,8 @@ class CandidateInfoSchema(BaseModel):
     full_name: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
+    current_title: Optional[str] = None   # Most recent job title
+    current_company: Optional[str] = None  # Most recent employer
 
 
 # ─── LLM Raw Output (what the LLM returns — NO overall_score) ───────
