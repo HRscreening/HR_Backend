@@ -14,7 +14,7 @@ logger = get_logger("CandidateInfoExtractor")
 
 
 _PROMPT = PromptTemplate(
-    template="""Extract the candidate's basic contact information from this resume text.
+    template="""Extract the candidate's contact information and most recent employment from this resume text.
 
 RESUME TEXT (first 2000 chars):
 {resume_header}
@@ -27,6 +27,11 @@ RULES:
 - email: An email address containing '@'. Must be explicitly present in the text.
   Return null if not found.
 - phone: A phone number with digits. Must be explicitly present in the text.
+  Return null if not found.
+- current_title: The candidate's most recent or current job title (e.g. "Senior Software Engineer").
+  Look in the work experience or summary section for the latest role.
+  Return null if not found.
+- current_company: The company where the candidate currently works or most recently worked (e.g. "Google").
   Return null if not found.
 
 CRITICAL:
@@ -87,8 +92,8 @@ def extract_candidate_info_sync(resume_text: str) -> CandidateInfoSchema:
         result = _chain.invoke({"resume_header": header})
         llm_name, llm_email, llm_phone = result.full_name, result.email, result.phone
         logger.info(
-            "LLM extracted: name=%r email=%r phone=%r",
-            result.full_name, result.email, result.phone,
+            "LLM extracted: name=%r email=%r phone=%r title=%r company=%r",
+            result.full_name, result.email, result.phone, result.current_title, result.current_company,
         )
     except Exception as e:
         logger.warning("LLM candidate extraction failed: %s — using heuristics only", e)

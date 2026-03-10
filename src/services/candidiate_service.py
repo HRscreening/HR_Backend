@@ -46,6 +46,10 @@ class CandidateService:
                     candidate.email = candidate_info.email
                 if candidate_info.phone:
                     candidate.phone = candidate_info.phone
+                if hasattr(candidate_info, "current_title") and candidate_info.current_title:
+                    candidate.current_title = candidate_info.current_title
+                if hasattr(candidate_info, "current_company") and candidate_info.current_company:
+                    candidate.current_company = candidate_info.current_company
 
 
                 if application not in candidate.applications:

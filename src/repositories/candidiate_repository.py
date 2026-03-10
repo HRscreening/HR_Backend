@@ -23,7 +23,9 @@ class CandidateRepository:
             full_name=candidate_info.full_name,
             email=candidate_info.email,
             phone=candidate_info.phone,
-            organization_id=org_id,              
+            current_title=getattr(candidate_info, "current_title", None),
+            current_company=getattr(candidate_info, "current_company", None),
+            organization_id=org_id,
         )
         self.db.add(candidate)
         await self.db.flush() 
