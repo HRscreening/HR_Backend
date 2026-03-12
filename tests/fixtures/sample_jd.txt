@@ -1,0 +1,48 @@
+Senior Backend Engineer — DeskZero Platform Team
+
+About the Role
+We are looking for a Senior Backend Engineer to join our core platform team. You will own
+critical backend infrastructure powering our AI-driven HR screening product used by
+hundreds of enterprise customers.
+
+Key Responsibilities
+- Design and implement scalable Python/FastAPI microservices handling high-volume resume
+  processing and AI scoring pipelines
+- Architect and optimize PostgreSQL schemas and query performance for multi-tenant workloads
+- Build and maintain async background worker systems (Redis Queue / ARQ) for processing
+  thousands of resumes per day
+- Integrate with Google Gemini LLM APIs (LangChain) for AI-powered analysis pipelines
+- Lead technical design discussions and code reviews within a cross-functional team
+- Mentor junior engineers and establish engineering best practices
+
+Requirements
+- 5+ years of professional backend software development experience
+- Strong proficiency in Python (asyncio, type hints, Pydantic) — required
+- Experience with FastAPI or similar async Python web frameworks — required
+- Deep knowledge of PostgreSQL including query optimization, indexing, and schema design — required
+- Hands-on experience with Redis for caching and queue management — required
+- Experience building or integrating with LLM APIs (OpenAI, Gemini, Anthropic, etc.) — required
+- Bachelor's degree in Computer Science or equivalent practical experience — required
+
+Preferred Qualifications
+- Experience with LangChain or similar LLM orchestration frameworks
+- Background in HR tech, ATS systems, or document processing pipelines
+- Familiarity with Supabase or other BaaS platforms
+- Experience with Docker, CI/CD pipelines, and cloud infrastructure (AWS/GCP)
+- Strong communication skills — ability to write clear technical documentation
+
+Technical Environment
+- Python 3.12 + FastAPI + SQLAlchemy (async) + Alembic
+- PostgreSQL 17 + pgvector, Redis, Supabase Storage
+- Google Gemini 2.5 Flash via LangChain
+- Deployed on GCP; containerized with Docker
+
+Compensation
+- Salary: $130,000 – $180,000 depending on experience
+- Location: Remote (US or India) with quarterly team offsites
+- Equity + benefits package
+
+Success Metrics (Year 1)
+- Resume scoring pipeline processes 10,000+ resumes/day with <5% error rate
+- API p99 latency < 200ms for all core endpoints
+- Lead at least one major architectural improvement shipped to production

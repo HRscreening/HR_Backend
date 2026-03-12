@@ -1,0 +1,153 @@
+{
+  "domain": "other",
+  "domain_confidence": 0.5,
+  "threshold_score": 68,
+  "version": 1,
+  "sections": [
+    {
+      "key": "required_qualifications",
+      "label": "Required Qualifications",
+      "weight": 32,
+      "importance": 10,
+      "criteria": [
+        {
+          "name": "ml_ai_data_science_experience",
+          "display_name": "ML/AI and Data Science Experience",
+          "weight": 50,
+          "importance": 10,
+          "requirement_level": "must",
+          "priority": 1,
+          "value": "7+ years",
+          "value_type": "none",
+          "sub_criteria": null
+        },
+        {
+          "name": "us_working_hours_availability",
+          "display_name": "US Working Hours Availability",
+          "weight": 50,
+          "importance": 10,
+          "requirement_level": "must",
+          "priority": 2,
+          "value": "8am to 5pm EST",
+          "value_type": "none",
+          "sub_criteria": null
+        }
+      ]
+    },
+    {
+      "key": "technical_skills",
+      "label": "Technical Skills",
+      "weight": 29,
+      "importance": 9,
+      "criteria": [
+        {
+          "name": "ml_ai_data_science_tools",
+          "display_name": "ML/AI & Data Science Tools",
+          "weight": 100,
+          "importance": 9,
+          "requirement_level": "must",
+          "priority": 1,
+          "value": null,
+          "value_type": "none",
+          "sub_criteria": [
+            {
+              "name": "pytorch_experience",
+              "display_name": "PyTorch Experience",
+              "weight": 34,
+              "importance": 5,
+              "value": null,
+              "value_type": "none"
+            },
+            {
+              "name": "sagemaker_experience",
+              "display_name": "SageMaker Experience",
+              "weight": 33,
+              "importance": 5,
+              "value": null,
+              "value_type": "none"
+            },
+            {
+              "name": "tensorflow_experience",
+              "display_name": "TensorFlow Experience",
+              "weight": 33,
+              "importance": 5,
+              "value": null,
+              "value_type": "none"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "client_engagement_skills",
+      "label": "Client Engagement Skills",
+      "weight": 23,
+      "importance": 7,
+      "criteria": [
+        {
+          "name": "client_engagement_project_securing",
+          "display_name": "Client Engagement & Project Securing",
+          "weight": 100,
+          "importance": 8,
+          "requirement_level": "must",
+          "priority": 1,
+          "value": null,
+          "value_type": "none",
+          "sub_criteria": [
+            {
+              "name": "conduct_meetings_to_secure_projects",
+              "display_name": "Conduct Meetings to Secure Projects",
+              "weight": 25,
+              "importance": 5,
+              "value": null,
+              "value_type": "none"
+            },
+            {
+              "name": "engage_clients_to_win_jobs",
+              "display_name": "Engage Clients to Win Jobs",
+              "weight": 25,
+              "importance": 5,
+              "value": null,
+              "value_type": "none"
+            },
+            {
+              "name": "participate_introductory_meetings",
+              "display_name": "Participate in Introductory Meetings",
+              "weight": 25,
+              "importance": 5,
+              "value": null,
+              "value_type": "none"
+            },
+            {
+              "name": "participate_technical_meetings",
+              "display_name": "Participate in Technical Meetings",
+              "weight": 25,
+              "importance": 5,
+              "value": null,
+              "value_type": "none"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "communication_skills",
+      "label": "Communication Skills",
+      "weight": 16,
+      "importance": 5,
+      "criteria": [
+        {
+          "name": "spoken_english_proficiency",
+          "display_name": "Spoken English Proficiency",
+          "weight": 100,
+          "importance": 9,
+          "requirement_level": "must",
+          "priority": 1,
+          "value": "Proficient",
+          "value_type": "none",
+          "sub_criteria": null
+        }
+      ]
+    }
+  ]
+}

@@ -11,5 +11,7 @@ wheels/
 .vscode/
 
 .env*
+_env.test
+logs/
 
 data/

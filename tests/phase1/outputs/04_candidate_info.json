@@ -1,0 +1,15 @@
+{
+  "input": {
+    "source_file": "sample_resume.pdf",
+    "total_resume_chars": 2984,
+    "llm_input_header_chars": 2000,
+    "llm_input_header": "Manish gupta 2018uec1113@mnit.ac.in Junior software engineer at deltatech 6388248179 gaming 387/o,azad nagar,rustampur, gorakhpur, india A technology and software enthusiast,always ready to enhance my skills and work with at most dedication.A person who can easily blend with the members, aiming for the quality of work. EDUCATION SKILLS B.Tech,Electronics and Communication ReactJS NodeJS MongoDb GIT Malaviya National Institute of Technology 08/2018 - 06/2022, 6.80 GITLAB mysql ANGULAR AWS Higher Secondary BitBucket Redis RabbitMq Express G.N National Public School Jenkins Kubernetes JAVASCRIPT 2015 - 2017, 84.4% AWS CI/CD REDUX POSTGRES Metric H.P Childrens academy 2008 - 2015, 95.6 PERSONAL PROJECTS AND LINKS WORK EXPERIENCE Portfolio website using Reactjs : Junior software engineer (07/2020 - 08/2020) Deltatech Gaming Ltd Mern-stack e-commerce website using 09/2022 - Present, Gurgaon,India nodejs,express,mongodb,react,redux. A product based company with some famous products as adda52poker,addagames,adda52rummy etc . Reactjs project using tomtom api to display the Achievements/Tasks routes for the optimal travelling Worked on implementing various features like spin the wheel,deltin panel,admin panel,user signup,rule engine etc tournament Web Chat Room using nodejs,express and socket.io (09/2019 - 09/2019) Tech used:nodejs,reactjs,angular js,gitlab,jenkins,kubernetes,redis,rabbitmq. Contact : Lokesh Malik Full stack(mern) using react, nodejs, express ,mongodb ,redux ,jwt,cloudinary etc Associate engineer Atos Weather app using weather api. (01/2020 - 01/2020) 07/2022 - 09/2022, bangalore,India Atos is the global leader in secure and decarbonized digital with a range of market-leading digital Link for Github solutions along with consultancy services, digital security and decarbonization offerings; an end-to- end partnership approach. Link for Hackerrank Achievements/Tasks Working on AISAAC Server to catch the malicious programs and pump those Link for Linkedin events "
+  },
+  "output": {
+    "full_name": "Manish Gupta",
+    "email": "2018uec1113@mnit.ac.in",
+    "phone": "6388248179",
+    "current_title": "Junior software engineer",
+    "current_company": "Deltatech Gaming Ltd"
+  }
+}

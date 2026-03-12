@@ -1,0 +1,209 @@
+{
+  "candidate_info": {
+    "full_name": "Manish Gupta",
+    "email": "2018uec1113@mnit.ac.in",
+    "current_title": "Junior software engineer",
+    "current_company": "Deltatech Gaming Ltd"
+  },
+  "final_score": {
+    "candidate_info": {
+      "full_name": "Manish Gupta",
+      "email": "2018uec1113@mnit.ac.in",
+      "phone": "6388248179",
+      "current_title": "Junior software engineer",
+      "current_company": "Deltatech Gaming Ltd"
+    },
+    "ai_analysis": {
+      "good_points": [
+        "The candidate holds a B.Tech degree from a National Institute of Technology and has a strong academic record.",
+        "They possess a wide array of technical skills, including modern web development frameworks like ReactJS, NodeJS, and Angular, along with database experience in MongoDB and PostgreSQL.",
+        "The candidate has practical experience as a Junior Software Engineer and Associate Engineer, contributing to feature implementation and bug fixes.",
+        "Several personal projects demonstrate initiative and hands-on application of their skills.",
+        "Their interests include competitive programming, web development, and innovations, suggesting a proactive and engaged approach to technology."
+      ],
+      "bad_points": [
+        "The resume lacks specific quantifiable achievements or details about the scale and impact of their work in previous roles.",
+        "The total professional experience is limited to approximately two years.",
+        "There is no mention of experience in Machine Learning, Artificial Intelligence, or Data Science, which might be critical for certain roles.",
+        "The resume does not provide any information regarding client-facing responsibilities or project acquisition activities."
+      ]
+    },
+    "overall_score": 12.64,
+    "raw_overall_score": 12.64,
+    "ai_confidence": 0.9,
+    "breakdown": {
+      "required_qualifications": {
+        "score": 0.0,
+        "raw_score": 0.0,
+        "criteria_scores": {
+          "ml_ai_data_science_experience": {
+            "score": 0.0,
+            "raw_llm_score": 0.0,
+            "reasoning": "The resume contains no evidence of ML/AI or Data Science experience, falling significantly short of the 7+ years requirement.",
+            "requirement_level": "must",
+            "sub_criteria": {}
+          },
+          "us_working_hours_availability": {
+            "score": 0.0,
+            "raw_llm_score": 0.0,
+            "reasoning": "The resume does not provide any information regarding the candidate's availability during US working hours.",
+            "requirement_level": "must",
+            "sub_criteria": {}
+          }
+        }
+      },
+      "technical_skills": {
+        "score": 0.0,
+        "raw_score": 0.0,
+        "criteria_scores": {
+          "ml_ai_data_science_tools": {
+            "score": 0.0,
+            "raw_llm_score": 0.0,
+            "reasoning": "The resume does not list any of the specified ML/AI and Data Science tools, resulting in a low score for this category.",
+            "requirement_level": "must",
+            "sub_criteria": {
+              "pytorch_experience": {
+                "score": 0.0,
+                "reasoning": "PyTorch is not mentioned anywhere in the candidate's skills or project descriptions."
+              },
+              "sagemaker_experience": {
+                "score": 0.0,
+                "reasoning": "SageMaker is not mentioned in the resume, despite AWS being listed as a general skill."
+              },
+              "tensorflow_experience": {
+                "score": 0.0,
+                "reasoning": "TensorFlow is not mentioned anywhere in the candidate's skills or project descriptions."
+              }
+            }
+          }
+        }
+      },
+      "client_engagement_skills": {
+        "score": 6.25,
+        "raw_score": 6.25,
+        "criteria_scores": {
+          "client_engagement_project_securing": {
+            "score": 6.25,
+            "raw_llm_score": 6.0,
+            "reasoning": "The resume provides no direct evidence of client engagement or project securing activities, with only weak implicit evidence for technical meetings.",
+            "requirement_level": "must",
+            "sub_criteria": {
+              "conduct_meetings_to_secure_projects": {
+                "score": 0.0,
+                "reasoning": "The resume provides no evidence of the candidate conducting meetings specifically to secure projects."
+              },
+              "engage_clients_to_win_jobs": {
+                "score": 0.0,
+                "reasoning": "There is no evidence in the resume that the candidate has engaged clients to win jobs."
+              },
+              "participate_introductory_meetings": {
+                "score": 0.0,
+                "reasoning": "The resume does not explicitly mention participation in introductory client meetings."
+              },
+              "participate_technical_meetings": {
+                "score": 25.0,
+                "reasoning": "While technical roles imply participation in technical discussions, the resume lacks explicit evidence of client-facing technical meetings aimed at project securing."
+              }
+            }
+          }
+        }
+      },
+      "communication_skills": {
+        "score": 70.0,
+        "raw_score": 70.0,
+        "criteria_scores": {
+          "spoken_english_proficiency": {
+            "score": 70.0,
+            "raw_llm_score": 70.0,
+            "reasoning": "The resume is written clearly and professionally in English, strongly implying proficiency in the language, though it doesn't explicitly state 'spoken' proficiency.",
+            "requirement_level": "must",
+            "sub_criteria": {}
+          }
+        }
+      }
+    },
+    "grounding_data": {
+      "required_qualifications": {
+        "ml_ai_data_science_experience": {
+          "jd_requirement": "7+ years of ML/AI and Data Science Experience",
+          "evidence": [],
+          "match_assessment": "none"
+        },
+        "us_working_hours_availability": {
+          "jd_requirement": "Availability during US working hours (8am to 5pm EST)",
+          "evidence": [],
+          "match_assessment": "none"
+        }
+      },
+      "technical_skills": {
+        "ml_ai_data_science_tools": {
+          "jd_requirement": "Experience with ML/AI & Data Science Tools",
+          "evidence": [],
+          "match_assessment": "none"
+        },
+        "pytorch_experience": {
+          "jd_requirement": "Experience with PyTorch",
+          "evidence": [],
+          "match_assessment": "none"
+        },
+        "sagemaker_experience": {
+          "jd_requirement": "Experience with SageMaker",
+          "evidence": [],
+          "match_assessment": "none"
+        },
+        "tensorflow_experience": {
+          "jd_requirement": "Experience with TensorFlow",
+          "evidence": [],
+          "match_assessment": "none"
+        }
+      },
+      "client_engagement_skills": {
+        "client_engagement_project_securing": {
+          "jd_requirement": "Ability to engage clients and secure projects",
+          "evidence": [],
+          "match_assessment": "none"
+        },
+        "conduct_meetings_to_secure_projects": {
+          "jd_requirement": "Ability to conduct meetings to secure projects",
+          "evidence": [],
+          "match_assessment": "none"
+        },
+        "engage_clients_to_win_jobs": {
+          "jd_requirement": "Ability to engage clients to win jobs",
+          "evidence": [],
+          "match_assessment": "none"
+        },
+        "participate_introductory_meetings": {
+          "jd_requirement": "Ability to participate in introductory meetings",
+          "evidence": [],
+          "match_assessment": "none"
+        },
+        "participate_technical_meetings": {
+          "jd_requirement": "Ability to participate in technical meetings",
+          "evidence": [
+            "Worked on implementing various features like spin the wheel,deltin panel,admin panel,user signup,rule engine etc tournament Web Chat Room using nodejs,express and socket.io",
+            "Working on AISAAC Server to catch the malicious programs and pump those events on the server as defined cloud or on premise"
+          ],
+          "match_assessment": "weak"
+        }
+      },
+      "communication_skills": {
+        "spoken_english_proficiency": {
+          "jd_requirement": "Proficient spoken English proficiency",
+          "evidence": [
+            "Manish gupta 2018uec1113@mnit.ac.in Junior software engineer at deltatech",
+            "A technology and software enthusiast,always ready to enhance my skills and work with at most dedication."
+          ],
+          "match_assessment": "strong"
+        }
+      }
+    },
+    "distinguishing_factors": [
+      "The candidate has a strong academic background with high percentages in Metric and Higher Secondary education.",
+      "They possess experience across a diverse set of web development technologies, including the MERN stack, Angular, and Java.",
+      "Involvement in competitive programming indicates strong problem-solving skills and a proactive approach to learning.",
+      "The candidate has practical experience with CI/CD tools like Jenkins and Kubernetes."
+    ],
+    "scoring_method": "weighted_v2"
+  }
+}
