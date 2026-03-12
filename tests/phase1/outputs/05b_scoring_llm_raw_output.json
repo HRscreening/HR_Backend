@@ -1,0 +1,185 @@
+{
+  "input": {
+    "resume_source": "sample_resume.pdf",
+    "jd_source": "sample_jd.pdf",
+    "resume_char_count": 2984,
+    "rubric_sections": [
+      "required_qualifications",
+      "technical_skills",
+      "client_engagement_skills",
+      "communication_skills"
+    ]
+  },
+  "raw_llm_output": {
+    "ai_analysis": {
+      "good_points": [
+        "The candidate has professional experience as a Junior Software Engineer and Associate Engineer.",
+        "They possess a strong technical skill set in modern web development and DevOps tools including ReactJS, NodeJS, MongoDB, AWS, Kubernetes, and Jenkins.",
+        "The candidate demonstrates initiative through the completion of multiple personal projects, showcasing practical application of their skills."
+      ],
+      "bad_points": [
+        "The resume contains several grammatical errors and awkward phrasing, which may indicate a lack of proficiency in written English.",
+        "There is no explicit evidence of ML/AI or Data Science experience, which appears to be a critical requirement.",
+        "The resume lacks specific details or quantifiable achievements in work experience, making it difficult to assess impact.",
+        "There is no indication of client engagement or project securing skills."
+      ]
+    },
+    "ai_confidence": 0.9,
+    "sections": {
+      "required_qualifications": {
+        "criteria": {
+          "ml_ai_data_science_experience": {
+            "score": 0.0,
+            "reasoning": "The resume does not mention any ML/AI or Data Science experience, nor does it indicate 7+ years of relevant experience.",
+            "sub_criteria": {}
+          },
+          "us_working_hours_availability": {
+            "score": 0.0,
+            "reasoning": "The resume indicates the candidate is based in India and provides no information regarding availability for US working hours.",
+            "sub_criteria": {}
+          }
+        }
+      },
+      "technical_skills": {
+        "criteria": {
+          "ml_ai_data_science_tools": {
+            "score": 0.0,
+            "reasoning": "The candidate does not list any of the specified ML/AI and Data Science tools in their skills or project descriptions.",
+            "sub_criteria": {
+              "pytorch_experience": {
+                "score": 0.0,
+                "reasoning": "There is no mention of PyTorch experience in the resume."
+              },
+              "sagemaker_experience": {
+                "score": 0.0,
+                "reasoning": "While AWS is listed, there is no specific mention of SageMaker experience."
+              },
+              "tensorflow_experience": {
+                "score": 0.0,
+                "reasoning": "There is no mention of TensorFlow experience in the resume."
+              }
+            }
+          }
+        }
+      },
+      "client_engagement_skills": {
+        "criteria": {
+          "client_engagement_project_securing": {
+            "score": 0.0,
+            "reasoning": "The resume provides no evidence of client engagement or project securing activities.",
+            "sub_criteria": {
+              "conduct_meetings_to_secure_projects": {
+                "score": 0.0,
+                "reasoning": "The resume does not contain any evidence of conducting meetings to secure projects."
+              },
+              "engage_clients_to_win_jobs": {
+                "score": 0.0,
+                "reasoning": "There is no evidence in the resume of engaging clients to win jobs."
+              },
+              "participate_introductory_meetings": {
+                "score": 0.0,
+                "reasoning": "The resume does not mention participation in any introductory client meetings."
+              },
+              "participate_technical_meetings": {
+                "score": 0.0,
+                "reasoning": "The resume describes internal technical tasks but no participation in client-facing technical meetings."
+              }
+            }
+          }
+        }
+      },
+      "communication_skills": {
+        "criteria": {
+          "spoken_english_proficiency": {
+            "score": 60.0,
+            "reasoning": "The resume is written in English, indicating some proficiency, but contains grammatical errors and awkward phrasing, suggesting it is not fully proficient.",
+            "sub_criteria": {}
+          }
+        }
+      }
+    },
+    "grounding_data": {
+      "required_qualifications": {
+        "ml_ai_data_science_experience": {
+          "jd_requirement": "The job requires 7+ years of ML/AI and Data Science experience.",
+          "evidence": [],
+          "match_assessment": "none"
+        },
+        "us_working_hours_availability": {
+          "jd_requirement": "The job requires availability during US working hours (8am to 5pm EST).",
+          "evidence": [
+            "Gurgaon,India"
+          ],
+          "match_assessment": "none"
+        }
+      },
+      "technical_skills": {
+        "ml_ai_data_science_tools": {
+          "jd_requirement": "The job requires experience with ML/AI & Data Science Tools.",
+          "evidence": [],
+          "match_assessment": "none"
+        },
+        "pytorch_experience": {
+          "jd_requirement": "The job requires PyTorch experience.",
+          "evidence": [],
+          "match_assessment": "none"
+        },
+        "sagemaker_experience": {
+          "jd_requirement": "The job requires SageMaker experience.",
+          "evidence": [
+            "AWS"
+          ],
+          "match_assessment": "weak"
+        },
+        "tensorflow_experience": {
+          "jd_requirement": "The job requires TensorFlow experience.",
+          "evidence": [],
+          "match_assessment": "none"
+        }
+      },
+      "client_engagement_skills": {
+        "client_engagement_project_securing": {
+          "jd_requirement": "The job requires client engagement and project securing skills.",
+          "evidence": [],
+          "match_assessment": "none"
+        },
+        "conduct_meetings_to_secure_projects": {
+          "jd_requirement": "The job requires the ability to conduct meetings to secure projects.",
+          "evidence": [],
+          "match_assessment": "none"
+        },
+        "engage_clients_to_win_jobs": {
+          "jd_requirement": "The job requires the ability to engage clients to win jobs.",
+          "evidence": [],
+          "match_assessment": "none"
+        },
+        "participate_introductory_meetings": {
+          "jd_requirement": "The job requires participation in introductory meetings.",
+          "evidence": [],
+          "match_assessment": "none"
+        },
+        "participate_technical_meetings": {
+          "jd_requirement": "The job requires participation in technical meetings.",
+          "evidence": [],
+          "match_assessment": "none"
+        }
+      },
+      "communication_skills": {
+        "spoken_english_proficiency": {
+          "jd_requirement": "The job requires proficient spoken English.",
+          "evidence": [
+            "A technology and software enthusiast,always ready to enhance my skills and work with at most dedication.A person who can easily blend with the members, aiming for the quality of work.",
+            "A product based company with some famous products as adda52poker,addagames,adda52rummy etc ."
+          ],
+          "match_assessment": "partial"
+        }
+      }
+    },
+    "distinguishing_factors": [
+      "The candidate has experience with a diverse and modern tech stack including ReactJS, NodeJS, MongoDB, AWS, Kubernetes, and Jenkins.",
+      "They have proactively developed multiple personal projects, demonstrating practical application of their skills beyond professional roles.",
+      "The resume indicates a lack of any explicit ML/AI or Data Science experience, which is a significant gap given the likely focus of the role.",
+      "The presence of grammatical errors and awkward phrasing throughout the resume suggests a need for improvement in written communication."
+    ]
+  }
+}

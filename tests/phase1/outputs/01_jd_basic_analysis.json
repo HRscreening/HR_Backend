@@ -1,0 +1,18 @@
+{
+  "input": {
+    "source_file": "sample_jd.pdf",
+    "jd_text": "Job Title: Senior ML/AI Engineer, Technical Representative Location: Remote Compensation: $3000/mo - $5000/mo Company: HiQ Solutions LLC About Us: HiQ Solutions LLC is a global software development and outsourcing company based in the U.S. Our slogan is \"US Brand and Non-US Talents\". We primarily operate in the U.S. market and are hiring senior ML/AI engineers to expand our business. Responsibilities: \u2022 Participate in introductory and technical meetings on behalf of U.S. engineers to secure U.S. jobs. \u2022 Conduct meetings to secure projects. \u2022 Engage with clients to win U.S. jobs using the name, experience, and location of U.S. engineers. Requirements: \u2022 7+ years of experience in ML/AI and Data Science. \u2022 Proficient in spoken English. \u2022 Extensive hands-on experience with PyTorch or TensorFlow and AWS services like SageMaker. \u2022 Fully available during US working hours (8am to 5pm EST). \u2022 Passionate, innovative thinker, and a problem solver. Hiring Process: \u2022 30-minute screening interview. \u2022 1-hour Coderbyte coding assessment. \u2022 1-hour final interview."
+  },
+  "output": {
+    "domain": "data_science",
+    "domain_confidence": 0.9,
+    "job_data": {
+      "title": "Senior ML/AI Engineer, Technical Representative",
+      "description": "This role involves participating in introductory and technical meetings to secure U.S. jobs and projects for the company. The engineer will represent U.S. engineers and engage with clients to win new business. Responsibilities include conducting meetings and leveraging the experience of U.S. engineers to secure projects.",
+      "location": "Remote",
+      "salary": "$3000/mo - $5000/mo",
+      "target_headcount": 1,
+      "metadata": null
+    }
+  }
+}
