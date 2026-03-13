@@ -52,8 +52,8 @@ class Panelist(Base):
     availability_token = Column(TEXT, nullable=True)  # e.g., 1 for first round, 2 for second round, etc.
     token_expires_at = Column(DateTime(timezone=True), nullable=True)  # Expiration time for the availability token
         
-    rescheduling_token = Column(TEXT, nullable=True)  # Token for interview rescheduling
-    rescheduling_token_expires_at = Column(DateTime(timezone=True), nullable=True)  # Expiration time for the rescheduling token
+    edit_token = Column(TEXT, nullable=True)  # Token for interview rescheduling
+    edit_token_expires_at = Column(DateTime(timezone=True), nullable=True)  # Expiration time for the rescheduling token
     
     last_requested_at = Column(DateTime(timezone=True), nullable=True)  # Timestamp of the last availability request sent to the panelist
     availability_request_count = Column(Integer, default=0)  # Counter for how many times availability has been requested from the panelist

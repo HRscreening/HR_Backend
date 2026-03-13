@@ -178,6 +178,7 @@ class SlotComputationService:
         panelist_id: str,
         panelist_email: str,
         available_slots_json: list[dict],
+        notify_waiting_candidates: bool = True,
     ) -> bool:
         """
         SEQUENTIAL mode entry point. Called immediately when ONE panelist submits.
@@ -222,7 +223,10 @@ class SlotComputationService:
         )
 
         # Notify waiting candidates so they can start booking
-        await self._send_booking_links_to_waiting_candidates(round_config)
+        # ! notify candidates in ready to book status that slots are available 
+        if notify_waiting_candidates:  
+            await self._send_booking_links_to_waiting_candidates(round_config)
+            
         return True
 
     # ─── PANEL mode (intersection) ────────────────────────────────────────
@@ -356,6 +360,52 @@ class SlotComputationService:
         logger.info(f"SEQUENTIAL mode: {total_slots} slots written for round_config {round_config.id}")
 
         await self._send_booking_links_to_waiting_candidates(round_config)
+        return True
+    
+    async def compute_slots_for_new_ranges(
+        self,
+        round_config_id: UUID,
+        panelist_id: str,
+        panelist_email: str,
+        available_slots_json: list[dict],  # only the NEW/UPDATED ranges
+    ) -> bool:
+        """
+        Used during editing — computes and inserts slots ONLY for the given ranges.
+        Does NOT touch existing slots (caller is responsible for deleting old ones first).
+        Does NOT notify candidates (slots already exist, round already active).
+        Does NOT change slots_available flag.
+        """
+        round_config = await self.round_config_repo.get_interview_round_config_by_id(
+            str(round_config_id)
+        )
+        if not round_config:
+            logger.error(f"Round config {round_config_id} not found")
+            return False
+
+        parsed = parse_panelist_slots(available_slots_json)
+        discrete_slots = split_into_slots(parsed, round_config.duration_minutes)
+
+        if not discrete_slots:
+            logger.warning(
+                f"EDIT: zero slots computed from ranges for panelist {panelist_email}"
+            )
+            return False
+
+        slot_models = [
+            Interview_Slot(
+                round_config_id=round_config.id,
+                panelist_id=UUID(panelist_id),
+                slot_start=start,
+                slot_end=end,
+            )
+            for start, end in discrete_slots
+        ]
+        await self.slots_repo.bulk_insert_slots(slot_models)
+
+        logger.info(
+            f"EDIT: {len(discrete_slots)} new slots inserted for panelist "
+            f"{panelist_email} on round_config {round_config.id}"
+        )
         return True
 
     # ─── Notify waiting candidates ────────────────────────────────────────

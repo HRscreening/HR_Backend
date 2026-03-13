@@ -6,11 +6,12 @@ from src.repositories.interview_respositories.interview_round_configs_repository
 from src.repositories.interview_respositories.interview_event_repository import InterviewEventRepository
 from src.repositories.interview_respositories.panelist_repository import PanelistRepository
 from src.repositories.interview_respositories.interview_repository import InterviewRepository
+from src.repositories.interview_respositories.calendar_repository import CalendarRepository 
 from src.repositories.interview_respositories.interview_slots_repository import InterviewSlotsRepository
 from src.services.email_services.candidate.candidate_email_service import CandidateEmailService, candidate_email_service
 from src.services.email_services.panel.panel_email_service import PanelEmailService, panel_email_service
 from src.utils.jwt import jwt_service, JWTService
-from src.models.enums import InterviewStatus, PanelMode
+from src.models.enums import InterviewStatus, PanelMode,MeetingHostType, CalendarProvider,InterviewEventType,InterviewEventActor
 from src.utils.timeline_formatter import TimelineFormatter, timeline_formatter
 from datetime import datetime, timezone, timedelta
 from src.services.interview_services.calendar_service import CalendarService
@@ -19,6 +20,7 @@ from typing import Optional
 from src.models.enums import PanelistResponseStatus
 from src.dtos.interviews_dtos.panel_dto import CreatePanelDTO
 import asyncio
+from src.utils.time_helper import format_interview_time, format_interview_schedule
 
 
 # TODO:  most of the methods doing same things and can be optimized skipping for future refactor for now to focus on feature development, also need to add more logs for better observability and debugging
@@ -30,6 +32,7 @@ class InterviewService:
         interview_repository: InterviewRepository,
         panelist_repository: PanelistRepository,
         slots_repository: InterviewSlotsRepository,
+        calendar_repostiory:CalendarRepository,
         calendar_service: CalendarService,
         db: AsyncSession,
     ):
@@ -38,6 +41,7 @@ class InterviewService:
         self.interview_round_config_repository = interview_round_config_repository
         self.interview_repository = interview_repository
         self.panelist_repository = panelist_repository
+        self.calendar_repostiory = calendar_repostiory
         self.slots_repository = slots_repository
         self.jwt_service: JWTService = jwt_service
         self.calendar_service = calendar_service
@@ -60,7 +64,8 @@ class InterviewService:
             raise DomainError("Interview not found", status_code=404)
 
         events = await self.interview_event_repository.get_events_by_interview_id(interview_id)
-        return self.timeline_formatter.format_timeline(events)
+        # return self.timeline_formatter.format_timeline(events)
+        return events
 
     # ─── Helpers ──────────────────────────────────────────────────────────
 
@@ -86,6 +91,26 @@ class InterviewService:
             raise DomainError("Interview round configuration not found", status_code=404)
 
         return interview, round_config
+
+    async def _get_meet_link_for_interview(self, meeting_details: MeetingDetails, meeting_host_type:MeetingHostType,refresh_token:str) -> Optional[str]:
+        """Generate a calendar event and return the meet link."""
+        
+        # TODO: move redundant parts from other methods to here 
+          
+        if meeting_host_type == MeetingHostType.HR:
+                # TODO: update to create calendar event with hr calendar credential
+            meet_link = await self.calendar_service.create_google_calendar_event_owner_deskzero(meeting_details)
+            
+            
+        elif meeting_host_type == MeetingHostType.PANELIST:
+            self.logger.info(f"Creating calendar event with panelist credentials for meeting hosted by panelist.")
+            meet_link = await self.calendar_service.create_google_calendar_event_owner_panelist(meeting_details,refresh_token)
+            
+        else:
+            meet_link = await self.calendar_service.create_google_calendar_event_owner_deskzero(meeting_details)
+        
+        return meet_link
+
 
     # ─── GET booking form ─────────────────────────────────────────────────
 
@@ -138,6 +163,9 @@ class InterviewService:
         # Build response based on panel mode
         if round_config.panel_mode == PanelMode.PANEL:
             slots = await self.slots_repository.get_available_slots(round_config.id)
+            
+            
+            
             return {
                 "status": "open",
                 "panel_mode": "panel",
@@ -163,9 +191,11 @@ class InterviewService:
         else:
             # SEQUENTIAL mode — grouped by panelist
             grouped = await self.slots_repository.get_slots_grouped_by_panelist(round_config.id)
+
             panelist_slots = {}
-            for email, slot_list in grouped.items():
-                panelist_slots[email] = [
+
+            for panelist_id, slot_list in grouped.items():
+                panelist_slots[str(panelist_id)] = [
                     {
                         "id": str(s.id),
                         "slot_start": s.slot_start.isoformat(),
@@ -176,10 +206,10 @@ class InterviewService:
             return {
                 "status": "open",
                 "panel_mode": "sequential",
-                "current_slot":{
-                "id:": str(booked_slot.id) if booked_slot else None,
-                "slot_start": booked_slot.slot_start.isoformat() if booked_slot else None,
-                "slot_end": booked_slot.slot_end.isoformat() if booked_slot else None,
+                "current_slot": {
+                    "id": str(booked_slot.id) if booked_slot else None,
+                    "slot_start": booked_slot.slot_start.isoformat() if booked_slot else None,
+                    "slot_end": booked_slot.slot_end.isoformat() if booked_slot else None,
                 },
                 "data": {
                     "title": round_config.title,
@@ -189,159 +219,168 @@ class InterviewService:
                 },
             }
 
-    # ─── PANEL mode: book one slot ────────────────────────────────────────
-    # Todo: need some fixes  for reschduling 
-    async def book_slot(self, token: str, slot_id: str):
-        """
-        PANEL mode: candidate claims one slot from the shared pool.
-        Atomic via SELECT FOR UPDATE SKIP LOCKED.
-        """
-        try:
-            token = token.replace("Bearer ", "")
-            payload = self._validate_token(token)
-            interview_id = payload["interview_id"]
+    # # ─── PANEL mode: book one slot ────────────────────────────────────────
+    # # Todo: need some fixes  for reschduling ! This method is not needed for now 
+    # async def book_slot(self, token: str, slot_id: str):
+    #     """
+    #     PANEL mode: candidate claims one slot from the shared pool.
+    #     Atomic via SELECT FOR UPDATE SKIP LOCKED.
+    #     """
+    #     try:
+    #         token = token.replace("Bearer ", "")
+    #         payload = self._validate_token(token)
+    #         interview_id = payload["interview_id"]
 
-            interview, round_config = await self._load_interview_and_config(interview_id)
+    #         interview, round_config = await self._load_interview_and_config(interview_id)
 
-            if interview.booking_token != token:
-                raise DomainError("Invalid or outdated booking link", status_code=400)
+    #         if interview.booking_token != token:
+    #             raise DomainError("Invalid or outdated booking link", status_code=400)
 
-            if interview.status == InterviewStatus.SCHEDULED:
-                raise DomainError("Interview is already scheduled", status_code=400)
+    #         if interview.status == InterviewStatus.SCHEDULED:
+    #             raise DomainError("Interview is already scheduled", status_code=400)
 
-            if interview.status != InterviewStatus.READY_TO_BOOK:
-                raise DomainError("Booking is not available for this interview", status_code=400)
+    #         if interview.status != InterviewStatus.READY_TO_BOOK:
+    #             raise DomainError("Booking is not available for this interview", status_code=400)
 
-            if round_config.panel_mode != PanelMode.PANEL:
-                raise DomainError("This interview requires sequential booking", status_code=400)
+    #         if round_config.panel_mode != PanelMode.PANEL:
+    #             raise DomainError("This interview requires sequential booking", status_code=400)
 
-            # Atomically claim the slot
-            slot = await self.slots_repository.book_slot_atomic(
-                slot_id=slot_id,
-                interview_id=interview.id,
-            )
-            if not slot:
-                raise DomainError(
-                    "This slot is no longer available. Please pick another.",
-                    status_code=409,
-                )
+    #         panelist = await self.panelist_repository.get_panelist_by_round_config_and_panelist_id(round_config.id, slot_id)
+    #         # Atomically claim the slot
+    #         slot = await self.slots_repository.book_slot_atomic(
+    #             slot_id=slot_id,
+    #             interview_id=interview.id,
+    #         )
+    #         if not slot:
+    #             raise DomainError(
+    #                 "This slot is no longer available. Please pick another.",
+    #                 status_code=409,
+    #             )
 
-            # Update interview
-            interview.scheduled_start = slot.slot_start
-            interview.scheduled_end = slot.slot_end
-            interview.status = InterviewStatus.SCHEDULED
-            interview.booking_token = ""  # Invalidate token
+    #         # Update interview
+    #         interview.scheduled_start = slot.slot_start
+    #         interview.scheduled_end = slot.slot_end
+    #         interview.status = InterviewStatus.SCHEDULED
+    #         interview.booking_token = ""  # Invalidate token
 
-            # Check pool exhaustion → update round_config.slots_available
-            remaining = await self.slots_repository.count_remaining(round_config.id)
-            if remaining == 0:
-                round_config.slots_available = False
+    #         # Check pool exhaustion → update round_config.slots_available
+    #         remaining = await self.slots_repository.count_remaining(round_config.id)
+    #         if remaining == 0:
+    #             round_config.slots_available = False
                 
-            attendees_emails = [COMPANY_EMAIL,FireFlies_Bot,payload.get("candidate_email", "")] + [panelist.get("email") for panelist in (round_config.panelists or []) if panelist.get("email")]
+    #         attendees_emails = [COMPANY_EMAIL,FireFlies_Bot,payload.get("candidate_email", "")] + [panelist.get("email") for panelist in (round_config.panelists or []) if panelist.get("email")]
 
-            meeting_details = MeetingDetails(
-                summary=round_config.title,
-                description=f"Interview for {round_config.title}",
-                location=round_config.interview_type.value if round_config.interview_type else "Online",
-                start_time=slot.slot_start.isoformat(),
-                end_time=slot.slot_end.isoformat(),
-                timezone=round_config.timezone or "UTC",
-                attendees_emails=None, #TODO : Will add later
-                application_id=str(interview.application_id) if interview.application_id else None,
-                reminders=[
-                    Reminders(method="email", minutes_before=30),
-                    Reminders(method="popup", minutes_before=10),
-                ],
-                visibility="public",
-            )
+    #         meeting_details = MeetingDetails(
+    #             summary=round_config.title,
+    #             description=f"Interview for {round_config.title}",
+    #             location=round_config.interview_type.value if round_config.interview_type else "Online",
+    #             start_time=slot.slot_start.isoformat(),
+    #             end_time=slot.slot_end.isoformat(),
+    #             timezone=round_config.timezone or "UTC",
+    #             attendees_emails=None, #TODO : Will add later
+    #             application_id=str(interview.application_id) if interview.application_id else None,
+    #             reminders=[
+    #                 Reminders(method="email", minutes_before=30),
+    #                 Reminders(method="popup", minutes_before=10),
+    #             ],
+    #             visibility="public",
+    #         )
             
-            # ! currently using deskzero's calendar will need to update later on to hr or panel we calendar connection table to store those credential
-            meet_link = await self.calendar_service.create_google_calendar_event_owner_deskzero(meeting_details)
-
-            # Timeline event
-            await self.interview_event_repository.create_interview_event(
-                interview_id=str(interview.id),
-                event_type="SLOT_BOOKED",
-                actor=payload.get("candidate_email", "candidate"),
-                details={
-                    "slot_id": str(slot.id),
-                    "slot_start": slot.slot_start.isoformat(),
-                    "slot_end": slot.slot_end.isoformat(),
-                    "panel_mode": "panel",
-                },
-            )
-            round_config.meet_link = meet_link
+    #         #! Currently bt default using Google calendar will need to make dynamic if required in future based on provider in calendar connection table for panelist and hr calendar credential
+    #         calendar_refresh_token = await self.calendar_repostiory.get_calendar_access_token(panelist.email,CalendarProvider.GOOGLE)
             
-            await self.db.commit()
+    #         if not calendar_refresh_token:
+    #             self.logger.error(f"Calendar refresh token not found for panelist {panelist.email}, provider {CalendarProvider.GOOGLE}")
+    #             raise DomainError("Calendar credentials not found for the panelist, cannot create calendar event", status_code=404)
+            
+    #         # ! currently using deskzero's calendar will need to update later on to hr or panel we calendar connection table to store those credential
+    #         meet_link = await self._get_meet_link_for_interview(meeting_details, round_config.meeting_host_type,refresh_token=calendar_refresh_token)
 
-            # Send confirmation email (best-effort, after commit)
-            try:
-                await self.db.refresh(interview, ["application"])
-                application = interview.application
-                if application:
-                    await self.db.refresh(application, ["candidate"])
-                    candidate = application.candidate
-                    if candidate:
-                        reschedule_token = self.jwt_service.create_candidate_reschedule_token(
-                            interview_id=str(interview.id),
-                            candidate_email=candidate.email,
-                            expiration_minutes=60 * 24 * 7,  # 7 days
-                        )
-                        reschedule_link = f"{self.frontend_url}/interview/reschedule?token={reschedule_token}"
-                        await self.candidate_email_service.send_booking_confirmation_email(
-                            candidate_email=candidate.email,
-                            candidate_name=candidate.full_name or candidate.email,
-                            interview_round_title=round_config.title,
-                            scheduled_start=slot.slot_start,
-                            scheduled_end=slot.slot_end,
-                            meet_link=meet_link,
-                            reschedule_link=reschedule_link,
-                        )
-            except Exception as e:
-                self.logger.error(f"Failed to send booking confirmation email: {e}")
 
-            # Notify panelists about the booking (best-effort)
-            try:
-                candidate_display = "Candidate"
-                try:
-                    await self.db.refresh(interview, ["application"])
-                    app = interview.application
-                    if app:
-                        await self.db.refresh(app, ["candidate"])
-                        if app.candidate:
-                            candidate_display = app.candidate.full_name or app.candidate.email
-                except Exception:
-                    pass
+    #         # Timeline event
+    #         await self.interview_event_repository.create_interview_event(
+    #             interview_id=str(interview.id),
+    #             event_type="SLOT_BOOKED",
+    #             actor=payload.get("candidate_email", "candidate"),
+    #             details={
+    #                 "slot_id": str(slot.id),
+    #                 "slot_start": slot.slot_start.isoformat(),
+    #                 "slot_end": slot.slot_end.isoformat(),
+    #                 "panel_mode": "panel",
+    #             },
+    #         )
+    #         round_config.meet_link = meet_link
+            
+    #         await self.db.commit()
 
-                for panelist in (round_config.panelists or []):
-                    p_email = panelist.get("email")
-                    if not p_email:
-                        continue
-                    await self.panel_email_service.send_booking_confirmation_to_panelist(
-                        panelist_email=p_email,
-                        panelist_name=panelist.get("name"),
-                        candidate_name=candidate_display,
-                        interview_round_title=round_config.title,
-                        scheduled_start=slot.slot_start,
-                        scheduled_end=slot.slot_end,
-                        meet_link=meet_link,
-                    )
-            except Exception as e:
-                self.logger.error(f"Failed to send panelist booking notification: {e}")
+    #         # Send confirmation email (best-effort, after commit)
+    #         try:
+    #             await self.db.refresh(interview, ["application"])
+    #             application = interview.application
+    #             if application:
+    #                 await self.db.refresh(application, ["candidate"])
+    #                 candidate = application.candidate
+    #                 if candidate:
+    #                     reschedule_token = self.jwt_service.create_candidate_reschedule_token(
+    #                         interview_id=str(interview.id),
+    #                         candidate_email=candidate.email,
+    #                         expiration_minutes=60 * 24 * 7,  # 7 days
+    #                     )
+    #                     reschedule_link = f"{self.frontend_url}/interview/reschedule?token={reschedule_token}"
+    #                     await self.candidate_email_service.send_booking_confirmation_email(
+    #                         candidate_email=candidate.email,
+    #                         candidate_name=candidate.full_name or candidate.email,
+    #                         interview_round_title=round_config.title,
+    #                         scheduled_start=slot.slot_start,
+    #                         scheduled_end=slot.slot_end,
+    #                         meet_link=meet_link,
+    #                         reschedule_link=reschedule_link,
+    #                     )
+    #         except Exception as e:
+    #             self.logger.error(f"Failed to send booking confirmation email: {e}")
 
-            return {
-                "status": "booked",
-                "scheduled_start": slot.slot_start.isoformat(),
-                "scheduled_end": slot.slot_end.isoformat(),
-                "meet_link": meet_link,
-            }
+    #         # Notify panelists about the booking (best-effort)
+    #         try:
+    #             candidate_display = "Candidate"
+    #             try:
+    #                 await self.db.refresh(interview, ["application"])
+    #                 app = interview.application
+    #                 if app:
+    #                     await self.db.refresh(app, ["candidate"])
+    #                     if app.candidate:
+    #                         candidate_display = app.candidate.full_name or app.candidate.email
+    #             except Exception:
+    #                 pass
 
-        except DomainError:
-            raise
-        except Exception as e:
-            await self.db.rollback()
-            self.logger.error(f"Error booking slot: {e}")
-            raise DomainError("An error occurred while booking your slot. Please try again.")
+    #             for panelist in (round_config.panelists or []):
+    #                 p_email = panelist.get("email")
+    #                 if not p_email:
+    #                     continue
+    #                 await self.panel_email_service.send_booking_confirmation_to_panelist(
+    #                     panelist_email=p_email,
+    #                     panelist_name=panelist.get("name"),
+    #                     candidate_name=candidate_display,
+    #                     interview_round_title=round_config.title,
+    #                     scheduled_start=slot.slot_start,
+    #                     scheduled_end=slot.slot_end,
+    #                     meet_link=meet_link,
+    #                 )
+    #         except Exception as e:
+    #             self.logger.error(f"Failed to send panelist booking notification: {e}")
+
+    #         return {
+    #             "status": "booked",
+    #             "scheduled_start": slot.slot_start.isoformat(),
+    #             "scheduled_end": slot.slot_end.isoformat(),
+    #             "meet_link": meet_link,
+    #         }
+
+    #     except DomainError:
+    #         raise
+    #     except Exception as e:
+    #         await self.db.rollback()
+    #         self.logger.error(f"Error booking slot: {e}")
+    #         raise DomainError("An error occurred while booking your slot. Please try again.")
 
 
     # ─── SEQUENTIAL mode: book one slot per panelist ──────────────────────
@@ -418,19 +457,32 @@ class InterviewService:
                 visibility="public",
             )
             
+            #! Currently bt default using Google calendar will need to make dynamic if required in future based on provider in calendar connection table for panelist and hr calendar credential
+            calendar_refresh_token = await self.calendar_repostiory.get_calendar_access_token(pannelist.email,CalendarProvider.GOOGLE)
+            
+            if not calendar_refresh_token:
+                self.logger.error(f"Calendar refresh token not found for panelist {pannelist.email}, provider {CalendarProvider.GOOGLE}")
+                raise DomainError("Calendar credentials not found for the panelist, cannot create calendar event", status_code=404)
+            
             # ! currently using deskzero's calendar will need to update later on to hr or panel we calendar connection table to store those credential
-            meet_link = await self.calendar_service.create_google_calendar_event_owner_deskzero(meeting_details)
+            meet_link = await self._get_meet_link_for_interview(meeting_details, round_config.meeting_host_type,refresh_token=calendar_refresh_token)
 
 
             # Timeline event
             await self.interview_event_repository.create_interview_event(
                 interview_id=str(interview.id),
-                event_type="SLOT_BOOKED",
-                actor=payload.get("candidate_email", "candidate"),
+                event_type=InterviewEventType.Interview_Scheduled.value,
+                actor=InterviewEventActor.CANDIDATE.value,
+                summary=(
+                    f"Candidate booked a slot with panelist {pannelist.name}."
+                    f"Schedule: {format_interview_schedule(slot.slot_start, slot.slot_end, round_config.timezone)}"
+                    f"Meet link: {meet_link}"
+                    ),
                 details={
 
                             "slot_id": str(slot.id),
                             "panelist_id": str(slot.panelist_id),
+                            "candidate_email": payload.get("candidate_email", ""),
                             "slot_start": slot.slot_start.isoformat(),
                             "slot_end": slot.slot_end.isoformat(),
                     "panel_mode": "sequential",
@@ -486,6 +538,12 @@ class InterviewService:
                 except Exception:
                     pass
 
+                reschedule_token = self.jwt_service.create_panelist_reschedule_token(
+                    panelist_id=str(pannelist.id),
+                    round_config_id=str(round_config.id),
+                    interview_id=str(interview.id),
+                    expiration_minutes=remaining_time
+                )
 
                 await self.panel_email_service.send_booking_confirmation_to_panelist(
                     panelist_email=pannelist.email,
@@ -495,6 +553,7 @@ class InterviewService:
                     scheduled_start=slot.slot_start,
                     scheduled_end=slot.slot_end,
                     meet_link=meet_link,
+                    reschedule_link=f"{self.frontend_url}/panelist/reschedule?token={reschedule_token}"
                 )
             except Exception as e:
                 self.logger.error(f"Failed to send panelist booking notifications: {e}")
@@ -552,6 +611,7 @@ class InterviewService:
             
             if new_slot.is_booked:
                 raise DomainError("Selected new slot is already booked, please choose another", status_code=409)
+            
             
             # Attempt to book the new slot atomically
             await self.slots_repository.book_slot_atomic(
@@ -617,10 +677,18 @@ class InterviewService:
                 visibility="public",
             )
             
-            # ! currently using deskzero's calendar will need to update later on to hr or panel we calendar connection table to store those credential
-            meet_link = await self.calendar_service.create_google_calendar_event_owner_deskzero(meeting_details)
-
+                        
+            #! Currently bt default using Google calendar will need to make dynamic if required in future based on provider in calendar connection table for panelist and hr calendar credential
+            calendar_refresh_token = await self.calendar_repostiory.get_calendar_access_token(new_panelist.email,CalendarProvider.GOOGLE)
             
+            if not calendar_refresh_token:
+                self.logger.error(f"Calendar refresh token not found for panelist {new_panelist.email}, provider {CalendarProvider.GOOGLE}")
+                raise DomainError("Calendar credentials not found for the panelist, cannot create calendar event", status_code=404)
+            
+            # ! currently using deskzero's calendar will need to update later on to hr or panel we calendar connection table to store those credential
+            meet_link = await self._get_meet_link_for_interview(meeting_details, round_config.meeting_host_type,refresh_token=calendar_refresh_token)
+
+
             # Send confirmation email (best-effort, after commit)
             try:
                 await self.db.refresh(interview, ["application"])
@@ -655,6 +723,12 @@ class InterviewService:
                 except Exception:
                     pass
                 
+                reschedule_token = self.jwt_service.create_panelist_reschedule_token(
+                    panelist_id=str(new_panelist.id),
+                    round_config_id=str(round_config.id),
+                    interview_id=str(interview.id),
+                    expiration_minutes=remaining_time
+                )
                 
                 if old_panelist.email != new_panelist.email:
                     self.logger.info(f"Panelist changed from {old_panelist.email} to {new_panelist.email}, sending notifications to both panelists about the reschedule.")
@@ -672,20 +746,27 @@ class InterviewService:
                     
                     await self.interview_event_repository.create_interview_event(
                         interview_id=str(interview.id),
-                        event_type="SLOT_RESCHEDULED",
-                        actor=payload.get("candidate_email", "candidate"),
+                        event_type=InterviewEventType.Interview_Rescheduled.value,
+                        actor=InterviewEventActor.CANDIDATE.value,
+                        summary = (
+                            f"Candidate rescheduled the interview with new panelist {new_panelist.name}. "
+                            f"New schedule: {format_interview_schedule(new_slot.slot_start, new_slot.slot_end, round_config.timezone)}"
+                            f"Meet link : {meet_link}"
+                        ),
                         details={
                             "old_slot_id": str(booked_slot.id),
-                            "new_slot_id": str(new_slot.id),
                             "old_slot_start": booked_slot.slot_start.isoformat(),
                             "old_slot_end": booked_slot.slot_end.isoformat(),
                             "old_panelist_email": old_panelist.email,
+                            "new_slot_id": str(new_slot.id),
                             "new_slot_start": new_slot.slot_start.isoformat(),
                             "new_slot_end": new_slot.slot_end.isoformat(),
                             "new_panelist_email": new_panelist.email,
                         },
                     )
-                                            
+                    
+
+                               
                     # Notify new panelist about the reschedule and new booking
                     await self.panel_email_service.send_booking_confirmation_to_panelist(
                         panelist_email=new_panelist.email,
@@ -695,21 +776,28 @@ class InterviewService:
                         scheduled_start=new_slot.slot_start,
                         scheduled_end=new_slot.slot_end,
                         meet_link=meet_link,
+                        reschedule_link=f"{self.frontend_url}/panelist/reschedule?token={reschedule_token}"
                     )
                 else:                     
                     await self.interview_event_repository.create_interview_event(
                         interview_id=str(interview.id),
-                        event_type="SLOT_RESCHEDULED",
-                        actor=payload.get("candidate_email", "candidate"),
+                        event_type=InterviewEventType.Interview_Rescheduled.value,
+                        actor=InterviewEventActor.CANDIDATE.value,
+                       summary = (
+                            f"Candidate rescheduled the interview with panelist {new_panelist.name}. "
+                            f"New schedule: {format_interview_schedule(new_slot.slot_start, new_slot.slot_end, round_config.timezone)}"
+                            f"Meet link : {meet_link}"
+                        ),
                         details={
                             "old_slot_id": str(booked_slot.id),
-                            "new_slot_id": str(new_slot.id),
                             "old_slot_start": booked_slot.slot_start.isoformat(),
                             "old_slot_end": booked_slot.slot_end.isoformat(),
+                            "new_slot_id": str(new_slot.id),
                             "new_slot_start": new_slot.slot_start.isoformat(),
                             "new_slot_end": new_slot.slot_end.isoformat(),
                         },
                     )
+                    
                     
                     # sending reschuduled email to the same panelist if the panelist is same for old slot and new slot because of the time change 
                     await self.panel_email_service.send_meeting_rescheduled_email_to_panelist(
@@ -722,6 +810,7 @@ class InterviewService:
                         new_scheduled_start=new_slot.slot_start,
                         new_scheduled_end=new_slot.slot_end,
                         new_meet_link=meet_link,
+                        reschedule_link=f"{self.frontend_url}/panelist/reschedule?token={reschedule_token}"
                     )
 
             except Exception as e:
@@ -746,106 +835,106 @@ class InterviewService:
             raise DomainError("An error occurred while rescheduling your slot. Please try again.")
         
         
-    async def cancel_interview(self, token: str, cancellation_reason: Optional[str] = None):
-        """
-        Cancel a scheduled interview triggered by candidate. This will release the booked slot and notify panelists and candidates.
-        Reschdule token can also be used to cancel the interview, as cancellation and reschdule share the same token and expiration logic.
-        """
-        try:
-            token = token.replace("Bearer ", "")
-            payload = self._validate_token(token)
-            interview_id = payload["interview_id"]
+    # async def cancel_interview(self, token: str, cancellation_reason: Optional[str] = None):
+    #     """
+    #     Cancel a scheduled interview triggered by candidate. This will release the booked slot and notify panelists and candidates.
+    #     Reschdule token can also be used to cancel the interview, as cancellation and reschdule share the same token and expiration logic.
+    #     """
+    #     try:
+    #         token = token.replace("Bearer ", "")
+    #         payload = self._validate_token(token)
+    #         interview_id = payload["interview_id"]
 
-            interview, round_config = await self._load_interview_and_config(interview_id)
+    #         interview, round_config = await self._load_interview_and_config(interview_id)
                         
 
-            if datetime.now(timezone.utc) > interview.scheduled_start:
-                raise DomainError("Interview Has Already Started,Can't Cancel", status_code=400)
+    #         if datetime.now(timezone.utc) > interview.scheduled_start:
+    #             raise DomainError("Interview Has Already Started,Can't Cancel", status_code=400)
 
-                raise DomainError("Cancellation token has expired, can't cancel", status_code=400)
+    #             raise DomainError("Cancellation token has expired, can't cancel", status_code=400)
             
-            if interview.status != InterviewStatus.SCHEDULED:
-                raise DomainError("Only scheduled interviews can be canceled", status_code=400)
+    #         if interview.status != InterviewStatus.SCHEDULED:
+    #             raise DomainError("Only scheduled interviews can be canceled", status_code=400)
             
-            booked_slot = await self.slots_repository.get_booked_slot_for_interview(interview_id)
+    #         booked_slot = await self.slots_repository.get_booked_slot_for_interview(interview_id)
             
-            if not booked_slot:
-                raise DomainError("No booked slot found for this interview, cannot cancel", status_code=404)
+    #         if not booked_slot:
+    #             raise DomainError("No booked slot found for this interview, cannot cancel", status_code=404)
             
-            pannelist = await self.panelist_repository.get_panelist_by_round_config_and_panelist_id(round_config_id=round_config.id,panelist_id=booked_slot.panelist_id)
+    #         pannelist = await self.panelist_repository.get_panelist_by_round_config_and_panelist_id(round_config_id=round_config.id,panelist_id=booked_slot.panelist_id)
                         
-            if not pannelist:
-                self.logger.error(f"Panelist with email {booked_slot.panelist_id} not found for round config {round_config.id}")
-                raise DomainError("Panelist not found, cannot cancel", status_code=404)
+    #         if not pannelist:
+    #             self.logger.error(f"Panelist with email {booked_slot.panelist_id} not found for round config {round_config.id}")
+    #             raise DomainError("Panelist not found, cannot cancel", status_code=404)
             
             
-            await self.slots_repository.release_slot(booked_slot.id)
+    #         await self.slots_repository.release_slot(booked_slot.id)
             
-            interview.status = InterviewStatus.CANCELED
-            interview.cancellation_reason = cancellation_reason
-            interview.scheduled_start = None
-            interview.scheduled_end = None
-            interview.meet_link = None  # Clear meet link, as the interview is cancelled
+    #         interview.status = InterviewStatus.CANCELED
+    #         interview.cancellation_reason = cancellation_reason
+    #         interview.scheduled_start = None
+    #         interview.scheduled_end = None
+    #         interview.meet_link = None  # Clear meet link, as the interview is cancelled
             
-            remaining_slots = await self.slots_repository.count_remaining(round_config.id)
+    #         remaining_slots = await self.slots_repository.count_remaining(round_config.id)
             
-            if remaining_slots == 1:
-                round_config.slots_available = True
+    #         if remaining_slots == 1:
+    #             round_config.slots_available = True
 
-            #Todo : delete event from calendar
-            #Todo : cancel all Reminders and events related to the old slot
+    #         #Todo : delete event from calendar
+    #         #Todo : cancel all Reminders and events related to the old slot
             
-            # Notify panelist about the cancellation (best-effort, after commit)
-             # Send confirmation email (best-effort, after commit)
-            try:
-                await self.db.refresh(interview, ["application"])
-                application = interview.application
-                if application:
-                    await self.db.refresh(application, ["candidate"])
-                    candidate = application.candidate  
-                    await self.candidate_email_service.send_meeting_cancelled_mail_to_candidate(
-                        candidate_email=candidate.email,
-                        candidate_name=candidate.full_name or candidate.email,
-                        interview_round_title=round_config.title,
-                        scheduled_start=booked_slot.slot_start,
-                        scheduled_end=booked_slot.slot_end,
-                    )
-            except Exception as e:
-                self.logger.error(f"Failed to send booking confirmation email: {e}")
+    #         # Notify panelist about the cancellation (best-effort, after commit)
+    #          # Send confirmation email (best-effort, after commit)
+    #         try:
+    #             await self.db.refresh(interview, ["application"])
+    #             application = interview.application
+    #             if application:
+    #                 await self.db.refresh(application, ["candidate"])
+    #                 candidate = application.candidate  
+    #                 await self.candidate_email_service.send_meeting_cancelled_mail_to_candidate(
+    #                     candidate_email=candidate.email,
+    #                     candidate_name=candidate.full_name or candidate.email,
+    #                     interview_round_title=round_config.title,
+    #                     scheduled_start=booked_slot.slot_start,
+    #                     scheduled_end=booked_slot.slot_end,
+    #                 )
+    #         except Exception as e:
+    #             self.logger.error(f"Failed to send booking confirmation email: {e}")
 
-            # Notify each panelist about their specific booked slot (best-effort)
-            try:
-                candidate_display = "Candidate"
-                try:
-                    await self.db.refresh(interview, ["application"])
-                    app = interview.application
-                    if app:
-                        await self.db.refresh(app, ["candidate"])
-                        if app.candidate:
-                            candidate_display = app.candidate.full_name or app.candidate.email
-                except Exception:
-                    pass
+    #         # Notify each panelist about their specific booked slot (best-effort)
+    #         try:
+    #             candidate_display = "Candidate"
+    #             try:
+    #                 await self.db.refresh(interview, ["application"])
+    #                 app = interview.application
+    #                 if app:
+    #                     await self.db.refresh(app, ["candidate"])
+    #                     if app.candidate:
+    #                         candidate_display = app.candidate.full_name or app.candidate.email
+    #             except Exception:
+    #                 pass
 
 
-                await self.panel_email_service.send_meeting_cancelled_email__to_panelist(
-                    panelist_email=pannelist.email,
-                    panelist_name=pannelist.name,
-                    candidate_name=candidate_display,
-                    interview_round_title=round_config.title,
-                    scheduled_start=booked_slot.slot_start,
-                    scheduled_end=booked_slot.slot_end,
-                )
-            except Exception as e:
-                self.logger.error(f"Failed to send panelist booking notifications: {e}")
+    #             await self.panel_email_service.send_meeting_cancelled_email__to_panelist(
+    #                 panelist_email=pannelist.email,
+    #                 panelist_name=pannelist.name,
+    #                 candidate_name=candidate_display,
+    #                 interview_round_title=round_config.title,
+    #                 scheduled_start=booked_slot.slot_start,
+    #                 scheduled_end=booked_slot.slot_end,
+    #             )
+    #         except Exception as e:
+    #             self.logger.error(f"Failed to send panelist booking notifications: {e}")
 
             
-        except DomainError:
-            raise
+    #     except DomainError:
+    #         raise
         
-        except Exception as e:
-            await self.db.rollback()
-            self.logger.error(f"Error cancelling interview: {e}")
-            raise DomainError("An error occurred while cancelling your interview. Please try again.")
+    #     except Exception as e:
+    #         await self.db.rollback()
+    #         self.logger.error(f"Error cancelling interview: {e}")
+    #         raise DomainError("An error occurred while cancelling your interview. Please try again.")
 
 
     async def request_for_slots(self, token: str):
@@ -889,8 +978,9 @@ class InterviewService:
                 
             await self.interview_event_repository.create_interview_event(
                 interview_id=str(interview.id),
-                event_type="Candidate Requested for new slots",
-                actor="Candiate",
+                event_type=InterviewEventType.Candidate_Requested_New_Slots.value,
+                actor=InterviewEventActor.CANDIDATE.value,
+                summary=(f"Notifying {len(panelist_not_requested)} panelists for availability."),
                 details={
                     "panelist_emails": [p.email for p in panelist_not_requested],
                     "info":"Thsese panelist are requested for availability as candidate requested for new slots",
@@ -905,7 +995,7 @@ class InterviewService:
                     round_config_id=str(round_config.id),
                     expiration_minutes=token_expiry_in_min,
                     interview_id=str(interview.id),
-                    panelist_email=p.email
+                    panelist_id=str(p.id)
                     )
                 panelists.append(p)
             

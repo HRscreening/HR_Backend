@@ -21,7 +21,7 @@ from src.schemas.rubric_schemas import (
     UpdateRubricRequest,
     read_rubric_criteria,
 )
-from src.schemas.job_schemas import JobOverviewResponse
+from src.schemas.job_schemas import JobOverviewResponse,JobSettingsResposnse,JobSettings
 from src.services.errors.base import DomainError
 from src.services.errors.user_errors import JobNotFound, RubricNotFound
 from src.services.errors.pipeline_errors import (
@@ -948,3 +948,27 @@ class JobService:
             "all_complete": all_done,
             "created_at": batch.created_at.isoformat(),
         }
+        
+        
+    async def get_job_settings(self, job_id: str) -> dict:
+        job = await self.job_repository.get_job_by_id(job_id)
+        if not job:
+            raise JobNotFound(status_code=404)
+
+
+        return JobSettingsResposnse(
+                job_settings=JobSettings(
+                title=job.title,
+                location=job.location,
+                salary=job.salary,
+                status=_job_status_for_api(job.status),
+                description=job.description,
+                target_headcount=job.target_headcount,
+                manual_rounds_count=job.manual_rounds_count,
+                
+                ),
+            voice_ai_enabled=job.voice_ai_enabled,
+            is_confidential=job.is_confidential,
+            job_metadata=job.job_metadata,
+            closing_reason=job.closing_reason,
+        )

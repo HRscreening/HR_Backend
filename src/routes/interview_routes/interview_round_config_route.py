@@ -81,7 +81,7 @@ async def update_round_config(
     )
 
 
-
+# ! it should not be in this route but for now we can keep it here as it is related to interview round config and it is only for hr dashboard
 @router.get("/timeline/{interview_id}", status_code=status.HTTP_200_OK)
 async def get_interview_timeline(
     request: Request,

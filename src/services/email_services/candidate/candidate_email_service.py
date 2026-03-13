@@ -1,14 +1,24 @@
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from configs.log_config import get_logger
 from src.services.email_services.candidate.email_templates import candidate_email_templates, CandidateEmailTemplates
 from src.services.email_services.base import BaseEmailService
 
 
+# def _format_dt_for_email(dt) -> str:
+#     """Format a datetime into a human-readable UTC string for emails."""
+#     if isinstance(dt, datetime):
+#         utc_dt = dt.astimezone(timezone.utc) if dt.tzinfo else dt
+#         return utc_dt.strftime("%b %d, %Y at %I:%M %p") + " UTC"
+#     return str(dt)
+
+
+
 def _format_dt_for_email(dt) -> str:
-    """Format a datetime into a human-readable UTC string for emails."""
+    """Format a datetime into a human-readable IST string for emails."""
     if isinstance(dt, datetime):
-        utc_dt = dt.astimezone(timezone.utc) if dt.tzinfo else dt
-        return utc_dt.strftime("%b %d, %Y at %I:%M %p") + " UTC"
+        ist_dt = dt.astimezone(ZoneInfo("Asia/Kolkata")) if dt.tzinfo else dt
+        return ist_dt.strftime("%b %d, %Y at %I:%M %p") + " IST"
     return str(dt)
 
 
@@ -63,6 +73,33 @@ class CandidateEmailService(BaseEmailService):
         except Exception as e:
             self.logger.error(f"Failed to send booking confirmation email to {candidate_email}: {e}")
             raise
+ 
 
+    async def send_interview_rescheduled_email(
+        self,
+        candidate_email: str,
+        candidate_name: str,
+        scheduled_start,
+        scheduled_end,
+        interview_round_title: str,
+        reschedule_link: str,
+        reason:str = ""
+        
+    ):
+        subject = f"Interview Rescheduling — {interview_round_title}"
+        body = self.templates.get_reschedule_new_slots_email_template(
+            candidate_name=candidate_name,
+            interview_round_title=interview_round_title,
+            scheduled_start=_format_dt_for_email(scheduled_start),
+            scheduled_end=_format_dt_for_email(scheduled_end),
+            reschedule_link=reschedule_link,
+            reason=reason,
+        )
+        try:
+            await self.send_email(receiver_email=candidate_email, subject=subject, body=body)
+            self.logger.info(f"Sent interview rescheduling email to {candidate_email}")
+        except Exception as e:
+            self.logger.error(f"Failed to send interview rescheduling email to {candidate_email}: {e}")
+            raise
 
 candidate_email_service = CandidateEmailService()

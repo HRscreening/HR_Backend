@@ -13,7 +13,7 @@ from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB,UUID,VARCHAR,TEXT
 
 from configs.postgress_db import Base
-from src.models.enums import InterviewType, PanelMode
+from src.models.enums import InterviewType, PanelMode,MeetingHostType
 
 
 
@@ -60,6 +60,12 @@ class Interview_Round_Configs(Base):
         nullable=False,
         default=PanelMode.SEQUENTIAL,
     )  # PANEL = intersection (all together), SEQUENTIAL = union (1-on-1 each)
+    
+    meeting_host_type = Column(
+        SAEnum(MeetingHostType, name="meeting_host_type_enum", native_enum=True),
+        nullable=False,
+        default=MeetingHostType.PANELIST,
+    )  
     
     created_at = Column(
         DateTime(timezone=True),

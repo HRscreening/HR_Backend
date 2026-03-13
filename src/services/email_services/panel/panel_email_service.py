@@ -2,11 +2,20 @@ from configs.log_config import get_logger
 from src.services.email_services.panel.email_templates import panelist_email_templates,PanelEmailTemplates
 from src.services.email_services.base import BaseEmailService
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 
-def _format_dt_for_email(dt: datetime) -> str:
-    """Format a datetime as 'Mar 10, 2026 at 02:30 PM UTC'."""
-    return dt.strftime("%b %d, %Y at %I:%M %p UTC")
+# def _format_dt_for_email(dt: datetime) -> str:
+#     """Format a datetime as 'Mar 10, 2026 at 02:30 PM UTC'."""
+#     return dt.strftime("%b %d, %Y at %I:%M %p UTC")
+
+
+def _format_dt_for_email(dt) -> str:
+    """Format a datetime into a human-readable IST string for emails."""
+    if isinstance(dt, datetime):
+        ist_dt = dt.astimezone(ZoneInfo("Asia/Kolkata")) if dt.tzinfo else dt
+        return ist_dt.strftime("%b %d, %Y at %I:%M %p") + " IST"
+    return str(dt)
 
 
 class PanelEmailService(BaseEmailService):
@@ -37,6 +46,7 @@ class PanelEmailService(BaseEmailService):
         scheduled_start: datetime,
         scheduled_end: datetime,
         meet_link: str | None = None,
+        reschedule_link: str | None = None
     ):
         """Send a confirmation email to a panelist after a candidate books a slot."""
         interview_date = _format_dt_for_email(scheduled_start).split(" at ")[0]
@@ -52,6 +62,7 @@ class PanelEmailService(BaseEmailService):
             interview_date=interview_date,
             interview_time=interview_time,
             meet_link=meet_link,
+            reschedule_link=reschedule_link
         )
         try:
             await self.send_email(receiver_email=panelist_email, subject=subject, body=body)
@@ -98,7 +109,8 @@ class PanelEmailService(BaseEmailService):
         old_scheduled_end: datetime,
         new_scheduled_start: datetime,
         new_scheduled_end: datetime,
-        new_meet_link: str | None
+        new_meet_link: str | None,
+        reschedule_link:str | None
     ):
         """Send email to panelist when a candidate reschedules their interview."""
 
@@ -119,6 +131,7 @@ class PanelEmailService(BaseEmailService):
             new_date=new_date,
             new_time=new_time,
             meet_link=new_meet_link,
+            reschedule_link=reschedule_link
         )
 
         try:
@@ -131,5 +144,21 @@ class PanelEmailService(BaseEmailService):
 
         except Exception as e:
             self.logger.error(f"Failed to send reschedule email to panelist {panelist_email}: {str(e)}")
+            
+    
+    async def send_thanks_for_submitting_availability_email(self, panelist_email: str, panelist_name: str, interview_round_title: str,edit_slots_link:str,validity_period:str):
+        subject = f"Thank you for submitting your availability for {interview_round_title}"
+        body = self.panelist_email_templates.get_panelist_thank_you_availability_template(
+            panelist_name=panelist_name,
+            interview_round_title=interview_round_title,
+            edit_slots_link=edit_slots_link,
+            validity_period=validity_period
+        )
+        try:
+            await self.send_email(receiver_email=panelist_email, subject=subject, body=body)
+            self.logger.info(f"Sent thanks for submitting availability email to {panelist_email} with subject '{subject}'")
+        except Exception as e:
+            self.logger.error(f"Failed to send thanks for submitting availability email to {panelist_email}: {str(e)}")
+
 
 panel_email_service = PanelEmailService()

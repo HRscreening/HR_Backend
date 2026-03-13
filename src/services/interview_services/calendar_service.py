@@ -14,7 +14,7 @@ import uuid
 from typing import List, Optional
 import httpx
 from src.dtos.interviews_dtos.interviews_dto import MeetingDetails, Reminders
-
+from uuid import UUID
 
 # def _format_dt(dt: datetime) -> str:
 #     """Format datetime as iCalendar UTC timestamp: 20260315T100000Z"""
@@ -213,14 +213,14 @@ class CalendarService(ICSGenerator):
 
         return event_body
 
-    async def _get_google_access_token(self) -> str:
+    async def _get_google_access_token(self,refresh_token:str) -> str:
         # ! Url needs to be stored in env config
         url = "https://oauth2.googleapis.com/token"
 
         data = {
             "client_id": self.calendar_client_id,
             "client_secret": self.calendar_client_secret,
-            "refresh_token": self.calendar_refresh_token,
+            "refresh_token": refresh_token,
             "grant_type": "refresh_token"
         }
 
@@ -236,7 +236,7 @@ class CalendarService(ICSGenerator):
     async def create_google_calendar_event_owner_deskzero(self,meeting_details: MeetingDetails) -> str:
         try:
             
-            access_token  = await self._get_google_access_token()
+            access_token  = await self._get_google_access_token(refresh_token=self.calendar_refresh_token)
             
             headers = {
                 "Authorization": f"Bearer {access_token}",
@@ -267,7 +267,51 @@ class CalendarService(ICSGenerator):
                 raise Exception("Calendar event created but failed to generate Meet link")
 
             self.logger.info(
-                f"Google Calendar event created successfully: \n\n{data}\n\n"
+                f"Google Calendar event created successfully"
+            )
+
+            return data.get("hangoutLink")
+
+        except Exception as e:
+            self.logger.error(f"Error creating Google Calendar event: {str(e)}")
+            raise Exception("Failed to create calendar event")
+        
+    # ! currenlty using refresj token as for dev apps google provide short lived   
+    async def create_google_calendar_event_owner_panelist(self,meeting_details: MeetingDetails,refresh_token:str) -> str:
+        try:
+            
+            access_token  = await self._get_google_access_token(refresh_token)
+            
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+                "Content-Type": "application/json"
+            }
+
+            event_body = self._build_google_calendar_event(meeting_details)
+
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                res = await client.post(
+                    f"{self.google_calendar_meet_creation_link}?conferenceDataVersion=1",
+                    json=event_body,
+                    headers=headers
+                )
+
+            if res.status_code not in [200, 201]:
+                self.logger.error(
+                    f"Google Calendar API error: {res.status_code} - {res.text}"
+                )
+                raise Exception("Failed to create calendar event")
+
+            data = res.json()
+            
+            if not data.get("hangoutLink"):
+                self.logger.error(
+                    f"Google Calendar event created but no Meet link generated: {data}"
+                )
+                raise Exception("Calendar event created but failed to generate Meet link")
+
+            self.logger.info(
+                f"Google Calendar event created successfully"
             )
 
             return data.get("hangoutLink")
