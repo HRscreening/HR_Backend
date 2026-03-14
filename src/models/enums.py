@@ -113,3 +113,33 @@ class FeedbackRating(enum.Enum):
 class CalendarProvider(enum.Enum):
     GOOGLE = "google"
     MICROSOFT = "microsoft"
+
+
+
+class MeetingHostType(enum.Enum):
+    PANELIST = "panelist"
+    HR = "hr"
+
+    
+    
+    
+# not in db enums for interview events (not strictly required for now)
+class InterviewEventType(enum.Enum):
+    Interview_Created = "Interview Created"
+    Booking_Link_Sent = "Booking Link Sent"
+    Interview_Scheduled = "Interview Scheduled"
+    Interview_Rescheduled = "Interview Rescheduled"
+    
+    Interview_Canceled = "Interview Canceled"
+    Candidate_Requested_New_Slots = "Candidate Requested for new slots"
+    
+    
+    # AVAILABILITY_REQUESTED = "Availability Requested" this is not part of timeline it is and event for round-config 
+
+
+
+class InterviewEventActor(enum.Enum):
+    CANDIDATE = "Candidate"
+    PANELIST = "Panelist"
+    HR = "HR"
+    System = "System"

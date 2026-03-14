@@ -30,7 +30,7 @@ class OAuthService:
 
         user_info = await self.google_calendar_service.get_google_user_info(access_token)
 
-        await self.calendar_repository.save_calendar_connection(
+        await self.calendar_repository.upsert_calendar_connection(
             provider_email=user_email or user_info["email"],
             provider=CalendarProvider.GOOGLE,
             access_token=access_token,

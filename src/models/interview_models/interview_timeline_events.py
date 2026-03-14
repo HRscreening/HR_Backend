@@ -32,7 +32,8 @@ class Interview_TimeLine_Events(Base):
     
     event_type = Column(String, nullable=False,index=True)  
     actor = Column(String, nullable=True)  # Email or user ID of who triggered it 
-    details = Column(JSONB, nullable=True)  # Additional details about the event (e
+    details = Column(JSONB, nullable=True)  # Additional details about the event for internal use, not exposed to candidates
+    summary = Column(TEXT, nullable=True)  # A brief summary of the event for candidate-facing timelines
     
     created_at = Column(
         DateTime(timezone=True),

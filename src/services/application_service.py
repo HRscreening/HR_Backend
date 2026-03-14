@@ -4,13 +4,80 @@ from src.services.errors.base import DomainError
 from src.repositories.application_repository import ApplicationRepository
 from src.models.enums import ApplicationStatus
 from datetime import datetime, timezone
-
+from src.models.enums import InterviewStatus
+from datetime import timedelta
+from src.repositories.application_repository import ApplicationRepository
+from src.models.enums import ApplicationStatus, InterviewStatus,InterviewEventActor,InterviewEventType
+from src.models.interview_models.interview_rounds_configs import Interview_Round_Configs
+from datetime import datetime, timezone, timedelta
+from src.schemas.candidate_schemas import CandidateCreateSchema
+from src.repositories.candidiate_repository import CandidateRepository
+from src.repositories.interview_respositories.panelist_repository import PanelistRepository
+from src.repositories.interview_respositories.interview_repository import InterviewRepository
+from src.repositories.job_repository import JobRepository
+from src.services.email_services.panel.panel_email_service import PanelEmailService,panel_email_service
+from src.services.email_services.candidate.candidate_email_service import CandidateEmailService, candidate_email_service
+from src.repositories.interview_respositories.interview_round_configs_repository import InterviewRoundConfigsRepository
+from src.repositories.interview_respositories.interview_event_repository import InterviewEventRepository
+from src.utils.jwt import JWTService,jwt_service
+from configs.env_config import FRONTEND_URL
 
 class ApplicationService:
-    def __init__(self, application_repository:ApplicationRepository, db: AsyncSession):
+    def __init__(self, 
+        application_repository:ApplicationRepository,
+        candidate_repository:CandidateRepository,
+        interview_repository:InterviewRepository,
+        panelist_repository:PanelistRepository,
+        interview_round_config_repository:InterviewRoundConfigsRepository,
+        interview_event_repository:InterviewEventRepository,
+        job_repository:JobRepository,
+        db: AsyncSession):
+        
+        
         self.db = db
         self.application_repository = application_repository
-        self.logger = get_logger("APPLICATION_SERVICE")       
+        self.candidate_repository = candidate_repository
+        self.interview_repository = interview_repository
+        self.panelist_repository = panelist_repository
+        self.interview_round_config_repository = interview_round_config_repository
+        self.interview_event_repository = interview_event_repository
+        self.panel_email_service : PanelEmailService = panel_email_service
+        self.job_repository : JobRepository = job_repository
+        self.candidate_email_service : CandidateEmailService = candidate_email_service
+        self.jwt_service : JWTService = jwt_service
+        
+        self.frontend_url = FRONTEND_URL
+        
+        self.logger = get_logger("APPLICATION_SERVICE")  
+        
+        
+            
+    
+    def _check_application_movable_to_new_round(self,application,round_config,round_number):
+
+        if not round_config.start_date or not round_config.end_date:
+            raise DomainError(message="Start date and end date must be defined for the round config", status_code=400)
+        
+        # TODO: Decide if we want to allow moving application to a round whose start date is in the past but end date is in the future,
+        # as sometimes interview rounds can be created with start date in the past by mistake but still want to use them if end date is in the future.
+        # For now, we will allow it but log a warning.
+
+        # if round_config.start_date < datetime.now(timezone.utc):
+        #     raise DomainError(message="Round config start date must be in the future to move application to this round", status_code=400)
+        
+        if round_config.end_date < datetime.now(timezone.utc):
+            raise DomainError(message="Round config end date must be in the future to move application to this round", status_code=400)
+            
+        if application.current_round and round_number != application.current_round + 1:
+            raise DomainError(message="Application can only be moved to the next round sequentially", status_code=400)
+        
+        if application.current_round and round_number == application.current_round:
+            raise DomainError(message="Application is already in this round", status_code=400)
+        
+        if application.current_round and round_number < application.current_round:
+            raise DomainError(message="Cannot move application back to a previous round", status_code=400)
+        
+              
     
     async def get_applications_of_job(
         self,
@@ -123,15 +190,15 @@ class ApplicationService:
             self.logger.error(f"Failed to change application status for application_id={application_id} to new_status={new_status}: {str(e)}")
             raise DomainError(message="Failed to change application status", status_code=500)
     
-    async def delete_application(self, application_id: str, job_id: str):
+    async def delete_application(self, application_id: str, org_id: str):
         try:
             application = await self.application_repository.get_application_by_id(application_id=application_id)
 
             if not application:
                 raise DomainError(message="Application not found", status_code=404)
 
-            if str(application.job_id) != str(job_id):
-                raise DomainError(message="Application does not belong to this job", status_code=403)
+            # if str(application.job_id) != str(job_id):
+            #     raise DomainError(message="Application does not belong to this job", status_code=403)
 
             application.deleted_at = datetime.now(timezone.utc)
             application.last_activity_at = datetime.now(timezone.utc)
@@ -163,3 +230,196 @@ class ApplicationService:
             self.logger.error(f"Failed to flag application for application_id={application_id}: {str(e)}")
             await self.application_repository.rollback()
             raise DomainError(message="Failed to flag application", status_code=500)
+        
+        
+    
+                
+    async def unflag_application(self,application_id:str,org_id:str=None):
+        try:
+            application = await self.application_repository.get_application_by_id(application_id=application_id)
+            
+            if not application or application.deleted_at is not None:
+                raise DomainError(message="Application not found", status_code=404)
+            
+            if application.is_flagged == False:
+                raise DomainError(message="Application is not flagged", status_code=400)
+            
+            
+            application.is_flagged = False
+            application.flag_reason = None
+            application.last_activity_at = datetime.now(timezone.utc)
+            
+            await self.db.commit()
+            return True
+        except DomainError:
+            raise
+        except Exception as e:
+            await self.db.rollback()
+            self.logger.error(f"Failed to unflag application for application_id={application_id}: {str(e)}")
+            raise DomainError(message="Failed to unflag application", status_code=500)
+
+
+    
+    async def star_application(self,application_id:str,org_id:str=None):
+        try:
+            application = await self.application_repository.get_application_by_id(application_id=application_id)
+            
+            if not application or application.deleted_at is not None:
+                raise DomainError(message="Application not found", status_code=404)
+            
+            if application.is_starred == True:
+                raise DomainError(message="Application is already starred", status_code=400)
+            
+            application.is_starred = True
+            application.last_activity_at = datetime.now(timezone.utc)
+            
+            await self.db.commit()
+            return True
+        except DomainError:
+            raise
+        except Exception as e:
+            await self.db.rollback()
+            self.logger.error(f"Failed to star application for application_id={application_id}: {str(e)}")
+            raise DomainError(message="Failed to star application", status_code=500)
+
+
+                
+    async def unstar_application(self,application_id:str,org_id:str=None):
+        try:
+            application = await self.application_repository.get_application_by_id(application_id=application_id)
+            
+            if not application  or application.deleted_at is not None:
+                raise DomainError(message="Application not found", status_code=404)
+
+            if application.is_starred == False:
+                raise DomainError(message="Application is not starred", status_code=400)
+            
+            application.is_starred = False
+            application.last_activity_at = datetime.now(timezone.utc)
+            
+            await self.db.commit()
+            return True
+        except DomainError:
+            raise
+        except Exception as e:
+            await self.db.rollback()
+            self.logger.error(f"Failed to unstar application for application_id={application_id}: {str(e)}")
+            raise DomainError(message="Failed to unstar application", status_code=500)
+        
+        
+        
+        
+    async def move_to_round(self,application_id:str,job_id:str,round_number:int):
+        try:
+            application = await self.application_repository.get_application_by_id(application_id=application_id)
+            
+            if not application:
+                raise DomainError(message="Application not found", status_code=404)
+            
+
+            await self.db.refresh(application, ["candidate"])
+            candidate = application.candidate 
+
+            # can also check phone number later if required
+            if not candidate or candidate.email is None:
+                raise DomainError(message="Candidate email not found,Please add candidate email before moving to next round", status_code=400)
+            
+            round_config = await self.interview_round_config_repository.get_interview_round_config_by_job_and_round(job_id=job_id, round_number=round_number)
+            
+            if not round_config:
+                raise DomainError(message="There is no round config for this round,Add config first", status_code=408)
+            
+            # ! not using  applicaion current_round field directly to validate if the move is valid or not, as sometimes application current_round can be out of sync with actual interview rounds created for the application, so validating based on actual interview rounds created and application current round both to make it more robust.
+            
+            total_possible_round = await self.job_repository.get_total_rounds_for_job(job_id=job_id)
+            
+            
+            if round_number > total_possible_round:
+                raise DomainError(message=f"Invalid round number, total possible rounds for this job is {total_possible_round}", status_code=400)
+            
+            current_round = await self.application_repository.get_current_interview_round_for_application(application_id=application_id)
+            
+            if current_round and round_number <= current_round:
+                raise DomainError(message="Application is already in this round or higher round, cannot move back to same or previous round", status_code=400)
+            
+            if current_round and round_number > current_round + 1:
+                    raise DomainError(message="Application can only be moved to the next round sequentially, cannot skip rounds", status_code=400)
+                
+            if application.status == ApplicationStatus.REJECTED:
+                raise DomainError(message="Cannot move application to next round as it is already rejected", status_code=400)
+            
+            if round_number == 1 and application.status != ApplicationStatus.SHORTLISTED:
+                raise DomainError(message="Application must be in shortlisted status to move to round 1", status_code=400)
+            
+            self._check_application_movable_to_new_round(application,round_config,round_number)
+            
+
+            
+            new_interview = await self.interview_repository.create_interview(
+                round_config_id=round_config.id,
+                application_id=application_id,
+                round_number=round_number
+            ) 
+            
+            # Timeline: interview created
+            await self.interview_event_repository.create_interview_event(
+                interview_id=str(new_interview.id),
+                event_type=InterviewEventType.Interview_Created.value,
+                actor=InterviewEventActor.HR.value,
+                summary=(f"Candidate moved to round {round_number} - {round_config.title}"
+                         f"\nBooking Link will be sent to candidate."
+                         ),
+                details={"round_number": round_number, "round_title": round_config.title},
+            )
+            
+            # ! should we also check slot repository for available slot or rely on slot_available flag | when candidate choose slot we maintain this flag that time if error occurs then we will implement this
+            
+            if not round_config.slots_available:
+                raise DomainError(message="Cannot move application to this round as slots are not yet available,Please wait for panelist to give slots or request them for slots", status_code=411)
+                
+                
+                
+            await self.db.refresh(application, ["candidate"])
+            candidate = application.candidate
+            if not candidate or not candidate.email:
+                raise DomainError("Candidate email not found for this application", status_code=400)
+
+            remaining_seconds = (round_config.end_date - datetime.now(timezone.utc)).total_seconds()
+            token_expiry_min = max(60, int(remaining_seconds // 60))
+
+            booking_token = self.jwt_service.create_candidate_booking_token(
+                interview_id=str(new_interview.id),
+                candidate_email=candidate.email,
+                expiration_minutes=token_expiry_min,
+            )
+            new_interview.booking_token = booking_token
+            new_interview.booking_token_expires_at = datetime.now(timezone.utc) + timedelta(minutes=token_expiry_min)
+            new_interview.status = InterviewStatus.READY_TO_BOOK
+            
+            application.current_round = round_number
+            await self.db.commit()
+
+            # Send email (best-effort, after commit)
+            booking_link = f"{self.frontend_url}/interview/book?token={booking_token}"
+            try:
+                await self.candidate_email_service.send_booking_link_email(
+                    candidate_email=candidate.email,
+                    candidate_name=candidate.full_name or candidate.email,
+                    interview_round_title=round_config.title,
+                    booking_link=booking_link,
+                )
+            except Exception as e:
+                self.logger.error(f"Failed to send booking link email: {e}")
+
+            self.logger.info(f"Slots available: Sent booking link to candidate for interview_id={new_interview.id}")
+        
+        
+                
+            return {
+                "new_round": round_number,
+                "message":"Application moved to round successfully"
+                }
+        except Exception as e:
+            self.logger.error(f"Failed to move application to round for application_id={application_id} to round_number={round_number}: {str(e)}")
+            await self.db.rollback()
+            raise 

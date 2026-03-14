@@ -252,6 +252,8 @@ class ARQProducer:
                 cfg.worker_func,
                 payload,
                 _queue_name=cfg.queue_name,
+
+                
             )
 
             return redis_job_id

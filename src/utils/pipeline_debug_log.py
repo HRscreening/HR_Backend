@@ -27,6 +27,7 @@ _LOG_PATH = os.path.abspath(_LOG_PATH)
 
 
 def _write(lines: list[str]):
+    os.makedirs(os.path.dirname(_LOG_PATH), exist_ok=True)
     with open(_LOG_PATH, "a", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
 

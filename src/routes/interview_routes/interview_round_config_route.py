@@ -2,7 +2,8 @@ from fastapi import APIRouter,Request,Depends,status
 from  typing import Optional
 from src.dtos.interviews_dtos.interview_round_config_dto import CreateInterviewRoundConfigDTO, UpdateInterviewRoundConfigDTO, BulkCreateInterviewRoundConfigDTO,RequestPanelistsForSlotsDTO
 
-router = APIRouter(prefix="/api/interview", tags=["Interview Round Configurations Management"])
+# TODO: Api endpoint_need to be changed
+router = APIRouter(prefix="/api/round", tags=["Interview Round Configurations Management"])
 from src.dependency import get_interview_round_config_service,InterviewRoundConfigService
 from src.dependency import get_interview_service, InterviewService
 
@@ -58,7 +59,7 @@ async def update_round_config(request: Request,round_config_id:str, config_data:
 
 
 
-@router.post("/request-all-panelist-for-slots/{round_config_id}",status_code=status.HTTP_200_OK)
+@router.post("/request-all-panelists-for-slots/{round_config_id}",status_code=status.HTTP_200_OK)
 async def update_round_config(request: Request,round_config_id:str,interview_round_config_service: InterviewRoundConfigService = Depends(get_interview_round_config_service)):
     user_id = request.state.user.id
     ctx_type = request.state.context.type
@@ -81,7 +82,7 @@ async def update_round_config(
     )
 
 
-
+# ! it should not be in this route but for now we can keep it here as it is related to interview round config and it is only for hr dashboard
 @router.get("/timeline/{interview_id}", status_code=status.HTTP_200_OK)
 async def get_interview_timeline(
     request: Request,
@@ -102,3 +103,11 @@ async def get_rounds_overview(request: Request, job_id: str, interview_round_con
 
     overview = await interview_round_config_service.get_intervew_round_config_overview_by_job(job_id=job_id)
     return overview
+
+@router.get("/{round_config_id}/slots", status_code=status.HTTP_200_OK)
+async def get_round_config_slots(request: Request, round_config_id: str, interview_round_config_service: InterviewRoundConfigService = Depends(get_interview_round_config_service)):
+    """Get available slots for a round config along with panelist details."""
+    user_id = request.state.user.id
+    ctx_type = request.state.context.type
+
+    return await interview_round_config_service.get_round_slots(round_config_id=round_config_id)
