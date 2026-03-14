@@ -188,15 +188,15 @@ class ApplicationService:
             self.logger.error(f"Failed to change application status for application_id={application_id} to new_status={new_status}: {str(e)}")
             raise DomainError(message="Failed to change application status", status_code=500)
     
-    async def delete_application(self, application_id: str, job_id: str):
+    async def delete_application(self, application_id: str, org_id: str):
         try:
             application = await self.application_repository.get_application_by_id(application_id=application_id)
 
             if not application:
                 raise DomainError(message="Application not found", status_code=404)
 
-            if str(application.job_id) != str(job_id):
-                raise DomainError(message="Application does not belong to this job", status_code=403)
+            # if str(application.job_id) != str(job_id):
+            #     raise DomainError(message="Application does not belong to this job", status_code=403)
 
             application.deleted_at = datetime.now(timezone.utc)
             application.last_activity_at = datetime.now(timezone.utc)
@@ -364,7 +364,9 @@ class ApplicationService:
                 interview_id=str(new_interview.id),
                 event_type=InterviewEventType.Interview_Created.value,
                 actor=InterviewEventActor.HR.value,
-                summary=(f"Candidate moved to round {round_number} - {round_config.title}"),
+                summary=(f"Candidate moved to round {round_number} - {round_config.title}"
+                         f"\nBooking Link will be sent to candidate."
+                         ),
                 details={"round_number": round_number, "round_title": round_config.title},
             )
             
@@ -391,14 +393,7 @@ class ApplicationService:
             new_interview.booking_token = booking_token
             new_interview.booking_token_expires_at = datetime.now(timezone.utc) + timedelta(minutes=token_expiry_min)
             new_interview.status = InterviewStatus.READY_TO_BOOK
-
-            await self.interview_event_repository.create_interview_event(
-                interview_id=str(new_interview.id),
-                event_type=InterviewEventType.Booking_Link_Sent.value,
-                actor=InterviewEventActor.HR.value,
-                summary=(f"Booking link sent to candidate for round {round_number} - {round_config.title}"),
-                details={"candidate_email": candidate.email},
-            )
+            
             application.current_round = round_number
             await self.db.commit()
 

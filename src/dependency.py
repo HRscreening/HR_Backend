@@ -129,19 +129,21 @@ def get_auth_service(
 
 def get_user_service(
     repo: UserRepository = Depends(get_user_repository),
+    calendar_repository: CalendarRepository = Depends(get_calendar_repository),
     db: AsyncSession = Depends(get_db)
 ):
 
-    return UserService(repo,db)
+    return UserService(repo,calendar_repository,db)
 
 
 def get_job_service(
     jobRepo: JobRepository = Depends(get_job_repository),
     db: AsyncSession = Depends(get_db),
     batch_repository: BatchRepository = Depends(get_batch_repository),
+    round_config_repository: InterviewRoundConfigsRepository = Depends(get_interview_round_configs_repository),
     org_repository: OrganizationRepository = Depends(get_org_repository)
 ):
-    return JobService(db=db,  job_repositoy=jobRepo,batch_repository=batch_repository,org_repository=org_repository)
+    return JobService(db=db,  job_repositoy=jobRepo,batch_repository=batch_repository,org_repository=org_repository,round_config_repository=round_config_repository)
 
 
 def get_application_service(
@@ -225,6 +227,7 @@ def get_interview_service(
     slots_repository: InterviewSlotsRepository = Depends(get_interview_slots_repository),
     calendar_service: CalendarService = Depends(get_calendar_service),
     calendar_repository: CalendarRepository = Depends(get_calendar_repository),
+    application_repository: ApplicationRepository = Depends(get_application_repository),
     db: AsyncSession = Depends(get_db),
 ):
     return InterviewService(
@@ -235,6 +238,7 @@ def get_interview_service(
         slots_repository=slots_repository,
         calendar_repostiory=calendar_repository,
         calendar_service=calendar_service,
+        application_repository=application_repository,
         db=db,
     )
 

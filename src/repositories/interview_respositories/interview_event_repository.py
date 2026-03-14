@@ -34,6 +34,21 @@ class InterviewEventRepository:
         result = await self.db.execute(
             select(Interview_TimeLine_Events)
             .where(Interview_TimeLine_Events.interview_id == interview_id)
-            .order_by(Interview_TimeLine_Events.created_at.asc())
+            .order_by(Interview_TimeLine_Events.created_at.desc())
         )
         return list(result.scalars().all())
+    
+    async def get_events_by_interview_id_brief(self, interview_id: str):
+        result = await self.db.execute(
+            select(
+                Interview_TimeLine_Events.id,
+                Interview_TimeLine_Events.actor,
+                Interview_TimeLine_Events.event_type,
+                Interview_TimeLine_Events.summary,
+                Interview_TimeLine_Events.created_at
+            )
+            .where(Interview_TimeLine_Events.interview_id == interview_id)
+            .order_by(Interview_TimeLine_Events.created_at.desc())
+        )
+
+        return result.mappings().all()

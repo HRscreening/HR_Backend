@@ -8,6 +8,9 @@ from src.routes.application_routes import router as application_router
 from src.routes.candidate_routes import router as candidate_router
 from src.routes.interview_routes.interview_round_config_route import router as interview_round_config_router
 from src.routes.org_routes import router as org_router
+from src.routes.interview_routes.interview_routes import router as interview_router
+
+
 from src.routes.interview_routes.panlist_route import unproducted_router as panelist_unprotected_router
 from src.routes.interview_routes.candidate_booking_route import unprotected_router as candidate_booking_router
 from src.routes.oauth_routes import router as oauth_router
@@ -58,6 +61,8 @@ app.include_router(candidate_router,dependencies=[Depends(auth_required)])
 app.include_router(org_router,dependencies=[Depends(auth_required)])
 # Interview routes
 app.include_router(interview_round_config_router,dependencies=[Depends(auth_required)])
+app.include_router(interview_router,dependencies=[Depends(auth_required)])
+
 app.include_router(panelist_unprotected_router)
 app.include_router(candidate_booking_router)
 app.include_router(oauth_router)

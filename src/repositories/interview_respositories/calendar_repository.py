@@ -140,5 +140,18 @@ class CalendarRepository:
         return calendar.access_token if calendar else None
     
     
+    async def is_calendar_connected(self, provider_email: str, provider: CalendarProvider) -> bool:
+        """Checks if a calendar connection exists for the given email and provider."""
+        result = await self.db.execute(
+            select(func.count(CalendarConnection.id))
+            .where(
+                CalendarConnection.provider_email == provider_email,
+                CalendarConnection.provider == provider,
+            )
+        )
+        count = result.scalar()
+        return count > 0
+    
+    
     
     

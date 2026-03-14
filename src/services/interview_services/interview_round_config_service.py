@@ -10,6 +10,8 @@ from src.models import Panelist
 from src.repositories.interview_respositories.panelist_repository import PanelistRepository
 from datetime import datetime, timezone
 from src.services.email_services.panel.panel_email_service import PanelEmailService,panel_email_service
+from uuid import UUID
+from src.utils.time_helper import format_time_according_to_timezone
 
 
 class InterviewRoundConfigService:
@@ -250,4 +252,50 @@ class InterviewRoundConfigService:
             self.logger.error(
                 f"Error requesting panelist availability for round config {round_config_id}: {str(e)}"
             )
+            raise
+        
+    async def get_round_slots(self, round_config_id: str | UUID):
+        try:
+            config = await self.interview_round_config_repository.get_interview_round_config_by_id(round_config_id)
+            if not config:
+                raise DomainError("Interview round configuration not found.", status_code=404)
+
+            panelists_list = await self.panelist_repository.get_panelists_by_round_config_id_with_slots(round_config_id)
+
+            data = []
+
+            for panelist in panelists_list:
+                data.append({
+                    "id": str(panelist.id),
+                    "name": panelist.name,
+                    "role": panelist.role,
+                    "response_status": panelist.response_status.value if panelist.response_status else None,
+                    "last_requested_at": panelist.last_requested_at.isoformat() if panelist.last_requested_at else None,
+                    "times_requested": panelist.availability_request_count or 0,
+                    "is_calendar_connected": panelist.calendar_connected,
+                    "available_slots": [
+                        {
+                            "start_time": slot.slot_start.isoformat(),
+                            "end_time": slot.slot_end.isoformat(),
+                            "is_booked": slot.is_booked
+                        }
+                        for slot in panelist.slots
+                    ]
+                })
+
+            return {
+                "round_data": {
+                    "title": config.title,
+                    "round_number": config.round_number,
+                    "timezone": config.timezone,
+                    "start_date": config.start_date.isoformat(),
+                    "end_date": config.end_date.isoformat(),
+                    "interview_type": config.interview_type.value if config.interview_type else None,
+                    "duration_minutes": config.duration_minutes,
+                },
+                "panelists": data
+            }
+
+        except Exception as e:
+            self.logger.error(f"Error fetching round slots for round config {round_config_id}: {str(e)}")
             raise

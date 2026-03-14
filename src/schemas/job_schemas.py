@@ -190,10 +190,14 @@ class CriteriaOverview(BaseModel):
     active_rubric_id: Optional[UUID] | int | str
     versions: List[RubricVersionInfo]
 
-
+class RoundSlotsInfo(BaseModel):
+    round_number: int
+    round_config_id: str | UUID
+    slots_available : bool
 
 class JobOverviewResponseNew(BaseModel):
     job: JobOverviewInfo
+    round_slots:List[RoundSlotsInfo] | None
     dashboard: DashboardInfo
     criteria: CriteriaOverview
     

@@ -2,6 +2,16 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 
+def format_time_according_to_timezone(dt: datetime, timezone: str = "Asia/Kolkata") -> str:
+    """
+    Convert datetime to a readable timezone-aware format
+    Example: 
+    """
+
+    tz = ZoneInfo(timezone)
+    local_dt = dt.astimezone(tz)
+    return local_dt.isoformat()
+
 def format_interview_time(dt: datetime, timezone: str = "Asia/Kolkata") -> str:
     """
     Convert datetime to a readable timezone-aware format
@@ -29,3 +39,5 @@ def format_interview_schedule(start: datetime, end: datetime, timezone: str = "A
     zone = start_local.strftime("%Z")
 
     return f"{date}, {start_time} – {end_time} {zone}"
+
+

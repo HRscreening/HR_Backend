@@ -32,3 +32,34 @@ class InterviewRepository:
             select(Interview).where(Interview.id == interview_id)
         )
         return result.scalar_one_or_none()
+
+
+    async def get_interview_by_application_id(self, application_id: str) -> Optional[Interview]:
+        result = await self.db.execute(
+            select(Interview).where(Interview.application_id == application_id)
+        )
+        return result.scalar_one_or_none()
+    
+    async def get_interview_by_application_id_and_round_number(self, application_id: str,round_number:int) -> Optional[Interview]:
+        result = await self.db.execute(
+            select(Interview).where(Interview.application_id == application_id,Interview.round_number == round_number)
+        )
+        return result.scalar_one_or_none()
+    
+
+    async def get_interviews_with_details_and_le_round_number(self, application_id: str, round_number: int):
+
+        result = await self.db.execute(
+            select(Interview)
+            .options(
+                selectinload(Interview.round_config),
+                selectinload(Interview.events)
+            )
+            .where(
+                Interview.application_id == application_id,
+                Interview.round_number <= round_number
+            )
+            .order_by(Interview.round_number)
+        )
+
+        return result.scalars().all()

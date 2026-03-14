@@ -485,11 +485,12 @@ class PanelistService:
             panelist_id, round_config_id , token_type = self._validate_and_extract_token_payload(availability_token)
             panelist_uuid = UUID(panelist_id)
             
-            if token_type != "edit":
-                raise DomainError(
-                    "Invalid request. This endpoint is only for editing existing availability. For initial submission, please use the submit endpoint.",
-                    status_code=400
-                )
+            # ! To be handled
+            # if token_type != "edit":
+            #     raise DomainError(
+            #         "Invalid request. This endpoint is only for editing existing availability. For initial submission, please use the submit endpoint.",
+            #         status_code=400
+            #     )
             
 
             panelist = await self.panelist_repository.get_panelist_by_round_config_and_panelist_id(
@@ -503,11 +504,8 @@ class PanelistService:
             if not round_config:
                 raise DomainError("Interview round configuration not found")
 
-            if panelist.edit_token != availability_token:
+            if panelist.edit_token != availability_token and panelist.availability_token != availability_token:
                 raise DomainError("Invalid or outdated availability link.", status_code=400)
-
-            if panelist.response_status != PanelistResponseStatus.SUBMITTED:
-                raise DomainError("You must submit your availability before editing.", status_code=400)
 
             now = get_current_utc_time()
             if now > round_config.end_date:
@@ -560,7 +558,7 @@ class PanelistService:
                         for item in payload.add
                     ],
                 )
-
+            panelist.response_status = PanelistResponseStatus.SUBMITTED  # In case they are editing before initial submission
             await self.db.commit()
 
         except DomainError:
@@ -705,8 +703,7 @@ class PanelistService:
                 event_type=InterviewEventType.Interview_Rescheduled.value,
                 actor=InterviewEventActor.PANELIST.value,
                 summary = (
-                    f"Panelist rescheduled the interview. New time: {format_interview_time(payload.reschedule_slot.slot_start, round_config.timezone)}",
-                    f"Meet Link: {meet_link}"
+                    f"Panelist rescheduled the interview. New time: {format_interview_time(payload.reschedule_slot.slot_start, round_config.timezone)}"
                 ),
                 details={"candidate_email": candidate.email},
             )

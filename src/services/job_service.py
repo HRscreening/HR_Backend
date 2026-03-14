@@ -40,6 +40,7 @@ from workers.producer import enqueue_resumes_parsing
 from configs.env_config import SUPABASE_PUBLIC_URL
 from configs.log_config import get_logger
 from src.repositories.document_repository import DocumentRepository
+from src.repositories.interview_respositories.interview_round_configs_repository  import InterviewRoundConfigsRepository 
 from src.utils.candidate_name import extract_candidate_full_name
 from uuid import UUID
 from sqlalchemy import select, func
@@ -61,6 +62,7 @@ class JobService:
         job_repositoy: JobRepository,
         batch_repository: BatchRepository,
         org_repository: OrganizationRepository,
+        round_config_repository: InterviewRoundConfigsRepository,
         db: AsyncSession,
     ):
         self.db = db
@@ -69,6 +71,7 @@ class JobService:
         self.batch_repository = batch_repository
         self.organization_repository = org_repository
         self.file_manager: FileManagerService = fileManager
+        self.round_config_repository = round_config_repository
         self.logger = get_logger("JOB_SERVICE")
 
     # ─── Helpers ─────────────────────────────────────────────────────
@@ -525,7 +528,23 @@ class JobService:
                     for r in rubrics
                 ],
             }
-
+            
+            available_round_config = await self.round_config_repository.get_available_round_config_by_job(job_id)
+            
+            
+            
+            round_slots = []
+            
+            if available_round_config:
+                for round in available_round_config:
+                    round_slots.append({
+                        "round_config_id": round.id,
+                        "round_number": round.round_number,
+                        "slots_available": round.slots_available,
+                    })
+            
+            
+            
             response = {
                 "job": {
                     "id": job.id,
@@ -540,6 +559,7 @@ class JobService:
                     "manual_rounds_count": job.manual_rounds_count or 0,
                     "parsed_jd": job.parsed_jd,  # rrg_final when available (extra field; safe)
                 },
+                "round_slots": round_slots if round_slots else None,
                 "dashboard": {
                     "total_applications": total_applications,
                     "by_status": analytics,

@@ -230,6 +230,7 @@ class CalendarService(ICSGenerator):
         if res.status_code != 200:
             raise Exception(f"Failed to refresh access token: {res.text}")
 
+        # print("\n\nres.json()",res.json(),"\n\n\n")
         return res.json()["access_token"]
 
 

@@ -29,6 +29,8 @@ class InterviewSlotsRepository:
             .order_by(Interview_Slot.slot_start)
         )
         return list(result.scalars().all())
+    
+    
 
     # async def get_slots_grouped_by_panelist(
     #     self, round_config_id: UUID

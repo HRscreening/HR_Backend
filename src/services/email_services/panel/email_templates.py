@@ -273,11 +273,9 @@ class PanelEmailTemplates:
             <strong>HR Team</strong>
             </p>
             
-                    
-            <p> style="margin:24px 0 0;font-size:14px;color:#6b7280;line-height:1.7;">
+            <br/>     
             If you need to reschedule, please use the following link:<br/>
             <a href="{reschedule_link}" style="color:#4f46e5;text-decoration:none;">Reschedule Interview</a>
-            </p>
             </p>"""
 
         return _base_html(content)
@@ -452,11 +450,9 @@ class PanelEmailTemplates:
             <p style="margin:24px 0 0;font-size:15px;color:#374151;line-height:1.7;">
             Thank you,<br/>
             <strong>HR Team</strong>
-            
-            <p> style="margin:24px 0 0;font-size:14px;color:#6b7280;line-height:1.7;">
+            <br/>
             If you need to reschedule, please use the following link:<br/>
             <a href="{reschedule_link}" style="color:#4f46e5;text-decoration:none;">Reschedule Interview</a>
-            </p>
             </p>
         """
 

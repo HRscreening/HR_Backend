@@ -17,6 +17,13 @@ def _format_dt_for_email(dt) -> str:
         return ist_dt.strftime("%b %d, %Y at %I:%M %p") + " IST"
     return str(dt)
 
+# TODO: later they will be dynamic according to the round's timezone. For now, we are assuming all rounds are in IST and formatting accordingly.
+def _to_ist(dt: datetime) -> datetime:
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+    return dt.astimezone(ZoneInfo("Asia/Kolkata"))
+
+
 
 class PanelEmailService(BaseEmailService):
     def __init__(self):
@@ -50,8 +57,11 @@ class PanelEmailService(BaseEmailService):
     ):
         """Send a confirmation email to a panelist after a candidate books a slot."""
         interview_date = _format_dt_for_email(scheduled_start).split(" at ")[0]
-        start_time = scheduled_start.strftime("%I:%M %p")
-        end_time = scheduled_end.strftime("%I:%M %p UTC")
+        start = _to_ist(scheduled_start)
+        end = _to_ist(scheduled_end)
+
+        start_time = start.strftime("%I:%M %p")
+        end_time = end.strftime("%I:%M %p")
         interview_time = f"{start_time} – {end_time}"
 
         subject = f"Interview Scheduled: {interview_round_title}"
@@ -72,17 +82,20 @@ class PanelEmailService(BaseEmailService):
 
     async def send_slot_released_to_panelist(
         self,
-        panelist_email=str,
-        panelist_name=str,
-        candidate_name=str,
-        interview_round_title=str,
-        old_scheduled_start=datetime,
-        old_scheduled_end=datetime,
+        panelist_email:str,
+        panelist_name:str,
+        candidate_name:str,
+        interview_round_title:str,
+        old_scheduled_start:datetime,
+        old_scheduled_end:datetime,
     ):
         """Send a confirmation email to a panelist after a candidate books a slot."""
         interview_date = _format_dt_for_email(old_scheduled_start).split(" at ")[0]
-        start_time = old_scheduled_start.strftime("%I:%M %p")
-        end_time = old_scheduled_end.strftime("%I:%M %p UTC")
+        start = _to_ist(old_scheduled_start)
+        end = _to_ist(old_scheduled_end)
+
+        start_time = start.strftime("%I:%M %p")
+        end_time = end.strftime("%I:%M %p")
         interview_time = f"{start_time} – {end_time}"
 
         subject = f"Interview Scheduled: {interview_round_title}"
@@ -114,12 +127,15 @@ class PanelEmailService(BaseEmailService):
     ):
         """Send email to panelist when a candidate reschedules their interview."""
 
-        old_date = old_scheduled_start.strftime("%d %B %Y")
-        old_time = f"{old_scheduled_start.strftime('%I:%M %p')} – {old_scheduled_end.strftime('%I:%M %p')}"
-
-        new_date = new_scheduled_start.strftime("%d %B %Y")
-        new_time = f"{new_scheduled_start.strftime('%I:%M %p')} – {new_scheduled_end.strftime('%I:%M %p')}"
-
+        old_date = _format_dt_for_email(old_scheduled_start).split(" at ")[0]
+        old_start = _to_ist(old_scheduled_start)
+        old_end = _to_ist(old_scheduled_end)
+        old_time = f"{old_start.strftime('%I:%M %p')} – {old_end.strftime('%I:%M %p')}"
+        new_date = _format_dt_for_email(new_scheduled_start).split(" at ")[0]
+        new_start = _to_ist(new_scheduled_start)
+        new_end = _to_ist(new_scheduled_end)
+        new_time = f"{new_start.strftime('%I:%M %p')} – {new_end.strftime('%I:%M %p')}"
+        
         subject = f"Interview Rescheduled – {candidate_name} | {interview_round_title}"
 
         body = self.panelist_email_templates.get_meeting_rescheduled_email_template(

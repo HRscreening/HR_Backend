@@ -198,7 +198,7 @@ class PanelistRepository:
         round_config_id: str,
         token_expiry_in_min: int
     ) -> List[Panelist]:
-        """Sends availability request to all panelists of a round config."""
+        """Sends availability request to all panelists which are not already requested of a round config."""
 
         # requesting only those panelists who are not in pending state, as pending ones would have already received the request and might have responded to it. This also avoids sending multiple emails to panelists in case the interviewer clicks "Request Availability" multiple times.
         panelists = await self.get_all_panelists_by_round_config_id_and_not_status(round_config_id, PanelistResponseStatus.PENDING)
@@ -276,3 +276,15 @@ class PanelistRepository:
             "already_pending_ids": already_pending_ids,
             "invalid_ids": invalid_ids
         }
+        
+    async def get_panelists_by_round_config_id_with_slots(self,round_config_id:str)->List[Panelist]:
+        """Get all panelists for a round config along with their slot information."""
+
+        result = await self.db.execute(
+            select(Panelist)
+            .options(selectinload(Panelist.slots))
+            .where(Panelist.round_config_id == round_config_id)
+            .order_by(Panelist.created_at.desc())
+        )
+
+        return result.scalars().all()
