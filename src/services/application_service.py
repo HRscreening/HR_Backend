@@ -331,11 +331,11 @@ class ApplicationService:
             
             # ! not using  applicaion current_round field directly to validate if the move is valid or not, as sometimes application current_round can be out of sync with actual interview rounds created for the application, so validating based on actual interview rounds created and application current round both to make it more robust.
             
-            total_possible_round = await self.job_repository.get_total_rounds_for_job(job_id=job_id)
+            # total_possible_round = await self.job_repository.get_total_rounds_for_job(job_id=job_id)
             
             
-            if round_number > total_possible_round:
-                raise DomainError(message=f"Invalid round number, total possible rounds for this job is {total_possible_round}", status_code=400)
+            # if round_number > total_possible_round:
+            #     raise DomainError(message=f"Invalid round number, total possible rounds for this job is {total_possible_round}", status_code=400)
             
             current_round = await self.application_repository.get_current_interview_round_for_application(application_id=application_id)
             

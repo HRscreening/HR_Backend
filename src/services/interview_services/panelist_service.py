@@ -674,6 +674,8 @@ class PanelistService:
                 attendees_emails= attendees_emails,
                 application_id=str(interview.application_id) if interview.application_id else None,
                 reminders=[
+                    Reminders(method="email", minutes_before=1440),  # 1 day before
+                Reminders(method="email", minutes_before=60),
                     Reminders(method="email", minutes_before=30),
                     Reminders(method="popup", minutes_before=10),
                 ],
