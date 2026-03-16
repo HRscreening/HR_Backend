@@ -136,6 +136,63 @@ class CandidateEmailTemplates:
 </p>
 {reschedule_info}"""
         return _base_html(content)
+      
+      
+    @staticmethod
+    def get_reschedule_new_slots_email_template(
+        candidate_name: str,
+        interview_round_title: str,
+        scheduled_start,
+        scheduled_end,
+        reschedule_link: str,
+        reason: str | None = None,
+    ) -> str:
+      """
+      Email to inform candidate that their interview has been moved to a new time,
+      with an option to review or request a different time if needed.
+      """
 
+      reason_text = (
+          f"<p style=\"margin:0 0 12px;font-size:14px;color:#ef4444;line-height:1.6;\">Reason: {reason}</p>"
+          if reason else ""
+      )
+
+      content = f"""
+          <h2 style=\"margin:0 0 16px;font-size:18px;color:#1f2937;\">Interview Schedule Updated</h2>
+
+          <p style=\"margin:0 0 12px;font-size:15px;color:#374151;line-height:1.6;\">Hi {candidate_name},</p>
+
+          <p style=\"margin:0 0 12px;font-size:15px;color:#374151;line-height:1.6;\">
+              Your <strong>{interview_round_title}</strong> interview has been moved to the following time:
+          </p>
+
+          <table role=\"presentation\" cellpadding=\"0\" cellspacing=\"0\"
+                style=\"margin:20px 0;background-color:#f9fafb;border-radius:6px;border:1px solid #e5e7eb;width:100%;\">
+            <tr>
+              <td style=\"padding:16px;\">
+                <p style=\"margin:0 0 8px;font-size:14px;color:#6b7280;\">Start</p>
+                <p style=\"margin:0 0 16px;font-size:16px;color:#1f2937;font-weight:600;\">{scheduled_start}</p>
+
+                <p style=\"margin:0 0 8px;font-size:14px;color:#6b7280;\">End</p>
+                <p style=\"margin:0;font-size:16px;color:#1f2937;font-weight:600;\">{scheduled_end}</p>
+              </td>
+            </tr>
+          </table>
+
+          {reason_text}
+
+          <p style=\"margin:0 0 12px;font-size:15px;color:#374151;line-height:1.6;\">
+              If this new time works for you, no action is required.
+              If you would like to request a different time, you can manage your schedule using the link below.
+          </p>
+
+          {_cta_button(reschedule_link, "Manage Interview Schedule")}
+
+          <p style=\"margin:16px 0 8px;font-size:13px;color:#6b7280;line-height:1.5;\">
+              We apologize for any inconvenience and appreciate your understanding.
+          </p>
+      """
+
+      return _base_html(content)
 
 candidate_email_templates = CandidateEmailTemplates()

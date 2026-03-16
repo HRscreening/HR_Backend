@@ -21,7 +21,7 @@ from src.schemas.rubric_schemas import (
     UpdateRubricRequest,
     read_rubric_criteria,
 )
-from src.schemas.job_schemas import JobOverviewResponse
+from src.schemas.job_schemas import JobOverviewResponse,JobSettingsResposnse,JobSettings
 from src.services.errors.base import DomainError
 from src.services.errors.user_errors import JobNotFound, RubricNotFound
 from src.services.errors.pipeline_errors import (
@@ -40,6 +40,7 @@ from workers.producer import enqueue_resumes_parsing
 from configs.env_config import SUPABASE_PUBLIC_URL
 from configs.log_config import get_logger
 from src.repositories.document_repository import DocumentRepository
+from src.repositories.interview_respositories.interview_round_configs_repository  import InterviewRoundConfigsRepository 
 from src.utils.candidate_name import extract_candidate_full_name
 from uuid import UUID
 from sqlalchemy import select, func
@@ -61,6 +62,7 @@ class JobService:
         job_repositoy: JobRepository,
         batch_repository: BatchRepository,
         org_repository: OrganizationRepository,
+        round_config_repository: InterviewRoundConfigsRepository,
         db: AsyncSession,
     ):
         self.db = db
@@ -69,6 +71,7 @@ class JobService:
         self.batch_repository = batch_repository
         self.organization_repository = org_repository
         self.file_manager: FileManagerService = fileManager
+        self.round_config_repository = round_config_repository
         self.logger = get_logger("JOB_SERVICE")
 
     # ─── Helpers ─────────────────────────────────────────────────────
@@ -525,7 +528,23 @@ class JobService:
                     for r in rubrics
                 ],
             }
-
+            
+            available_round_config = await self.round_config_repository.get_available_round_config_by_job(job_id)
+            
+            
+            
+            round_slots = []
+            
+            if available_round_config:
+                for round in available_round_config:
+                    round_slots.append({
+                        "round_config_id": round.id,
+                        "round_number": round.round_number,
+                        "slots_available": round.slots_available,
+                    })
+            
+            
+            
             response = {
                 "job": {
                     "id": job.id,
@@ -540,6 +559,7 @@ class JobService:
                     "manual_rounds_count": job.manual_rounds_count or 0,
                     "parsed_jd": job.parsed_jd,  # rrg_final when available (extra field; safe)
                 },
+                "round_slots": round_slots if round_slots else None,
                 "dashboard": {
                     "total_applications": total_applications,
                     "by_status": analytics,
@@ -948,3 +968,27 @@ class JobService:
             "all_complete": all_done,
             "created_at": batch.created_at.isoformat(),
         }
+        
+        
+    async def get_job_settings(self, job_id: str) -> dict:
+        job = await self.job_repository.get_job_by_id(job_id)
+        if not job:
+            raise JobNotFound(status_code=404)
+
+
+        return JobSettingsResposnse(
+                job_settings=JobSettings(
+                title=job.title,
+                location=job.location,
+                salary=job.salary,
+                status=_job_status_for_api(job.status),
+                description=job.description,
+                target_headcount=job.target_headcount,
+                manual_rounds_count=job.manual_rounds_count,
+                
+                ),
+            voice_ai_enabled=job.voice_ai_enabled,
+            is_confidential=job.is_confidential,
+            job_metadata=job.job_metadata,
+            closing_reason=job.closing_reason,
+        )

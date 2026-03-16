@@ -11,17 +11,24 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 
-# Worker selection strategy:
-#   Linux (production): fork-based Worker — each job runs in a child process.
-#     Job timeout only kills the child, leaving the parent healthy for the next job.
-#   macOS / Windows (development): SimpleWorker — runs jobs in the same process.
-#     macOS fork() is unsafe with C extensions (gRPC, asyncpg, psycopg2, ObjC runtime)
-#     and causes SIGSEGV (signal 11) in every forked work-horse.  SimpleWorker avoids
-#     fork entirely, so no C-extension state is ever corrupted.
 import platform as _platform
 from rq import Worker, SimpleWorker
+from rq.timeouts import TimerDeathPenalty
+
+# _worker_env = os.environ.get("RQ_WORKER_CLASS", "").strip().lower()
+# if _worker_env == "fork":
+#     WorkerClass = Worker
+# elif _worker_env == "simple":
+#     WorkerClass = SimpleWorker
+# else:
+#     # Auto-detect based on OS
 
 WorkerClass = Worker if _platform.system() == "Linux" else SimpleWorker
+
+# On Windows/macOS the default UnixSignalDeathPenalty uses signal.SIGALRM which
+# doesn't exist.  TimerDeathPenalty achieves the same timeout via threading.Timer.
+if WorkerClass is SimpleWorker:
+    WorkerClass.death_penalty_class = TimerDeathPenalty
 from workers.connection import redis_conn, QUEUES
 from workers.exception_handlers import work_horse_killed_handler, job_exc_handler
 

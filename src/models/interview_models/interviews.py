@@ -14,7 +14,7 @@ from sqlalchemy.dialects.postgresql import JSONB,UUID,VARCHAR,TEXT
 
 from configs.postgress_db import Base
 from src.models.enums import InterviewStatus
-
+from src.models.interview_models.interview_timeline_events import Interview_TimeLine_Events
 
 
 
@@ -78,7 +78,7 @@ class Interview(Base):
         "Interview_TimeLine_Events",
         back_populates="interview",
          cascade="all, delete-orphan",
-        order_by="Interview_TimeLine_Events.created_at",
+        order_by=lambda: Interview_TimeLine_Events.created_at.desc(),
     )
     
     application = relationship("Application", back_populates="interviews")

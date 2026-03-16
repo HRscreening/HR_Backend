@@ -105,6 +105,21 @@ class ApplicationRepository:
             return interview.round_number
         return 0
     
+    
+            
+    async def get_application_by_interview_id(
+        self,
+        interview_id: str
+        ) -> Optional[Application]:
+
+        result = await self.db.execute(
+            select(Application)
+            .join(Interview, Interview.application_id == Application.id)
+            .where(Interview.id == interview_id)
+        )
+
+        return result.scalar_one_or_none()
+    
     # TODO : remove this
     async def commit(self):
         await self.db.commit()

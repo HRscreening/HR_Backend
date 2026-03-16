@@ -13,3 +13,12 @@ async def get_user(request: Request, user_service: UserService = Depends(get_use
         "status": "success",
         "user": user
     }
+
+@router.get("/get-user-settings",status_code=status.HTTP_200_OK)
+async def get_user_settings(request: Request, user_service: UserService = Depends(get_user_service)):
+    user_id = request.state.user.id
+    settings =  await user_service.get_user_settings(user_id)
+    return {
+        "status": "success",
+        "settings": settings
+    }

@@ -1,5 +1,5 @@
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, delete
+from sqlalchemy import select, func, delete,update
 from sqlalchemy.orm import selectinload
 from datetime import datetime, timezone
 from typing import Optional, List
@@ -8,6 +8,8 @@ from collections import defaultdict
 
 from src.models.interview_models.interview_slots import Interview_Slot
 
+def utc_now():
+    return datetime.now(timezone.utc)
 
 class InterviewSlotsRepository:
     def __init__(self, db: AsyncSession):
@@ -22,32 +24,129 @@ class InterviewSlotsRepository:
             .where(
                 Interview_Slot.round_config_id == round_config_id,
                 Interview_Slot.is_booked == False,
-                Interview_Slot.slot_start > datetime.now(timezone.utc), 
+                Interview_Slot.slot_start > utc_now(),  # only show future slots as available
             )
             .order_by(Interview_Slot.slot_start)
         )
         return list(result.scalars().all())
+    
+    
 
+    # async def get_slots_grouped_by_panelist(
+    #     self, round_config_id: UUID
+    # ) -> dict[str, list[Interview_Slot]]:
+    #     """SEQUENTIAL mode: returns {panelist_email: [unbooked slots]} grouped."""
+    #     result = await self.db.execute(
+    #         select(Interview_Slot)
+    #         .where(
+    #             Interview_Slot.round_config_id == round_config_id,
+    #             Interview_Slot.is_booked == False,
+    #             Interview_Slot.panelist_id.isnot(None),
+    #             Interview_Slot.slot_start > utc_now(),  # only show future slots as available
+    #         )
+    #         .order_by(Interview_Slot.panelist_id, Interview_Slot.slot_start)
+    #     )
+    #     grouped: dict[str, list[Interview_Slot]] = defaultdict(list)
+    #     for slot in result.scalars().all():
+    #         grouped[slot.panelist_id].append(slot)
+    #     return dict(grouped)
+    
     async def get_slots_grouped_by_panelist(
         self, round_config_id: UUID
-    ) -> dict[str, list[Interview_Slot]]:
-        """SEQUENTIAL mode: returns {panelist_email: [unbooked slots]} grouped."""
+    ) -> dict[UUID, list[Interview_Slot]]:
+
+        now = datetime.now(timezone.utc)
+
         result = await self.db.execute(
             select(Interview_Slot)
             .where(
                 Interview_Slot.round_config_id == round_config_id,
                 Interview_Slot.is_booked == False,
                 Interview_Slot.panelist_id.isnot(None),
-                Interview_Slot.slot_start > datetime.now(timezone.utc),
+                Interview_Slot.slot_start > now,
             )
             .order_by(Interview_Slot.panelist_id, Interview_Slot.slot_start)
         )
-        grouped: dict[str, list[Interview_Slot]] = defaultdict(list)
-        for slot in result.scalars().all():
+
+        slots = result.scalars().all()
+
+        grouped: dict[UUID, list[Interview_Slot]] = defaultdict(list)
+
+        for slot in slots:
             grouped[slot.panelist_id].append(slot)
+
         return dict(grouped)
 
 
+    async def get_slots_by_panelist_id(self, round_config_id: UUID, panelist_id: str)-> list[Interview_Slot]:
+        """All unbooked and unexpired slots for a round config and panelist (SEQUENTIAL mode)."""
+        result = await self.db.execute(
+            select(Interview_Slot)
+            .where(
+                Interview_Slot.round_config_id == round_config_id,
+                Interview_Slot.panelist_id == panelist_id,
+                Interview_Slot.slot_start > utc_now(),  # only show future slots as available, past slots are not relevant for booking and can be ignored even if unbooked (stale availability)
+            )
+            .order_by(Interview_Slot.slot_start)
+        )
+        return list(result.scalars().all())
+    
+    
+    async def get_slots_by_ids(self, slot_ids: list[UUID], panelist_id: UUID) -> list[Interview_Slot]:
+        """Get slots by a list of ids, with an ownership guard to ensure panelists can only access their own slots for edits/deletes."""
+        
+        result = await self.db.execute(
+            select(Interview_Slot).where(
+                Interview_Slot.id.in_(slot_ids),
+                Interview_Slot.panelist_id == panelist_id,  # ownership guard
+            )
+        )
+        return list(result.scalars().all())
+    
+    async def get_editable_slots_by_panelist_id(self, round_config_id: UUID, panelist_id: str)-> list[Interview_Slot]:
+        """All unbooked slots for a round config and panelist,  that can be deleted/edited."""
+        result = await self.db.execute(
+            select(Interview_Slot)
+            .where(
+                Interview_Slot.round_config_id == round_config_id,
+                Interview_Slot.is_booked == False,
+                Interview_Slot.panelist_id == panelist_id,
+                Interview_Slot.slot_start < utc_now(),  # include past slots for editing purposes, even if they can't be booked
+            )
+            .order_by(Interview_Slot.slot_start)
+        )
+        return list(result.scalars().all())
+    
+    
+    async def get_booked_slots_by_panelist_id(self, round_config_id: UUID, panelist_id: str)-> list[Interview_Slot]:
+        """All booked slots for a round config and panelist (used for checking if panelist has any booked slots before allowing edits)."""
+        result = await self.db.execute(
+            select(Interview_Slot)
+            .where(
+                Interview_Slot.round_config_id == round_config_id,
+                Interview_Slot.is_booked == True,
+                Interview_Slot.panelist_id == panelist_id,
+                Interview_Slot.slot_start > utc_now(),  # only consider future booked slots for edit restrictions 
+            )
+            .order_by(Interview_Slot.slot_start)
+        )
+        
+        return list(result.scalars().all())
+    
+    
+    
+    async def get_slot_by_interview_id_with_round_config_id_with_panelist_id(self, interview_id: UUID,round_config_id,panelist_id) -> Interview_Slot:
+        result = await self.db.execute(
+            select(Interview_Slot).where(
+                Interview_Slot.booked_interview_id == interview_id,
+                Interview_Slot.round_config_id == round_config_id,
+                Interview_Slot.panelist_id == panelist_id,
+                )
+        )
+        return result.scalar_one_or_none()
+
+    
+    
     async def get_slot_by_id(self, slot_id: UUID) -> Optional[Interview_Slot]:
         result = await self.db.execute(
             select(Interview_Slot).where(Interview_Slot.id == slot_id)
@@ -110,10 +209,22 @@ class InterviewSlotsRepository:
 
         slot.is_booked = True
         slot.booked_interview_id = interview_id
-        slot.booked_at = datetime.now(timezone.utc)
+        slot.booked_at = utc_now()
         await self.db.flush()
         return slot
-
+    
+    
+    async def update_slot_time(self, slot_id: UUID, slot_start: datetime, slot_end: datetime) -> None:
+        await self.db.execute(
+            update(Interview_Slot)
+            .where(
+                Interview_Slot.id == slot_id,
+                Interview_Slot.is_booked == False,  # safety guard
+            )
+            .values(slot_start=slot_start, slot_end=slot_end)
+        )
+        await self.db.flush()
+        
     async def release_slot(self, slot_id: UUID) -> Optional[Interview_Slot]:
         """Release a booked slot back to the pool (used for reschedule / cancel)."""
         result = await self.db.execute(
@@ -126,6 +237,10 @@ class InterviewSlotsRepository:
         slot.is_booked = False
         slot.booked_interview_id = None
         slot.booked_at = None
+        
+        if slot.slot_start < utc_now():
+            slot.is_expired = True  # mark as expired if past start time, to prevent re-booking of stale slots
+        
         await self.db.flush()
         return slot
 
@@ -178,3 +293,30 @@ class InterviewSlotsRepository:
             .order_by(Interview_Slot.slot_start)
         )
         return result.scalar_one_or_none()
+    
+    
+    async def delete_unbooked_slots_by_panelist_id(self, round_config_id: UUID, panelist_id: str) -> int:
+        """Delete unbooked slots for a specific panelist (used when a panelist edits availability in SEQUENTIAL mode)."""
+        result = await self.db.execute(
+            delete(Interview_Slot)
+            .where(
+                Interview_Slot.round_config_id == round_config_id,
+                Interview_Slot.panelist_id == panelist_id,
+                Interview_Slot.is_booked == False,
+                Interview_Slot.slot_start < utc_now(),  # also delete past slots to prevent stale availability
+            )
+        )
+        await self.db.flush()
+        return result.rowcount
+    
+    async def delete_slots_by_ids(self,panelist_id:str,round_config_id:str,slot_ids: list[UUID]) -> None:
+        await self.db.execute(
+            delete(Interview_Slot).where(
+                Interview_Slot.id.in_(slot_ids),
+                Interview_Slot.panelist_id == panelist_id,
+                Interview_Slot.round_config_id == round_config_id,
+                Interview_Slot.is_booked == False,  # safety guard
+            )
+        )
+        
+        await self.db.flush()

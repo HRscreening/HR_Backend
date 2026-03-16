@@ -27,7 +27,6 @@ class JWTService:
 
     def decode_token(self, token: str) -> dict | None:
         try:
-            print(f"Secret: {self.secret_key}, Algorithm: {self.algorithm}")
             decoded = jwt.decode(
                 token,
                 self.secret_key,
@@ -78,6 +77,7 @@ class JWTService:
         panelist_id: str,
         expiration_minutes: int,
         round_config_id: str,
+        token_type: str = "create"
     ) -> str:
 
         now = datetime.now(timezone.utc)
@@ -85,6 +85,28 @@ class JWTService:
         payload = {
             "panelist_id": panelist_id,
             "round_config_id": round_config_id,
+            "token_type": token_type,
+            "iat": now,
+            "exp": now + timedelta(minutes=expiration_minutes),
+        }
+
+        return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
+    
+    
+    def create_panelist_edit_token(
+    self,
+        panelist_id: str,
+        expiration_minutes: int,
+        round_config_id: str,
+        token_type: str = "edit"
+    ) -> str:
+
+        now = datetime.now(timezone.utc)
+
+        payload = {
+            "panelist_id": panelist_id,
+            "round_config_id": round_config_id,
+            "token_type": token_type,
             "iat": now,
             "exp": now + timedelta(minutes=expiration_minutes),
         }
@@ -123,6 +145,28 @@ class JWTService:
             "exp": now + timedelta(minutes=expiration_minutes),
         }
         return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
+    
+    
+    def create_panelist_reschedule_token(
+    self,
+        panelist_id: str,
+        expiration_minutes: int,
+        round_config_id: str,
+        interview_id: str,
+    ) -> str:
+
+        now = datetime.now(timezone.utc)
+
+        payload = {
+            "panelist_id": panelist_id,
+            "round_config_id": round_config_id,
+            "interview_id": interview_id,
+            "iat": now,
+            "exp": now + timedelta(minutes=expiration_minutes),
+        }
+
+        return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
+    
 
     def create_panelist_feedback_token(
         self,

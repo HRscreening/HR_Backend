@@ -141,3 +141,11 @@ class InterviewRoundConfigsRepository:
             )
         )
         return result.scalar_one_or_none()
+    
+    async def get_available_round_config_by_job(self,job_id: str) -> List[Interview_Round_Configs]:
+        result = await self.db.execute(
+            select(Interview_Round_Configs).where(
+                Interview_Round_Configs.job_id == job_id,
+            ).order_by(Interview_Round_Configs.round_number.asc())
+        )
+        return result.scalars().all()
