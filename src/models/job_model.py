@@ -83,7 +83,26 @@ class Job(Base):
     opened_at = Column(DateTime(timezone=True), nullable=True)
     closed_at = Column(DateTime(timezone=True), nullable=True)
 
-    # relationships
+    # ── Public Apply columns ───────────────────────────────────────────────────
+    # Unique slug for the shareable application URL (e.g. /apply/senior-backend-a7x3)
+    # Uniqueness enforced by a partial index in the DB (excluding deleted rows).
+    public_slug = Column(String(80), nullable=True)
+    public_apply_enabled = Column(Boolean, nullable=False, default=False, server_default="false")
+
+    # FK to the currently active JD version (use_alter avoids circular-FK issue at DDL time)
+    active_jd_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("job_descriptions.id", ondelete="SET NULL", use_alter=True, name="fk_jobs_active_jd_id"),
+        nullable=True,
+    )
+    # FK to the currently active form config version
+    active_form_config_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("application_form_configs.id", ondelete="SET NULL", use_alter=True, name="fk_jobs_active_form_config_id"),
+        nullable=True,
+    )
+
+    # ── relationships ──────────────────────────────────────────────────────────
     organization = relationship("Organization", back_populates="jobs")
 
     applications = relationship(
@@ -116,4 +135,35 @@ class Job(Base):
         back_populates="job",
         cascade="all, delete-orphan",
         order_by="Interview_Round_Configs.round_number",
+    )
+
+    job_descriptions = relationship(
+        "JobDescription",
+        back_populates="job",
+        cascade="all, delete-orphan",
+        foreign_keys="JobDescription.job_id",
+        order_by="JobDescription.version_number",
+    )
+
+    form_configs = relationship(
+        "ApplicationFormConfig",
+        back_populates="job",
+        cascade="all, delete-orphan",
+        foreign_keys="ApplicationFormConfig.job_id",
+        order_by="ApplicationFormConfig.version_number",
+    )
+
+    # Convenience accessors — use post_update to resolve the circular FK
+    active_jd = relationship(
+        "JobDescription",
+        foreign_keys=[active_jd_id],
+        post_update=True,
+        uselist=False,
+    )
+
+    active_form_config = relationship(
+        "ApplicationFormConfig",
+        foreign_keys=[active_form_config_id],
+        post_update=True,
+        uselist=False,
     )

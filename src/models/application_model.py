@@ -46,7 +46,10 @@ class Application(Base):
     flag_reason = Column(TEXT, nullable=True)  # Reason for flagging the application, if applicable
     tags = Column(ARRAY(TEXT), nullable=True)  # Custom tags/labels assigned to the application for categorization
     last_activity_at = Column(DateTime(timezone=True), nullable=True)  # Timestamp of the last activity on this application
-    
+
+    # 'internal' (recruiter uploaded) | 'public_apply' (submitted via public link)
+    source = Column(String(50), nullable=False, server_default="internal")
+
     candidate = relationship("Candidate",back_populates="applications")
     job = relationship("Job",back_populates="applications")
     
