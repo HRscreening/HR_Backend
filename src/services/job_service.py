@@ -40,7 +40,7 @@ from workers.producer import enqueue_resumes_parsing
 from configs.env_config import SUPABASE_PUBLIC_URL
 from configs.log_config import get_logger
 from src.repositories.document_repository import DocumentRepository
-from src.repositories.interview_respositories.interview_round_configs_repository  import InterviewRoundConfigsRepository 
+from src.modules.interviews.repositories.interview_round_configs_repository  import InterviewRoundConfigsRepository 
 from src.utils.candidate_name import extract_candidate_full_name
 from src.dtos.job_settings_dto import ReminderSettingsDTO, PanelEscalationSettingsDTO, ReschedulingSettingsDTO,CreateJobSettingsDTO
 from uuid import UUID

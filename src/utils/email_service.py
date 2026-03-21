@@ -48,4 +48,3 @@ class EmailService:
             raise DomainError("Failed to send OTP email", 500) from e
 
 
-emailService = EmailService()

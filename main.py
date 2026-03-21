@@ -6,14 +6,15 @@ from src.routes.job_routes import router as job_router
 from src.routes.batch_routes import router as batch_router
 from src.routes.application_routes import router as application_router
 from src.routes.candidate_routes import router as candidate_router
-from src.routes.interview_routes.interview_round_config_route import router as interview_round_config_router
 from src.routes.org_routes import router as org_router
-from src.routes.interview_routes.interview_routes import router as interview_router
 
 
-from src.routes.interview_routes.panlist_route import unproducted_router as panelist_unprotected_router
-from src.routes.interview_routes.candidate_booking_route import unprotected_router as candidate_booking_router
-from src.routes.oauth_routes import router as oauth_router
+from src.modules.interviews.routes.interview_round_config_route import router as interview_round_config_router
+from src.modules.interviews.routes.interview_routes import router as interview_router
+from src.modules.interviews.routes.panlist_route import unproducted_router as panelist_unprotected_router
+from src.modules.interviews.routes.candidate_booking_route import unprotected_router as candidate_booking_router
+
+from src.modules.oauth.oauth_routes import router as oauth_router
 
 from fastapi.middleware.cors import CORSMiddleware
 from src.middlewares.verify_user import auth_required 

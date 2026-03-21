@@ -192,4 +192,3 @@ class JWTService:
         return jwt.decode(state, self.secret_key, algorithms=self.algorithm)
 
     
-jwt_service = JWTService()

@@ -8,19 +8,20 @@ from src.models.enums import InterviewStatus
 from datetime import timedelta
 from src.repositories.application_repository import ApplicationRepository
 from src.models.enums import ApplicationStatus, InterviewStatus,InterviewEventActor,InterviewEventType
-from src.models.interview_models.interview_rounds_configs import Interview_Round_Configs
 from datetime import datetime, timezone, timedelta
 from src.schemas.candidate_schemas import CandidateCreateSchema
 from src.repositories.candidiate_repository import CandidateRepository
-from src.repositories.interview_respositories.panelist_repository import PanelistRepository
-from src.repositories.interview_respositories.interview_repository import InterviewRepository
+
+from src.modules.interviews.repositories.panelist_repository import PanelistRepository
+from src.modules.interviews.repositories.interview_repository import InterviewRepository
+from src.modules.interviews.repositories.interview_round_configs_repository import InterviewRoundConfigsRepository
+from src.modules.interviews.repositories.interview_event_repository import InterviewEventRepository
 from src.repositories.job_repository import JobRepository
-from src.services.email_services.panel.panel_email_service import PanelEmailService,panel_email_service
-from src.services.email_services.candidate.candidate_email_service import CandidateEmailService, candidate_email_service
-from src.repositories.interview_respositories.interview_round_configs_repository import InterviewRoundConfigsRepository
-from src.repositories.interview_respositories.interview_event_repository import InterviewEventRepository
-from src.utils.jwt import JWTService,jwt_service
+
+from src.modules.email_services.services import CandidateEmailService, PanelEmailService
 from configs.env_config import FRONTEND_URL
+
+from src.dependency.services.helper_services import JWTService, get_jwt_service
 import asyncio
 
 class ApplicationService:
@@ -32,6 +33,8 @@ class ApplicationService:
         interview_round_config_repository:InterviewRoundConfigsRepository,
         interview_event_repository:InterviewEventRepository,
         job_repository:JobRepository,
+        panel_email_service:PanelEmailService,
+        candidate_email_service:CandidateEmailService,
         db: AsyncSession):
         
         
@@ -42,10 +45,10 @@ class ApplicationService:
         self.panelist_repository = panelist_repository
         self.interview_round_config_repository = interview_round_config_repository
         self.interview_event_repository = interview_event_repository
-        self.panel_email_service : PanelEmailService = panel_email_service
         self.job_repository : JobRepository = job_repository
+        self.panel_email_service : PanelEmailService = panel_email_service
         self.candidate_email_service : CandidateEmailService = candidate_email_service
-        self.jwt_service : JWTService = jwt_service
+        self.jwt_service : JWTService = get_jwt_service()
         
         self.frontend_url = FRONTEND_URL
         
