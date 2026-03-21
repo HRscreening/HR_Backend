@@ -43,7 +43,7 @@ app.add_exception_handler(DomainError, domain_exception_handler)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173","http://localhost:5174","https://m7wgw6b2-5173.inc1.devtunnels.ms"],  # Replace "*" with your frontend URL for better security
+    allow_origins=["http://localhost:5173","http://localhost:5174","https://m7wgw6b2-5173.inc1.devtunnels.ms"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

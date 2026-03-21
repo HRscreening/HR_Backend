@@ -28,7 +28,13 @@ async def auth_required(
         )
 
     token = auth_header.split(" ", 1)[1]
-    payload = jwt.decode_token(token)
+    try:
+        payload = jwt.decode_token(token)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(e) if str(e) else "Token invalid or expired",
+        )
 
     if not payload or "user_id" not in payload:
         raise HTTPException(
