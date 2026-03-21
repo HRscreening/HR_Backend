@@ -9,6 +9,8 @@ from src.repositories.application_repository import ApplicationRepository
 from src.repositories.org_repository import OrganizationRepository
 from src.repositories.batch_repositoy import BatchRepository
 from src.repositories.candidiate_repository import CandidateRepository
+from src.repositories.jd_repository import JDRepository
+from src.repositories.form_config_repository import FormConfigRepository
 from src.repositories.interview_respositories.interview_round_configs_repository import InterviewRoundConfigsRepository
 from src.repositories.interview_respositories.interview_event_repository import InterviewEventRepository
 from src.repositories.interview_respositories.panelist_repository import PanelistRepository
@@ -21,6 +23,10 @@ from src.repositories.interview_respositories.calendar_repository import Calenda
 from src.services.auth_services import AuthService
 from src.services.user_services import UserService
 from src.services.job_service import JobService
+from src.services.jd_service import JDService
+from src.services.form_config_service import FormConfigService
+from src.services.jd_builder_service import JDBuilderService
+from src.services.public_apply_service import PublicApplyService
 from src.services.application_service import ApplicationService
 from src.services.batch_service import BatchService
 from src.services.candidate_service import CandidateService
@@ -263,5 +269,66 @@ def get_panelist_service(
         application_repository=application_repository,
         calendar_repository=calendar_repository,
         calendar_service=calendar_service,
+        db=db,
+    )
+
+
+# ── JD Builder & Form Config ──────────────────────────────────────────────────
+
+def get_jd_repository(db: AsyncSession = Depends(get_db)):
+    return JDRepository(db)
+
+
+def get_form_config_repository(db: AsyncSession = Depends(get_db)):
+    return FormConfigRepository(db)
+
+
+def get_jd_service(
+    jd_repo: JDRepository = Depends(get_jd_repository),
+    form_config_repo: FormConfigRepository = Depends(get_form_config_repository),
+    job_repo: JobRepository = Depends(get_job_repository),
+    db: AsyncSession = Depends(get_db),
+):
+    return JDService(
+        jd_repository=jd_repo,
+        form_config_repository=form_config_repo,
+        job_repository=job_repo,
+        db=db,
+    )
+
+
+def get_form_config_service(
+    form_config_repo: FormConfigRepository = Depends(get_form_config_repository),
+    job_repo: JobRepository = Depends(get_job_repository),
+    db: AsyncSession = Depends(get_db),
+):
+    return FormConfigService(
+        form_config_repository=form_config_repo,
+        job_repository=job_repo,
+        db=db,
+    )
+
+
+def get_jd_builder_service(
+    jd_repo: JDRepository = Depends(get_jd_repository),
+    db: AsyncSession = Depends(get_db),
+):
+    return JDBuilderService(jd_repository=jd_repo, db=db)
+
+
+def get_public_apply_service(
+    job_repo: JobRepository = Depends(get_job_repository),
+    jd_repo: JDRepository = Depends(get_jd_repository),
+    form_config_repo: FormConfigRepository = Depends(get_form_config_repository),
+    candidate_repo: CandidateRepository = Depends(get_candidate_repository),
+    file_manager: FileManagerService = Depends(get_file_manager_service),
+    db: AsyncSession = Depends(get_db),
+):
+    return PublicApplyService(
+        job_repository=job_repo,
+        jd_repository=jd_repo,
+        form_config_repository=form_config_repo,
+        candidate_repository=candidate_repo,
+        file_manager=file_manager,
         db=db,
     )

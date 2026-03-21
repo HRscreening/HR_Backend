@@ -2,6 +2,8 @@
 from src.models.user_model import User
 from src.models.organization_model import Organization
 from src.models.job_model import Job
+from src.models.job_description_model import JobDescription
+from src.models.application_form_config_model import ApplicationFormConfig
 from src.models.candidate_model import Candidate
 from src.models.application_model import Application
 from src.models.resume_model import Resume
@@ -24,6 +26,8 @@ __all__ = [
     "User",
     "Organization",
     "Job",
+    "JobDescription",
+    "ApplicationFormConfig",
     "Candidate",
     "Application",
     "Resume",

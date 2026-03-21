@@ -14,6 +14,10 @@ from src.routes.interview_routes.interview_routes import router as interview_rou
 from src.routes.interview_routes.panlist_route import unproducted_router as panelist_unprotected_router
 from src.routes.interview_routes.candidate_booking_route import unprotected_router as candidate_booking_router
 from src.routes.oauth_routes import router as oauth_router
+from src.routes.jd_routes import router as jd_router
+from src.routes.form_config_routes import router as form_config_router
+from src.routes.jd_builder_routes import router as jd_builder_router
+from src.routes.public_apply_routes import unprotected_router as public_apply_router
 
 from fastapi.middleware.cors import CORSMiddleware
 from src.middlewares.verify_user import auth_required 
@@ -39,7 +43,7 @@ app.add_exception_handler(DomainError, domain_exception_handler)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173","http://localhost:5174","https://m7wgw6b2-5173.inc1.devtunnels.ms"],  # Replace "*" with your frontend URL for better security
+    allow_origins=["http://localhost:5173","http://localhost:5174","https://m7wgw6b2-5173.inc1.devtunnels.ms"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -66,3 +70,8 @@ app.include_router(interview_router,dependencies=[Depends(auth_required)])
 app.include_router(panelist_unprotected_router)
 app.include_router(candidate_booking_router)
 app.include_router(oauth_router)
+# JD Builder & Public Apply
+app.include_router(jd_router, dependencies=[Depends(auth_required)])
+app.include_router(form_config_router, dependencies=[Depends(auth_required)])
+app.include_router(jd_builder_router, dependencies=[Depends(auth_required)])
+app.include_router(public_apply_router)  # unprotected — candidate-facing
