@@ -34,9 +34,10 @@ class Panelist(Base):
     # if same candidate  can be in multiple orgs then no need for organization_id unique constraint
     round_config_id = Column(
         UUID(as_uuid=True),
-        ForeignKey("interview_round_configs.id"),  
+        ForeignKey("interview_round_configs.id",ondelete="CASCADE"),  
         nullable=False,
         index=True,
+        
     )
     email = Column(String, nullable=False,index=True)  # Email of the panelist whose availability is being tracked
     name = Column(String, nullable=True)  # Optional: Name of the panelist for easier identification
@@ -58,6 +59,8 @@ class Panelist(Base):
     last_requested_at = Column(DateTime(timezone=True), nullable=True)  # Timestamp of the last availability request sent to the panelist
     availability_request_count = Column(Integer, default=0)  # Counter for how many times availability has been requested from the panelist
     
+    # TODO: to be implemented here and in service/repo layer too
+    is_deleted = Column(Boolean, default=False)  # Soft delete flag to indicate if the panelist record is deleted
     
     calendar_connected = Column(Boolean, default=False)  # Indicates if the panelist has connected a calendar (Google/Microsoft) for automatic scheduling
     

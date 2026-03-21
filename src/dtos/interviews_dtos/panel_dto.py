@@ -1,50 +1,25 @@
-# from pydantic import BaseModel, Field, EmailStr, model_validator, field_validator
-# from typing import List, Optional,Dict
-# from src.models.enums import InterviewType
-# from datetime import datetime,date,timezone
-# from uuid import UUID
-
-
-# class CreatePanelDTO(BaseModel):
-#     panelist_name : str 
-#     panelist_email : EmailStr
-#     availability_token : str
-#     token_expires_at : datetime
-    
-# class SlotTime(BaseModel):
-#     start_time: datetime
-#     end_time: datetime
-
-#     @field_validator("start_time", "end_time", mode="after")
-#     @classmethod
-#     def must_be_timezone_aware(cls, v: datetime) -> datetime:
-#         if v.tzinfo is None:
-#             raise ValueError(
-#                 "Datetime must include a timezone offset (e.g. 2026-03-10T14:00:00+05:30). "
-#                 "Naive datetimes without timezone are not accepted."
-#             )
-#         return v.astimezone(timezone.utc)  # normalise to UTC for storage
-    
-# class AvailableSlot(BaseModel):
-#     date: date
-#     time: List[SlotTime]
-    
-    
-# class EditedAvailableSlot(BaseModel):
-#     id: UUID | str   # or str depending on your DB
-#     date: date
-#     time: List[SlotTime]
-    
-    
-# class UpdatedSlots(BaseModel):
-#     edited_slots: List[EditedAvailableSlot]
-#     new_slots: List[AvailableSlot]
-    
-
-from pydantic import BaseModel, EmailStr, field_validator, model_validator
+from pydantic import BaseModel, EmailStr, field_validator, model_validator,Field
 from typing import List
 from datetime import datetime, date, timezone
 from uuid import UUID
+
+
+# ─── Panelist DTOs ────────────────────────────────────────────────────────────
+
+class PanelistDTO(BaseModel):
+    """Used when creating a brand-new panelist (no id yet)."""
+    name: str = Field(..., example="John Doe")
+    email: EmailStr = Field(..., example="john.doe@example.com")
+    role: str = Field(..., example="Interviewer")
+
+
+class PanelistEditDTO(BaseModel):
+    """Used when editing an existing panelist (must supply id)."""
+    id: str = Field(..., example="uuid-of-existing-panelist")
+    name: str = Field(..., example="John Doe")
+    email: EmailStr = Field(..., example="john.doe@example.com")
+    role: str = Field(..., example="Interviewer")
+
 
 
 class CreatePanelDTO(BaseModel):
@@ -53,6 +28,10 @@ class CreatePanelDTO(BaseModel):
     availability_token: str
     token_expires_at: datetime
 
+class updatePanelistLists(BaseModel):
+    name: str
+    email: EmailStr
+    role: str
 
 # ── Shared validator ──────────────────────────────────────────────────────────
 

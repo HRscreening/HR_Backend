@@ -38,7 +38,7 @@ from src.services.resume_services import score_resumes_service
 from src.dependency import get_job_service, JobService, get_application_service
 from src.services.application_service import ApplicationService
 from src.utils.file_manager import fileManager
-
+from src.dtos.job_settings_dto import ReminderSettingsDTO, PanelEscalationSettingsDTO, ReschedulingSettingsDTO,CreateJobSettingsDTO
 
 router = APIRouter(prefix="/api/jobs", tags=["Job Management"])
 
@@ -456,3 +456,16 @@ async def get_job_settings(
 ):
     settings = await job_service.get_job_settings(str(job_id))
     return settings
+
+@router.post("/create-settings/{job_id}", status_code=status.HTTP_201_CREATED)
+async def create_job_settings(
+    job_id: UUID,
+    request: Request,
+    setting_data: CreateJobSettingsDTO,
+    job_service: JobService = Depends(get_job_service)
+):
+    user_id = request.state.user.id
+    ctx = request.state.context
+
+    
+    return await job_service.create_job_settings(str(job_id),setting_data,user_id)

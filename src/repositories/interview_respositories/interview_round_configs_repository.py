@@ -32,6 +32,56 @@ class InterviewRoundConfigsRepository:
         await self.db.flush() 
         return interview_round_config
 
+    # async def bulk_create_interview_round_configs(
+    #     self,
+    #     job_id: str,
+    #     configs: List[CreateInterviewRoundConfigDTO],
+    # ) -> List[Interview_Round_Configs]:
+
+    #     created = []
+        
+    #     panelist_ids_mapped_to_round_config = []
+
+    #     for config_data in configs:
+
+    #         row = Interview_Round_Configs(
+    #             job_id=job_id,
+    #             round_number=config_data.round_number,
+    #             title=config_data.title,
+    #             interview_type=config_data.interview_type,
+    #             instructions=config_data.instructions,
+    #             duration_minutes=config_data.duration_minutes,
+    #             meet_link=str(config_data.meet_link) if config_data.meet_link else None,
+    #             start_date=config_data.start_date,
+    #             end_date=config_data.end_date,
+    #             timezone=config_data.timezone,
+    #         )
+
+    #         # attach panelists
+    #         for panel in config_data.panelists:
+    #             panelist = Panelist(
+    #                 name=panel.name,
+    #                 email=panel.email,
+    #                 role=panel.role
+    #             )
+
+    #             row.panelists.append(panelist)
+
+    #         self.db.add(row)
+    #         created.append(row)
+            
+
+
+    #     await self.db.flush(objects=created)
+        
+    #     for config, created_row in zip(configs, created):
+    #         panelist_ids_mapped_to_round_config.append({
+    #             "round_config_id": created_row.id,
+    #             "round_config_title": created_row.title,
+    #             "panelist_ids":[panel.id for panel in created_row.panelists]})
+        
+    #     return created
+    
     async def bulk_create_interview_round_configs(
         self,
         job_id: str,
@@ -39,9 +89,9 @@ class InterviewRoundConfigsRepository:
     ) -> List[Interview_Round_Configs]:
 
         created = []
+        panelist_ids_mapped_to_round_config = []
 
         for config_data in configs:
-
             row = Interview_Round_Configs(
                 job_id=job_id,
                 round_number=config_data.round_number,
@@ -49,28 +99,33 @@ class InterviewRoundConfigsRepository:
                 interview_type=config_data.interview_type,
                 instructions=config_data.instructions,
                 duration_minutes=config_data.duration_minutes,
-                meet_link=str(config_data.meet_link) if config_data.meet_link else None,
+                meet_link=config_data.meet_link,
                 start_date=config_data.start_date,
                 end_date=config_data.end_date,
                 timezone=config_data.timezone,
             )
 
-            # attach panelists
             for panel in config_data.panelists:
                 panelist = Panelist(
                     name=panel.name,
                     email=panel.email,
                     role=panel.role
                 )
-
                 row.panelists.append(panelist)
 
             self.db.add(row)
             created.append(row)
 
-        await self.db.flush(objects=created)
+        await self.db.flush()
 
-        return created
+        for config, created_row in zip(configs, created):
+            panelist_ids_mapped_to_round_config.append({
+                "round_config_id": created_row.id,
+                "round_config_title": created_row.title,
+                "panelist_ids": [panel.id for panel in created_row.panelists]
+            })
+
+        return created  # or return both if needed
     
     
     async def get_interview_round_config_by_id_with_panelist(
@@ -149,3 +204,17 @@ class InterviewRoundConfigsRepository:
             ).order_by(Interview_Round_Configs.round_number.asc())
         )
         return result.scalars().all()
+    
+    
+
+    async def delete_interview_round_config(self,round_config_id):
+        result = await self.db.execute(
+            select(Interview_Round_Configs).where(Interview_Round_Configs.id == round_config_id)
+        )
+        config = result.scalar_one_or_none()
+
+        if config:
+            await self.db.delete(config)
+            await self.db.flush()
+            return True
+        return False

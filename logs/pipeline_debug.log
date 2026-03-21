@@ -1,220 +1,66 @@
 ══════════════════════════════════════════════════════════════════════
-[2026-03-14 23:37:52] EXTRACTION  file=CV_IT_1.pdf
+[2026-03-18 22:14:51] EXTRACTION  file=CV_IT_1.pdf
   method       : text
   pages        : 2
   text_length  : 5880 chars
   text_preview : 'KESHAV RAJ ACADEMIC DETAILS Year Degree / Board Institute GPA / Marks(%) --- B.Tech and M.Tech in Chemical Engineering Indian Institute of Technology Delhi 7.48 2022 BSEB R.K College, Madhubani 84.4% 2020 CBSE Jesus & Mary Academy, Darbhanga 94.4% SCHOLASTIC ACHIEVEMENTS • Letter of Recommendation : Received for delivering the MonopolyonWheels project from Prof. Biswajita Parida (2024) • Joint Entrance Examination Mains : Ranked amongst the top 1.1% candidates, out of a total pool of 1.1 million'
 ──────────────────────────────────────────────────────────────────────
-[2026-03-14 23:37:59] CANDIDATE_INFO  resume_id=(extraction)  source=llm(name='Keshav Raj' email=None phone=None) + heuristic
+[2026-03-18 22:15:00] CANDIDATE_INFO  resume_id=(extraction)  source=llm(name='Keshav Raj' email=None phone=None) + heuristic
   full_name : 'Keshav Raj'
   email     : None
   phone     : None
-[2026-03-14 23:37:59] CANDIDATE_INFO  resume_id=e822f6e0-598d-492f-baba-84728acbba98  source=llm+heuristic
+[2026-03-18 22:15:00] CANDIDATE_INFO  resume_id=537968fa-2d0f-46ab-a10e-e8bc404bbbbe  source=llm+heuristic
   full_name : 'Keshav Raj'
   email     : None
   phone     : None
 ──────────────────────────────────────────────────────────────────────
-[2026-03-14 23:38:20] SCORING_LLM  resume_id=(batch)
-  rubric_keys : ['required_experience', 'required_education', 'required_technical_skills', 'preferred_qualifications', 'logistics']
-  llm_keys    : ['required_experience', 'required_education', 'required_technical_skills', 'preferred_qualifications', 'logistics']
+[2026-03-18 22:15:58] SCORING_LLM  resume_id=(batch)
+  rubric_keys : ['experience_duration', 'core_backend_engineering', 'realtime_ai_voice_systems', 'soft_skills', 'preferred_technical_exposure', 'logistics']
+  llm_keys    : ['experience_duration', 'core_backend_engineering', 'realtime_ai_voice_systems', 'soft_skills', 'preferred_technical_exposure', 'logistics']
   keys_match  : True
-  [required_experience]
-    overall_experience: 95.0
-  [required_education]
-    postgraduate_or_strong_undergrad: 95.0
-  [required_technical_skills]
-    office_productivity_software_proficiency: 10.0
-    written_verbal_communication: 65.0
-    attention_to_detail_follow_through: 65.0
-  [preferred_qualifications]
-    high_ownership_proactive_attitude: 80.0
-    prior_experience_consulting_startups_operations: 80.0
-    comfort_with_ambiguity: 60.0
-  [logistics]
-    job_location: 10.0
-[2026-03-14 23:38:20] SCORING_FINAL  resume_id=e822f6e0-598d-492f-baba-84728acbba98
-  overall_score : 63.29
-  [required_experience]  score=95.0
-    overall_experience: 95.0  | The candidate is a recent graduate (2022) with internship and project experience
-  [required_education]  score=95.0
-    postgraduate_or_strong_undergrad: 95.0  | The candidate holds both a B.Tech and M.Tech from IIT Delhi, which is a strong p
-  [required_technical_skills]  score=42.45
-    office_productivity_software_proficiency: 10.0  | The resume does not explicitly mention proficiency in office productivity softwa
-    written_verbal_communication: 65.0  | While not explicitly stated, the candidate's collaborative project work and lead
-    attention_to_detail_follow_through: 65.0  | The candidate's technical project execution, CI/CD automation, and academic achi
-  [preferred_qualifications]  score=74.0
-    high_ownership_proactive_attitude: 80.0  | The candidate's leadership roles, proactive development of projects, and managem
-    prior_experience_consulting_startups_operations: 80.0  | The candidate has internship experience at 'homescanner ai' (likely a startup) a
-    comfort_with_ambiguity: 60.0  | While not explicitly stated, the candidate's involvement in diverse projects and
-  [logistics]  score=10.0
-    job_location: 10.0  | The resume does not provide any information regarding the candidate's current lo
-══════════════════════════════════════════════════════════════════════
-[2026-03-14 23:40:56] EXTRACTION  file=CV_IT_1.pdf
-  method       : text
-  pages        : 2
-  text_length  : 5880 chars
-  text_preview : 'KESHAV RAJ ACADEMIC DETAILS Year Degree / Board Institute GPA / Marks(%) --- B.Tech and M.Tech in Chemical Engineering Indian Institute of Technology Delhi 7.48 2022 BSEB R.K College, Madhubani 84.4% 2020 CBSE Jesus & Mary Academy, Darbhanga 94.4% SCHOLASTIC ACHIEVEMENTS • Letter of Recommendation : Received for delivering the MonopolyonWheels project from Prof. Biswajita Parida (2024) • Joint Entrance Examination Mains : Ranked amongst the top 1.1% candidates, out of a total pool of 1.1 million'
-──────────────────────────────────────────────────────────────────────
-[2026-03-14 23:41:05] CANDIDATE_INFO  resume_id=(extraction)  source=llm(name='Keshav Raj' email=None phone=None) + heuristic
-  full_name : 'Keshav Raj'
-  email     : None
-  phone     : None
-[2026-03-14 23:41:05] CANDIDATE_INFO  resume_id=cc715ad3-aa73-4115-9976-3105358dc6a1  source=llm+heuristic
-  full_name : 'Keshav Raj'
-  email     : None
-  phone     : None
-──────────────────────────────────────────────────────────────────────
-[2026-03-14 23:41:25] SCORING_LLM  resume_id=(batch)
-  rubric_keys : ['required_experience', 'required_education', 'required_technical_skills', 'preferred_qualifications', 'logistics']
-  llm_keys    : ['required_experience', 'required_education', 'required_technical_skills', 'preferred_qualifications', 'logistics']
-  keys_match  : True
-  [required_experience]
-    overall_experience: 95.0
-  [required_education]
-    postgraduate_or_strong_undergrad: 95.0
-  [required_technical_skills]
-    office_productivity_software_proficiency: 10.0
-    written_verbal_communication: 65.0
-    attention_to_detail_follow_through: 65.0
-  [preferred_qualifications]
-    high_ownership_proactive_attitude: 80.0
-    prior_experience_consulting_startups_operations: 80.0
-    comfort_with_ambiguity: 60.0
-  [logistics]
-    job_location: 10.0
-[2026-03-14 23:41:25] SCORING_FINAL  resume_id=cc715ad3-aa73-4115-9976-3105358dc6a1
-  overall_score : 63.29
-  [required_experience]  score=95.0
-    overall_experience: 95.0  | The candidate is a recent graduate (2022) with internship and project experience
-  [required_education]  score=95.0
-    postgraduate_or_strong_undergrad: 95.0  | The candidate holds both a B.Tech and M.Tech from IIT Delhi, which is a strong p
-  [required_technical_skills]  score=42.45
-    office_productivity_software_proficiency: 10.0  | The resume does not explicitly mention proficiency in office productivity softwa
-    written_verbal_communication: 65.0  | While not explicitly stated, the candidate's collaborative project work and lead
-    attention_to_detail_follow_through: 65.0  | The candidate's technical project execution, CI/CD automation, and academic achi
-  [preferred_qualifications]  score=74.0
-    high_ownership_proactive_attitude: 80.0  | The candidate's leadership roles, proactive development of projects, and managem
-    prior_experience_consulting_startups_operations: 80.0  | The candidate has internship experience at 'homescanner ai' (likely a startup) a
-    comfort_with_ambiguity: 60.0  | While not explicitly stated, the candidate's involvement in diverse projects and
-  [logistics]  score=10.0
-    job_location: 10.0  | The resume does not provide any information regarding the candidate's current lo
-══════════════════════════════════════════════════════════════════════
-[2026-03-14 23:44:13] EXTRACTION  file=resume.pdf
-  method       : text
-  pages        : 2
-  text_length  : 7253 chars
-  text_preview : 'Mohit 22B0442 Chemical Engineering B.Tech. Indian Institute of Technology Bombay Gender: Male Email :- 22b0442@iitb.ac.in DOB: 03/09/2005 Examination University Institute Year CPI / % Graduation IIT Bombay IIT Bombay 2026 8.03 Intermediate RBSE Noble Public School Deolawas 2021 99.40% Matriculation RBSE S.P.S. Sen.Sec.School,Khandwa 2019 94.50% PursuingaDualMinorinComputerScience&EngineeringandArtificialIntelligence&Data Science SCHOLASTIC ACHIEVEMENTS • Received the Inspire Award for being in t'
-──────────────────────────────────────────────────────────────────────
-[2026-03-14 23:44:21] CANDIDATE_INFO  resume_id=(extraction)  source=llm(name=None email='22b0442@iitb.ac.in' phone=None) + heuristic
-  full_name : None
-  email     : '22b0442@iitb.ac.in'
-  phone     : None
-[2026-03-14 23:44:21] CANDIDATE_INFO  resume_id=a38d1807-35ab-4d7b-b7a7-465469ba43d6  source=llm+heuristic
-  full_name : None
-  email     : '22b0442@iitb.ac.in'
-  phone     : None
-──────────────────────────────────────────────────────────────────────
-[2026-03-14 23:44:43] SCORING_LLM  resume_id=(batch)
-  rubric_keys : ['required_experience', 'required_education', 'required_technical_skills', 'preferred_qualifications', 'logistics']
-  llm_keys    : ['required_experience', 'required_education', 'required_technical_skills', 'preferred_qualifications', 'logistics']
-  keys_match  : True
-  [required_experience]
-    overall_experience: 95.0
-  [required_education]
-    postgraduate_or_strong_undergrad: 95.0
-  [required_technical_skills]
-    office_productivity_software_proficiency: 25.0
-    written_verbal_communication: 75.0
-    attention_to_detail_follow_through: 80.0
-  [preferred_qualifications]
-    high_ownership_proactive_attitude: 85.0
-    prior_experience_consulting_startups_operations: 75.0
-    comfort_with_ambiguity: 70.0
-  [logistics]
-    job_location: 0.0
-[2026-03-14 23:44:43] SCORING_FINAL  resume_id=a38d1807-35ab-4d7b-b7a7-465469ba43d6
-  overall_score : 64.57
-  [required_experience]  score=95.0
-    overall_experience: 95.0  | The candidate has 6 months of relevant internship experience, which falls well w
-  [required_education]  score=95.0
-    postgraduate_or_strong_undergrad: 95.0  | The candidate is a strong undergraduate from IIT Bombay with a high CPI, dual mi
-  [required_technical_skills]  score=55.85
-    office_productivity_software_proficiency: 25.0  | The resume does not explicitly mention proficiency in Excel or Google Sheets, no
-    written_verbal_communication: 75.0  | The resume is well-structured and articulate, and receiving a Letter of Recommen
-    attention_to_detail_follow_through: 80.0  | The candidate's detailed project descriptions, quantified achievements, and a Le
-  [preferred_qualifications]  score=77.0
-    high_ownership_proactive_attitude: 85.0  | The candidate's involvement in multiple self-initiated projects, leadership posi
-    prior_experience_consulting_startups_operations: 75.0  | The candidate has internship experience at Samvid.AI and Qrata, which are likely
-    comfort_with_ambiguity: 70.0  | The candidate's experience across a diverse range of technical projects and inte
-  [logistics]  score=0.0
-    job_location: 0.0  | The resume provides no information regarding the candidate's current location or
-══════════════════════════════════════════════════════════════════════
-[2026-03-15 00:10:51] EXTRACTION  file=CV_IT_1.pdf
-  method       : text
-  pages        : 2
-  text_length  : 5880 chars
-  text_preview : 'KESHAV RAJ ACADEMIC DETAILS Year Degree / Board Institute GPA / Marks(%) --- B.Tech and M.Tech in Chemical Engineering Indian Institute of Technology Delhi 7.48 2022 BSEB R.K College, Madhubani 84.4% 2020 CBSE Jesus & Mary Academy, Darbhanga 94.4% SCHOLASTIC ACHIEVEMENTS • Letter of Recommendation : Received for delivering the MonopolyonWheels project from Prof. Biswajita Parida (2024) • Joint Entrance Examination Mains : Ranked amongst the top 1.1% candidates, out of a total pool of 1.1 million'
-──────────────────────────────────────────────────────────────────────
-[2026-03-15 00:10:59] CANDIDATE_INFO  resume_id=(extraction)  source=llm(name='Keshav Raj' email=None phone=None) + heuristic
-  full_name : 'Keshav Raj'
-  email     : None
-  phone     : None
-[2026-03-15 00:10:59] CANDIDATE_INFO  resume_id=b2fec569-f108-4693-9169-72ea4f106cd4  source=llm+heuristic
-  full_name : 'Keshav Raj'
-  email     : None
-  phone     : None
-──────────────────────────────────────────────────────────────────────
-[2026-03-15 00:11:50] SCORING_LLM  resume_id=(batch)
-  rubric_keys : ['required_qualifications', 'core_backend_engineering', 'realtime_ai_voice_systems', 'system_operations_performance', 'asynchronous_systems_messaging', 'soft_skills']
-  llm_keys    : ['required_qualifications', 'core_backend_engineering', 'realtime_ai_voice_systems', 'system_operations_performance', 'asynchronous_systems_messaging', 'soft_skills']
-  keys_match  : True
-  [required_qualifications]
-    experience_level: 0.0
-    job_location: 0.0
-    internship_duration: 25.0
+  [experience_duration]
+    experience_required: 60.0
+    internship_duration: 100.0
   [core_backend_engineering]
-    programming_languages: 50.0
-    backend_api_networking: 0.0
-    concurrency_fundamentals: 0.0
-    database_familiarity: 25.0
-    development_environment_tools: 50.0
+    programming_languages_backend_fundamentals: 80.0
+    concurrency_fundamentals: 60.0
+    database_familiarity: 95.0
+    development_environment_tools: 95.0
   [realtime_ai_voice_systems]
-    realtime_ai_voice_pipeline_tech: 25.0
-    ai_model_fine_tuning: 0.0
-  [system_operations_performance]
-    distributed_systems_concepts: 0.0
-    microservices_container_orchestration: 0.0
-    performance_optimization: 0.0
-    cloud_deployment_platforms: 0.0
-  [asynchronous_systems_messaging]
-    message_queue_familiarity: 0.0
+    realtime_ai_voice_pipeline_development: 40.0
+    realtime_media_communication_systems: 10.0
+    performance_optimization: 80.0
+    microservices_deployment_monitoring: 60.0
+    slm_experimentation_reliability: 35.0
   [soft_skills]
-    problem_solving: 70.0
-    learning_agility: 70.0
-    collaboration: 70.0
-[2026-03-15 00:11:50] SCORING_FINAL  resume_id=b2fec569-f108-4693-9169-72ea4f106cd4
-  overall_score : 15.06
-  [required_qualifications]  score=7.75
-    experience_level: 0.0  | The listed internship and most relevant projects are dated in the future, indica
-    job_location: 0.0  | The resume does not provide any information regarding desired or past job locati
-    internship_duration: 25.0  | While the planned duration of the future internship aligns with the requirement,
-  [core_backend_engineering]  score=16.34
-    programming_languages: 35.0  | Python is listed and used in a past project, but Golang is not mentioned.
-    backend_api_networking: 0.0  | All mentions of REST APIs and networking concepts are associated with future int
-    concurrency_fundamentals: 0.0  | The only mention of async calls is within a future project, and threads or gorou
-    database_familiarity: 7.5  | MongoDB is listed as a skill, but Redis and PostgreSQL usage are only mentioned 
-    development_environment_tools: 40.5  | Git, GitHub, Docker, and Linux are listed as skills, but their application in CI
-  [realtime_ai_voice_systems]  score=3.12
-    realtime_ai_voice_pipeline_tech: 4.25  | LangChain is listed as a skill, but its application with LangGraph for language 
-    ai_model_fine_tuning: 0.0  | AI model fine-tuning workflows are not mentioned anywhere in the resume.
-  [system_operations_performance]  score=0.0
-    distributed_systems_concepts: 0.0  | Distributed systems concepts are not explicitly mentioned in the resume.
-    microservices_container_orchestration: 0.0  | The containerization and deployment experience is described in a future project 
-    performance_optimization: 0.0  | The achievement in reducing backend latency is attributed to a future internship
-    cloud_deployment_platforms: 0.0  | The AWS deployment experience is described in a future project, and other cloud 
-  [asynchronous_systems_messaging]  score=0.0
-    message_queue_familiarity: 0.0  | Redis usage is mentioned in a future project, but not specifically in the contex
-  [soft_skills]  score=70.0
-    problem_solving: 70.0  | Past projects like 'Red-Blue Ball Detection' and 'Interactive 2-D Snake Game' de
-    learning_agility: 70.0  | The candidate's academic achievements and broad range of listed technical skills
-    collaboration: 70.0  | The candidate has collaborated with teams in past positions of responsibility, d
+    problem_solving_skills: 80.0
+    willingness_to_learn: 95.0
+  [preferred_technical_exposure]
+    advanced_realtime_ai_systems_interest: 60.0
+    asynchronous_systems_exposure: 40.0
+  [logistics]
+    work_location: 10.0
+[2026-03-18 22:15:58] SCORING_FINAL  resume_id=537968fa-2d0f-46ab-a10e-e8bc404bbbbe
+  overall_score : 58.1
+  [experience_duration]  score=78.8
+    experience_required: 60.0  | The candidate has a 3-month backend developer internship, which is less than the
+    internship_duration: 100.0  | The candidate's backend developer internship lasted 3 months, which perfectly al
+  [core_backend_engineering]  score=81.7
+    programming_languages_backend_fundamentals: 80.0  | The candidate lists Python in their skills and used it in a project, demonstrati
+    concurrency_fundamentals: 60.0  | The candidate explicitly mentions using async calls for API integration, indicat
+    database_familiarity: 95.0  | The candidate demonstrates strong familiarity with PostgreSQL and Redis through 
+    development_environment_tools: 95.0  | The candidate explicitly lists Linux, Docker, and Git in their skills and demons
+  [realtime_ai_voice_systems]  score=43.7
+    realtime_ai_voice_pipeline_development: 35.0  | The candidate has experience integrating LangGraph for an AI conversational bot,
+    realtime_media_communication_systems: 10.0  | The resume does not provide any evidence of experience with SIP, WebRTC, media r
+    performance_optimization: 80.0  | The candidate explicitly optimized API handling and server-side rendering, reduc
+    microservices_deployment_monitoring: 60.0  | The candidate has experience containerizing and deploying a web application on A
+    slm_experimentation_reliability: 35.0  | The candidate used LangGraph for a conversational bot, indicating exposure to la
+  [soft_skills]  score=87.5
+    problem_solving_skills: 80.0  | The candidate demonstrates problem-solving through various project developments,
+    willingness_to_learn: 95.0  | The candidate's extensive and diverse technical skill set, developed across mult
+  [preferred_technical_exposure]  score=46.88
+    advanced_realtime_ai_systems_interest: 52.5  | The candidate demonstrates familiarity with cloud deployment and container orche
+    asynchronous_systems_exposure: 40.0  | The candidate used Redis for caching, which can be a component of asynchronous s
+  [logistics]  score=10.0
+    work_location: 10.0  | The resume does not contain any information regarding the candidate's preferred 

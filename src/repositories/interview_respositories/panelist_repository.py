@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.models import Panelist
 from pydantic import EmailStr
 from typing import Optional,List
-from src.dtos.interviews_dtos.panel_dto import CreatePanelDTO
+from src.dtos.interviews_dtos.panel_dto import CreatePanelDTO,updatePanelistLists,PanelistDTO,PanelistEditDTO
 from src.models.enums import PanelistResponseStatus
 from src.models import Interview_Round_Configs
 from src.utils.jwt import jwt_service,JWTService
@@ -45,61 +45,127 @@ class PanelistRepository:
 
         return panelists
 
-    async def get_Panelist_by_id(
+    async def bulk_add_panelist_to_round_config(self, round_config_id: str, panelist_data: List[PanelistDTO]) -> Panelist:
+        """Add a single panelist to a round config."""
+        panelists = [
+            Panelist(
+                round_config_id=round_config_id,
+                name=p.name,
+                email=p.email,
+                role=p.role
+            )
+            for p in panelist_data
+        ]
+
+        self.db.add_all(panelists)
+        await self.db.flush()
+
+        return panelists
+    
+    async def bulk_update_panelists(self, round_config_id: str, panelist_data: List[PanelistEditDTO]) -> List[Panelist]:
+        """Bulk update panelists of a round config based on the provided data."""
+        updated_panelists = []
+
+        for panel_data in panelist_data:
+            panelist = await self.get_panelist_by_round_config_and_panelist_id(
+                round_config_id,
+                panel_data.id
+            )
+
+            if not panelist:
+                raise DomainError(f"Panelist with ID {panel_data.id} not found in round config {round_config_id}", status_code=404)
+
+            panelist.name = panel_data.name
+            panelist.email = panel_data.email
+            panelist.role = panel_data.role
+
+            updated_panelists.append(panelist)
+
+        await self.db.flush()
+        return updated_panelists
+    
+    
+    # TODO: Need to handle interview and etc while deleting it
+    async def delete_panelists_by_ids(self, round_config_id: str, panelist_ids: List[str]) -> None:
+        """Bulk delete panelists of a round config based on the provided IDs."""
+        for panelist_id in panelist_ids:
+            panelist = await self.get_panelist_by_round_config_and_panelist_id(
+                round_config_id,
+                panelist_id
+            )
+
+            if not panelist:
+                raise DomainError(f"Panelist with ID {panelist_id} not found in round config {round_config_id}", status_code=404)
+            
+            panelist.is_deleted = True
+            # await self.db.delete(panelist)
+
+        await self.db.flush()
+        
+    async def get_panelist_by_id(
         self,
         panelist_id: str,
+        exclude_deleted: bool = True
     ) -> Optional[Panelist]:
 
-        result = await self.db.execute(
-            select(Panelist)
-            .where(Panelist.id == panelist_id)
-        )
+        stmt = select(Panelist).where(Panelist.id == panelist_id)
 
+        if exclude_deleted:
+            stmt = stmt.where(Panelist.is_deleted.is_(False))
+
+        result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_panelist_by_job_id(
         self,
         job_id: str,
+        exclude_deleted: bool = True
     ) -> list[Panelist]:
-
-        result = await self.db.execute(
-            select(Panelist)
+        
+        stmt = (select(Panelist)
             .join(Interview_Round_Configs)
-            .where(Interview_Round_Configs.job_id == job_id)
-        )
+            .where(Interview_Round_Configs.job_id == job_id))
+        
+        if exclude_deleted:
+            stmt = stmt.where(Panelist.is_deleted.is_(False))
 
+        result = await self.db.execute(stmt)
         return result.scalars().all()
 
     async def get_panelist_by_round_config_and_email(
         self,
         round_config_id: str,
         panelist_email: EmailStr,
+        exclude_deleted: bool = True
     ) -> Optional[Panelist]:
 
-        result = await self.db.execute(
-            select(Panelist)
+        stmt = (select(Panelist)
             .where(
                 Panelist.round_config_id == round_config_id,
                 Panelist.email == panelist_email,
-            )
-        )
-
+            ))
+        
+        if exclude_deleted:
+            stmt = stmt.where(Panelist.is_deleted.is_(False))
+        
+        result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_panelist_by_round_config_and_panelist_id(
         self,
         round_config_id: str,
         panelist_id: str,
+        exclude_deleted: bool = True
     ) -> Optional[Panelist]:
 
-        result = await self.db.execute(
-            select(Panelist)
+        stmt = (select(Panelist)
             .where(
                 Panelist.round_config_id == round_config_id,
                 Panelist.id == panelist_id,
-            )
-        )
-
+            ))
+        if exclude_deleted:
+            stmt = stmt.where(Panelist.is_deleted.is_(False))
+        result = await self.db.execute(stmt)
         return result.scalar_one_or_none()
 
 
@@ -108,40 +174,44 @@ class PanelistRepository:
         self,
         round_config_id: str,
         panelist_ids: list[str],
+        exclude_deleted: bool = True
     ) -> list[Panelist]:
 
-        result = await self.db.execute(
-            select(Panelist)
+        stmt = (select(Panelist)
             .where(
                 Panelist.round_config_id == round_config_id,
                 Panelist.id.in_(panelist_ids),
-            )
-        )
-
+            ))
+        
+        if exclude_deleted:
+            stmt = stmt.where(Panelist.is_deleted.is_(False))
+        result = await self.db.execute(stmt)
         return result.scalars().all()
 
 
     async def get_all_panelists_by_round_config_id(
         self,
         round_config_id: str,
+        exclude_deleted: bool = True
     ) -> List[Panelist]:
-
-        result = await self.db.execute(
-            select(Panelist)
-            .where(Panelist.round_config_id == round_config_id)
-        )
-
+        """Get all panelists for a round config."""
+        stmt = ( select(Panelist).where(Panelist.round_config_id == round_config_id))
+        
+        if exclude_deleted:
+            stmt = stmt.where(Panelist.is_deleted.is_(False))
+        
+        result = await self.db.execute(stmt)
         return result.scalars().all()
 
 
     async def get_all_panelists_by_round_config_id_and_status(
         self,
         round_config_id: str,
-        status:PanelistResponseStatus
+        status:PanelistResponseStatus,
+        exclude_deleted: bool = True
     ) -> List[Panelist]:
         
         """Get all panelists for a round config who are with the given status."""
-
         result = await self.db.execute(
             select(Panelist)
             .where(Panelist.round_config_id == round_config_id,Panelist.response_status==status)
@@ -288,3 +358,52 @@ class PanelistRepository:
         )
 
         return result.scalars().all()
+    
+    
+    async def update_panelists_for_round_config(
+        self,
+        round_config_id: str,
+        panelist_data_list: List[updatePanelistLists]
+    ) -> List[Panelist]:
+        
+        # print("\n\nIncoming panelist data:", panelist_data_list,"\n\n")
+        # 1. Fetch existing panelists
+        existing_panelists = await self.get_all_panelists_by_round_config_id(round_config_id)
+        existing_map = {p.email: p for p in existing_panelists}
+
+        incoming_emails = set()
+        updated_panelists = []
+
+        # 2. Upsert logic
+        for panel_data in panelist_data_list:
+            email = panel_data.email
+            incoming_emails.add(email)
+
+            if email in existing_map:
+                # ✅ UPDATE
+                panelist = existing_map[email]
+                panelist.name = panel_data.name
+                panelist.role = panel_data.role
+            else:
+                # ✅ INSERT
+                panelist = Panelist(
+                    round_config_id=round_config_id,
+                    name=panel_data.name,
+                    email=email,
+                    role=panel_data.role
+                )
+                self.db.add(panelist)
+
+            updated_panelists.append(panelist)
+
+        # 3. DELETE removed panelists (important 🔥)
+        for email, panelist in existing_map.items():
+            if email not in incoming_emails:
+                await self.db.delete(panelist)
+
+        # 4. Flush once
+        await self.db.flush()
+
+        return updated_panelists
+    
+  

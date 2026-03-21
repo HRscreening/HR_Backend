@@ -138,8 +138,23 @@ class InterviewEventType(enum.Enum):
 
 
 
-class InterviewEventActor(enum.Enum):
+class InterviewEventActor(str,enum.Enum):
     CANDIDATE = "Candidate"
     PANELIST = "Panelist"
     HR = "HR"
     System = "System"
+    
+    
+    
+# ------------ Job Settings specific enums --------------
+class RescoreOnRubricChange(str,enum.Enum):
+    ALL = "all"
+    ONLY_NEW = "only_new"
+    NONE = "none"
+    
+    
+class AutoMoveSettingsEnum(str,enum.Enum):
+    BOTH = "both_panel_and_ai"
+    PANEL = "panel_only"
+    AI = "ai_only"
+    MANUAL = "hr_manual"

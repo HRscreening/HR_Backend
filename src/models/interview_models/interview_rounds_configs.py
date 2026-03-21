@@ -76,6 +76,6 @@ class Interview_Round_Configs(Base):
     
     job = relationship("Job", back_populates="interview_round_configs")
     interviews = relationship("Interview", back_populates="round_config")
-    panelists = relationship("Panelist",back_populates="round_config")
+    panelists = relationship("Panelist",back_populates="round_config",cascade="all, delete-orphan")
     slots = relationship("Interview_Slot", back_populates="round_config", cascade="all, delete-orphan")
     

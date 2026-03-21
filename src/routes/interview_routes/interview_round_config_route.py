@@ -17,12 +17,24 @@ async def get_round_configs(request: Request,job_id:str, interview_round_config_
     
     return round_configs
 
+
+
 @router.get("/get-round-config/{round_config_id}",status_code=status.HTTP_200_OK)
 async def get_round_config(request: Request,round_config_id:str, interview_round_config_service: InterviewRoundConfigService = Depends(get_interview_round_config_service)):
     user_id = request.state.user.id
     ctx_type = request.state.context.type
 
     round_config = await interview_round_config_service.get_interview_round_config_by_id(round_config_id=round_config_id)
+    
+    return round_config
+
+
+@router.delete("/delete-round-config/{round_config_id}",status_code=status.HTTP_200_OK)
+async def get_round_config(request: Request,round_config_id:str, interview_round_config_service: InterviewRoundConfigService = Depends(get_interview_round_config_service)):
+    user_id = request.state.user.id
+    ctx_type = request.state.context.type
+
+    round_config = await interview_round_config_service.delete_interview_round_config_by_id(round_config_id=round_config_id)
     
     return round_config
 

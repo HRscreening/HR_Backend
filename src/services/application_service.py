@@ -21,6 +21,7 @@ from src.repositories.interview_respositories.interview_round_configs_repository
 from src.repositories.interview_respositories.interview_event_repository import InterviewEventRepository
 from src.utils.jwt import JWTService,jwt_service
 from configs.env_config import FRONTEND_URL
+import asyncio
 
 class ApplicationService:
     def __init__(self, 
@@ -180,6 +181,10 @@ class ApplicationService:
             application = await self.application_repository.get_application_by_id(application_id=application_id)
             if not application:
                 raise DomainError(message="Application not found", status_code=404)
+            
+            if application.current_round != 0:
+                raise DomainError(message="Cannot change status of application which is already in interview rounds, status can only be changed when application is in initial round", status_code=400)
+            
             application.status = new_status
             await self.application_repository.db.commit()
             return {
@@ -321,13 +326,16 @@ class ApplicationService:
             candidate = application.candidate 
 
             # can also check phone number later if required
-            if not candidate or candidate.email is None:
-                raise DomainError(message="Candidate email not found,Please add candidate email before moving to next round", status_code=400)
+            if not candidate:
+                raise DomainError(message="Candidate not exist,Please Contact Support Team", status_code=400)
+            
+            if not candidate.email:
+                raise DomainError(message="Candidate email not found for this application,Please First Add it", status_code=424)   # status code 424 Failed Dependency can be used when prerequisite information is missing and needs to be provided before the request can be processed.
             
             round_config = await self.interview_round_config_repository.get_interview_round_config_by_job_and_round(job_id=job_id, round_number=round_number)
             
             if not round_config:
-                raise DomainError(message="There is no round config for this round,Add config first", status_code=408)
+                raise DomainError(message="There is no round config for this round,Add config first", status_code=425)  # status code 425 Too Early can be used when prerequisite information is missing and needs to be provided before the request can be processed.
             
             # ! not using  applicaion current_round field directly to validate if the move is valid or not, as sometimes application current_round can be out of sync with actual interview rounds created for the application, so validating based on actual interview rounds created and application current round both to make it more robust.
             
@@ -373,52 +381,85 @@ class ApplicationService:
             )
             
             # ! should we also check slot repository for available slot or rely on slot_available flag | when candidate choose slot we maintain this flag that time if error occurs then we will implement this
-            
-            if not round_config.slots_available:
-                raise DomainError(message="Cannot move application to this round as slots are not yet available,Please wait for panelist to give slots or request them for slots", status_code=411)
-                
-                
-                
-            await self.db.refresh(application, ["candidate"])
-            candidate = application.candidate
-            if not candidate or not candidate.email:
-                raise DomainError("Candidate email not found for this application", status_code=400)
-
-            remaining_seconds = (round_config.end_date - datetime.now(timezone.utc)).total_seconds()
-            token_expiry_min = max(60, int(remaining_seconds // 60))
-
-            booking_token = self.jwt_service.create_candidate_booking_token(
-                interview_id=str(new_interview.id),
-                candidate_email=candidate.email,
-                expiration_minutes=token_expiry_min,
-            )
-            new_interview.booking_token = booking_token
-            new_interview.booking_token_expires_at = datetime.now(timezone.utc) + timedelta(minutes=token_expiry_min)
-            new_interview.status = InterviewStatus.READY_TO_BOOK
-            
             application.current_round = round_number
-            await self.db.commit()
+            if not round_config.slots_available:
+                config = await self.interview_round_config_repository.get_interview_round_config_by_id(round_config.id)
+                if not config:
+                    raise DomainError("Interview round configuration not found.", status_code=404)
 
-            # Send email (best-effort, after commit)
-            booking_link = f"{self.frontend_url}/interview/book?token={booking_token}"
-            try:
-                await self.candidate_email_service.send_booking_link_email(
-                    candidate_email=candidate.email,
-                    candidate_name=candidate.full_name or candidate.email,
-                    interview_round_title=round_config.title,
-                    booking_link=booking_link,
-                )
-            except Exception as e:
-                self.logger.error(f"Failed to send booking link email: {e}")
+                if config.end_date < datetime.now(timezone.utc):
+                    raise DomainError("This Round has already ended", status_code=400)
 
-            self.logger.info(f"Slots available: Sent booking link to candidate for interview_id={new_interview.id}")
-        
-        
+                # Ask Panelist for new slots 
+                remaining_seconds = (config.end_date - datetime.now(timezone.utc)).total_seconds()
+
+                if remaining_seconds <= 0:
+                    raise DomainError("Round already expired")
+
+                token_expiry_in_min = max(1, int(remaining_seconds // 60))
                 
-            return {
-                "new_round": round_number,
-                "message":"Application moved to round successfully"
-                }
+                requested_panelist = await self.panelist_repository.request_panelist_for_availability(round_config.id, token_expiry_in_min)
+                
+                await self.db.commit()
+                if len(requested_panelist) != 0:
+                    await asyncio.gather(*[
+                            self.panel_email_service.send_slot_availability_email(
+                                panelist_email=panelist.email,
+                                panelist_name=panelist.name,
+                                interview_round_title=config.title,
+                                form_link=f"{self.frontend_url}/panelist/availability?token={panelist.availability_token}",
+                            )
+                            for panelist in requested_panelist
+                        ])
+                    self.logger.info(f"Sent slot availability email to panelists for round_config_id={round_config.id} and application_id={application_id}")
+
+                                    
+                        
+                return {
+                    "new_round": round_number,
+                    "message":"Application moved to round successfully.Panelists have been requested for availability and booking link will be sent to candidate once slot will be available."
+                    }
+                
+            else:             
+                await self.db.refresh(application, ["candidate"])
+                candidate = application.candidate
+                if not candidate or not candidate.email:
+                    raise DomainError("Candidate email not found for this application", status_code=400)
+
+                remaining_seconds = (round_config.end_date - datetime.now(timezone.utc)).total_seconds()
+                token_expiry_min = max(60, int(remaining_seconds // 60))
+
+                booking_token = self.jwt_service.create_candidate_booking_token(
+                    interview_id=str(new_interview.id),
+                    candidate_email=candidate.email,
+                    expiration_minutes=token_expiry_min,
+                )
+                new_interview.booking_token = booking_token
+                new_interview.booking_token_expires_at = datetime.now(timezone.utc) + timedelta(minutes=token_expiry_min)
+                new_interview.status = InterviewStatus.READY_TO_BOOK
+
+                await self.db.commit()
+
+                # Send email (best-effort, after commit)
+                booking_link = f"{self.frontend_url}/interview/book?token={booking_token}"
+                try:
+                    await self.candidate_email_service.send_booking_link_email(
+                        candidate_email=candidate.email,
+                        candidate_name=candidate.full_name or candidate.email,
+                        interview_round_title=round_config.title,
+                        booking_link=booking_link,
+                    )
+                except Exception as e:
+                    self.logger.error(f"Failed to send booking link email: {e}")
+
+                self.logger.info(f"Slots available: Sent booking link to candidate for interview_id={new_interview.id}")
+                
+                
+                    
+                return {
+                    "new_round": round_number,
+                    "message":"Application moved to round successfully"
+                    }
         except Exception as e:
             self.logger.error(f"Failed to move application to round for application_id={application_id} to round_number={round_number}: {str(e)}")
             await self.db.rollback()

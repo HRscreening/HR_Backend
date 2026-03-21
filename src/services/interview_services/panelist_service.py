@@ -10,7 +10,7 @@ from src.repositories.interview_respositories.interview_repository import Interv
 from src.services.email_services.panel.panel_email_service import PanelEmailService,panel_email_service
 from src.services.interview_services.slot_computation_service import SlotComputationService
 from src.utils.jwt import jwt_service,JWTService
-from src.models.enums import PanelistResponseStatus, PanelMode, CalendarProvider,MeetingHostType,InterviewEventActor,InterviewEventType
+from src.models.enums import PanelistResponseStatus, PanelMode, CalendarProvider,MeetingHostType,InterviewEventActor,InterviewEventType,InterviewStatus
 from src.models import Interview_Slot
 from datetime import datetime, timezone, timedelta
 from src.services.interview_services.calendar_service import CalendarService
@@ -25,6 +25,7 @@ from datetime import datetime, timezone, date
 from uuid import UUID
 from typing import Optional
 from src.utils.time_helper import format_interview_time, format_interview_schedule
+import asyncio
 # Most of the methods needs optimization,but basic functionality is ready. Will iterate and optimize in next passes. 
 
 
@@ -461,6 +462,12 @@ class PanelistService:
                         f"PANEL mode: waiting for remaining panelists to submit for round_config {round_config_id}"
                     )
 
+                        
+            cand_interview_data = await self.interview_repository.send_booking_link_to_waiting_candidates(
+                round_config_id=round_config_id,token_expiry_in_min=expiry_minutes
+            )
+            
+            self.logger.info(f"Sending booking links to {len(cand_interview_data)} waiting candidates for round_config {round_config_id}")
             
             await self.db.commit()
             
@@ -472,12 +479,26 @@ class PanelistService:
                 validity_period=f"{round_config.end_date.astimezone().strftime('%Y-%m-%d %H:%M %Z')}",
             )
             
+            # Notify Waiting Candidates
+
+            await asyncio.gather(*[
+                self.candidate_email_service.send_booking_link_email(
+                    candidate_email=data["candidate_email"],
+                    candidate_name=data["candidate_full_name"],
+                    interview_round_title=round_config.title,
+                    booking_link=f"{self.frontend_url}/interview/book?token={data["booking_token"]}",
+                ) for data in cand_interview_data
+            ])
+            
+
+            
         except Exception as e:
             await self.db.rollback()
             self.logger.error(f"Error submitting panelist availability: {str(e)}")
             raise DomainError("An error occurred while submitting your availability. Please try again later.")
     
     
+
     
     async def edit_panelist_availability(self, availability_token: str, payload: EditSlotsPayload):
         try:
@@ -559,7 +580,30 @@ class PanelistService:
                     ],
                 )
             panelist.response_status = PanelistResponseStatus.SUBMITTED  # In case they are editing before initial submission
+            
+            now = get_current_utc_time()
+            expiry_time = round_config.end_date
+            expiry_minutes = int((expiry_time - now).total_seconds() / 60)
+            
+            cand_interview_data = await self.interview_repository.send_booking_link_to_waiting_candidates(
+                round_config_id=round_config_id,token_expiry_in_min=expiry_minutes
+            )
+            
+            self.logger.info(f"Sending booking links to {len(cand_interview_data)} waiting candidates for round_config {round_config_id}")
+            
+            
             await self.db.commit()
+            
+            
+            await asyncio.gather(*[
+                self.candidate_email_service.send_booking_link_email(
+                    candidate_email=data["candidate_email"],
+                    candidate_name=data["candidate_full_name"],
+                    interview_round_title=round_config.title,
+                    booking_link=f"{self.frontend_url}/interview/book?token={data["booking_token"]}",
+                ) for data in cand_interview_data
+            ])
+            
 
         except DomainError:
             await self.db.rollback()

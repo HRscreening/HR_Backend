@@ -1,6 +1,7 @@
 # IMPORTANT: import all models so Alembic can detect them
 from src.models.user_model import User
 from src.models.organization_model import Organization
+from src.models.job_settings_model import JobSetting
 from src.models.job_model import Job
 from src.models.candidate_model import Candidate
 from src.models.application_model import Application
@@ -19,11 +20,11 @@ from src.models.interview_models.panelist_model import Panelist
 from src.models.interview_models.interview_slots import Interview_Slot
 from src.models.interview_models.calendar_connections import CalendarConnection
 
-
 __all__ = [
     "User",
     "Organization",
     "Job",
+    "JobSetting",
     "Candidate",
     "Application",
     "Resume",

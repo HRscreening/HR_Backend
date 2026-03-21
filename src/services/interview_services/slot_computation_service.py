@@ -246,12 +246,13 @@ class SlotComputationService:
 
         if not slot_lists or any(len(s) == 0 for s in slot_lists):
             # At least one panelist has no slots
-            await self.event_repo.create_interview_event(
-                interview_id=str(trigger_interview_id),
-                event_type="SLOT_COMPUTATION_FAILED",
-                actor="system",
-                details={"reason": "One or more panelists provided no available slots", "panel_mode": "panel"},
-            )
+            # await self.event_repo.create_interview_event(
+            #     interview_id=str(trigger_interview_id),
+            #     event_type="SLOT_COMPUTATION_FAILED",
+            #     actor="system",
+            #     summary="Panelist with no available slots",
+            #     details={"reason": "One or more panelists provided no available slots", "panel_mode": "panel"},
+            # )
             logger.warning(f"Slot computation failed for round_config {round_config.id}: empty panelist slots")
             return False
 
@@ -260,12 +261,13 @@ class SlotComputationService:
         discrete_slots = split_into_slots(intersected, duration_minutes)
 
         if not discrete_slots:
-            await self.event_repo.create_interview_event(
-                interview_id=str(trigger_interview_id),
-                event_type="SLOT_COMPUTATION_FAILED",
-                actor="system",
-                details={"reason": "No common time slots found across all panelists", "panel_mode": "panel"},
-            )
+            # await self.event_repo.create_interview_event(
+            #     interview_id=str(trigger_interview_id),
+            #     event_type="SLOT_COMPUTATION_FAILED",
+            #     actor="system",
+            #     summary="No common slots across panelists",
+            #     details={"reason": "No common time slots found across all panelists", "panel_mode": "panel"},
+            # )
             logger.warning(f"No intersecting slots for round_config {round_config.id}")
             return False
 
@@ -284,13 +286,14 @@ class SlotComputationService:
         # Set flag
         round_config.slots_available = True
 
-        # Timeline event
-        await self.event_repo.create_interview_event(
-            interview_id=str(trigger_interview_id),
-            event_type="SLOT_COMPUTATION_SUCCESS",
-            actor="system",
-            details={"slot_count": len(discrete_slots), "panel_mode": "panel"},
-        )
+        # # Timeline event
+        # await self.event_repo.create_interview_event(
+        #     interview_id=str(trigger_interview_id),
+        #     event_type="SLOT_COMPUTATION_SUCCESS",
+        #     actor="system",
+        #     summary="Slots computed successfully",
+        #     details={"slot_count": len(discrete_slots), "panel_mode": "panel"},
+        # )
 
         logger.info(f"PANEL mode: {len(discrete_slots)} slots written for round_config {round_config.id}")
 
@@ -331,12 +334,12 @@ class SlotComputationService:
             total_slots += len(discrete_slots)
 
         if total_slots == 0:
-            await self.event_repo.create_interview_event(
-                interview_id=str(trigger_interview_id),
-                event_type="SLOT_COMPUTATION_FAILED",
-                actor="system",
-                details={"reason": "No panelists had compute-able slots", "panel_mode": "sequential"},
-            )
+            # await self.event_repo.create_interview_event(
+            #     interview_id=str(trigger_interview_id),
+            #     event_type="SLOT_COMPUTATION_FAILED",
+            #     actor="system",
+            #     details={"reason": "No panelists had compute-able slots", "panel_mode": "sequential"},
+            # )
             return False
 
         if failed_panelists:
@@ -346,16 +349,16 @@ class SlotComputationService:
 
         round_config.slots_available = True
 
-        await self.event_repo.create_interview_event(
-            interview_id=str(trigger_interview_id),
-            event_type="SLOT_COMPUTATION_SUCCESS",
-            actor="system",
-            details={
-                "slot_count": total_slots,
-                "panel_mode": "sequential",
-                "failed_panelists": failed_panelists,
-            },
-        )
+        # await self.event_repo.create_interview_event(
+        #     interview_id=str(trigger_interview_id),
+        #     event_type="SLOT_COMPUTATION_SUCCESS",
+        #     actor="system",
+        #     details={
+        #         "slot_count": total_slots,
+        #         "panel_mode": "sequential",
+        #         "failed_panelists": failed_panelists,
+        #     },
+        # )
 
         logger.info(f"SEQUENTIAL mode: {total_slots} slots written for round_config {round_config.id}")
 
@@ -464,11 +467,11 @@ class SlotComputationService:
             except Exception as e:
                 logger.error(f"Failed to send booking email to {candidate_email}: {e}")
 
-            await self.event_repo.create_interview_event(
-                interview_id=str(interview.id),
-                event_type="SLOT_BOOKING_LINK_SENT",
-                actor="system",
-                details={"candidate_email": candidate_email},
-            )
+            # await self.event_repo.create_interview_event(
+            #     interview_id=str(interview.id),
+            #     event_type="SLOT_BOOKING_LINK_SENT",
+            #     actor="system",
+            #     details={"candidate_email": candidate_email},
+            # )
 
         await self.db.flush()

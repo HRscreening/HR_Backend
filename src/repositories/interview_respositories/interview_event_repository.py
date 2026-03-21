@@ -15,13 +15,13 @@ class InterviewEventRepository:
     def __init__(self,db: AsyncSession):
         self.db = db
     
-    async def create_interview_event(self, interview_id: str, event_type: str, actor: str,summary:str ,details: dict = None) -> Interview_TimeLine_Events:
+    async def create_interview_event(self, interview_id: str, event_type: str, actor: str,summary:str | None ,details: dict = None) -> Interview_TimeLine_Events:
         """Creates a new interview timeline event."""
         interview_event = Interview_TimeLine_Events(
             interview_id=interview_id,
             event_type=event_type,
             actor=actor,
-            summary=summary,
+            summary=summary if summary else None,
             details=details    
         )
         self.db.add(interview_event)

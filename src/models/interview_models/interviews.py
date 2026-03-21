@@ -60,7 +60,8 @@ class Interview(Base):
     rescheduling_token = Column(TEXT, nullable=True)  # Token for interview rescheduling
     rescheduling_token_expires_at = Column(DateTime(timezone=True), nullable=True)  # Expiration time for the rescheduling token
     
-    times_rescheduled = Column(Integer, default=0)  # Counter for how many times the interview has been rescheduled
+    times_rescheduled_by_panelist = Column(Integer, default=0)  # Counter for how many times the interview has been rescheduled
+    times_rescheduled_by_candidate = Column(Integer, default=0,nullable=False)  # Counter for how many times the interview has been rescheduled
     
     cancelled_at = Column(DateTime(timezone=True), nullable=True)  # Timestamp for when the interview was cancelled, if applicable
     cancellation_reason = Column(TEXT, nullable=True)  # Reason for cancellation, if applicable

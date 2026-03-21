@@ -117,3 +117,11 @@ class Job(Base):
         cascade="all, delete-orphan",
         order_by="Interview_Round_Configs.round_number",
     )
+    
+
+    setting = relationship(
+        "JobSetting",
+        back_populates="job",
+        uselist=False, 
+        cascade="all, delete-orphan"
+    )

@@ -21,7 +21,7 @@ from src.schemas.rubric_schemas import (
     UpdateRubricRequest,
     read_rubric_criteria,
 )
-from src.schemas.job_schemas import JobOverviewResponse,JobSettingsResposnse,JobSettings
+from src.schemas.job_schemas import JobOverviewResponse,JobSettingsResposnse,Job_Details
 from src.services.errors.base import DomainError
 from src.services.errors.user_errors import JobNotFound, RubricNotFound
 from src.services.errors.pipeline_errors import (
@@ -42,6 +42,7 @@ from configs.log_config import get_logger
 from src.repositories.document_repository import DocumentRepository
 from src.repositories.interview_respositories.interview_round_configs_repository  import InterviewRoundConfigsRepository 
 from src.utils.candidate_name import extract_candidate_full_name
+from src.dtos.job_settings_dto import ReminderSettingsDTO, PanelEscalationSettingsDTO, ReschedulingSettingsDTO,CreateJobSettingsDTO
 from uuid import UUID
 from sqlalchemy import select, func
 from src.models import Application, Score
@@ -778,13 +779,14 @@ class JobService:
         )
 
         response = []
-        for app, score in applications:
+        for app, score,latest_interview in applications:
             active_score = score if score else None
             resume = app.resume if app.resume else None
 
             app_data = {
                 "id": str(app.id),
                 "current_round": app.current_round,
+                "interview_status": latest_interview.status.value if latest_interview else None,
                 "is_starred": app.is_starred,
                 "denormalized_rank": app.denormalized_rank,
                 "is_flagged": app.is_flagged,
@@ -971,24 +973,59 @@ class JobService:
         
         
     async def get_job_settings(self, job_id: str) -> dict:
-        job = await self.job_repository.get_job_by_id(job_id)
-        if not job:
-            raise JobNotFound(status_code=404)
+        try:
+            job = await self.job_repository.get_job_by_id(job_id)
+            if not job:
+                raise JobNotFound(status_code=404)
 
+            settings = await self.job_repository.get_job_settings(job_id)
+            
 
-        return JobSettingsResposnse(
-                job_settings=JobSettings(
-                title=job.title,
-                location=job.location,
-                salary=job.salary,
-                status=_job_status_for_api(job.status),
-                description=job.description,
-                target_headcount=job.target_headcount,
-                manual_rounds_count=job.manual_rounds_count,
-                
-                ),
-            voice_ai_enabled=job.voice_ai_enabled,
-            is_confidential=job.is_confidential,
-            job_metadata=job.job_metadata,
-            closing_reason=job.closing_reason,
-        )
+            
+            print("job settings in service: ", settings)
+            # return settings
+            return JobSettingsResposnse(
+                    job_details=Job_Details(
+                    title=job.title,
+                    location=job.location,
+                    salary=job.salary,
+                    status=_job_status_for_api(job.status),
+                    description=job.description,
+                    target_headcount=job.target_headcount,
+                    manual_rounds_count=job.manual_rounds_count,
+                    job_metadata=job.job_metadata,
+                    closing_reason=job.closing_reason,
+                    ),
+                    settings=settings
+            )
+        except JobNotFound:
+            self.logger.warning("Job not found when fetching settings for job_id=%s", job_id)
+            raise
+
+    async def create_job_settings(self, job_id: str, settings: CreateJobSettingsDTO, user_id: str) -> dict:
+
+        try:
+            
+            job = await self.job_repository.get_job_by_id(job_id)
+            
+            if not job:
+                raise JobNotFound(status_code=404)
+            
+            existing_settings = await self.job_repository.get_job_settings(job_id)
+            
+            if existing_settings:
+                raise DomainError(
+                    message="Settings already exist for this job. Use update endpoint to modify.",
+                    status_code=400,
+                )
+            
+            await self.job_repository.create_job_settings(job_id,settings)
+            
+            await self.db.commit()
+   
+            return  "Job settings updated successfully"
+
+        except Exception as e:
+            await self.db.rollback()
+            self.logger.exception("Error updating job settings for %s: %s", job_id, e)
+            raise

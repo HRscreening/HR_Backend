@@ -3,7 +3,7 @@ from datetime import datetime
 from uuid import UUID
 from pydantic import BaseModel
 from enum import Enum
-
+from src.dtos.job_settings_dto import SettingsResponse
 
 class JobStatus(str, Enum):
     OPEN = "open"
@@ -202,7 +202,7 @@ class JobOverviewResponseNew(BaseModel):
     criteria: CriteriaOverview
     
     
-class JobSettings(BaseModel):
+class Job_Details(BaseModel):
     title:str
     description:Optional[str]
     location: Optional[str]
@@ -210,12 +210,11 @@ class JobSettings(BaseModel):
     status: JobStatus
     target_headcount: int
     manual_rounds_count: int
+    job_metadata: Optional[Dict[str, Any]]
+    closing_reason: Optional[str]
     
     
 class JobSettingsResposnse(BaseModel):
-    job_settings: JobSettings
-    voice_ai_enabled: bool
-    is_confidential: bool
-    job_metadata: Optional[Dict[str, Any]]
-    closing_reason: Optional[str]
+    job_details: Job_Details
+    settings : SettingsResponse | None = None
 

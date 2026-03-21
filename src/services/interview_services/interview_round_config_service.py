@@ -27,6 +27,20 @@ class InterviewRoundConfigService:
         
         self.frontend_url = FRONTEND_URL
         self.logger = get_logger("InterviewRoundConfigService") 
+    
+    def _get_expiry_time(self,end_date: datetime) -> int:
+        """Calculate remaining time until round end and return in minutes."""
+        now = datetime.now(timezone.utc)
+
+        if end_date < now:
+            raise DomainError("This round has already ended.", status_code=400)
+
+        remaining_seconds = (end_date - now).total_seconds()
+
+        if remaining_seconds <= 0:
+            raise DomainError("Round already expired.")
+
+        return max(1, int(remaining_seconds // 60))
         
         
     async def create_interview_round_config(self, job_id: str, config_data: CreateInterviewRoundConfigDTO):
@@ -66,7 +80,34 @@ class InterviewRoundConfigService:
                 )
 
             created_rounds = await self.interview_round_config_repository.bulk_create_interview_round_configs(job_id, data.rounds)
+            
+            tasks = []
+            
+            for created_row in created_rounds:
+                panelist_ids = [panel.id for panel in created_row.panelists]
+                expiry_time = self._get_expiry_time(created_row.end_date)
+                if panelist_ids:
+                    result = await self.panelist_repository.request_panelist_ids_for_availability(
+                            created_row.id,
+                            panelist_ids,
+                            token_expiry_in_min=expiry_time 
+                        )
+                    panelists = result["requested_panelists"]
+                    if panelists:
+                        tasks.extend([
+                            self.panel_email_service.send_slot_availability_email(
+                                panelist_email=p.email,
+                                panelist_name=p.name,
+                                interview_round_title=created_row.title,
+                                form_link=f"{self.frontend_url}/panelist/availability?token={p.availability_token}",
+                            )
+                            for p in panelists
+                        ])
+            
             await self.db.commit()
+            
+            if tasks:
+                await asyncio.gather(*tasks)
 
             self.logger.info(f"Bulk created {len(created_rounds)} round configs for job {job_id}")
             return created_rounds
@@ -110,36 +151,94 @@ class InterviewRoundConfigService:
             config = await self.interview_round_config_repository.get_interview_round_config_by_id_with_panelist(round_config_id)
             if not config:
                 raise DomainError("Interview round configuration not found.", status_code=404)
+            # config.panel_mode = 
             return config
         except Exception as e:
             self.logger.error(f"Error fetching interview round config {round_config_id}: {str(e)}")
             raise
 
 
-
-    async def update_interview_round_config(self, round_config_id: str, config_data: UpdateInterviewRoundConfigDTO):
+    async def delete_interview_round_config_by_id(self, round_config_id: str):
         try:
             config = await self.interview_round_config_repository.get_interview_round_config_by_id(round_config_id)
-            
             if not config:
                 raise DomainError("Interview round configuration not found.", status_code=404)
 
-            update_data = config_data.model_dump(exclude_none=True)
-            
-            # panelists is JSONB — full replacement when provided
-            if "panelists" in update_data:
-                update_data["panelists"] = [p.model_dump() for p in config_data.panelists]
-
-            for field, value in update_data.items():
-                setattr(config, field, value)
-
+            await self.interview_round_config_repository.delete_interview_round_config(round_config_id)
             await self.db.commit()
+            return {"message": "Interview round configuration deleted successfully."}
+        except Exception as e:
+            await self.db.rollback()
+            self.logger.error(f"Error deleting interview round config {round_config_id}: {str(e)}")
+            raise
+
+    async def update_interview_round_config(
+        self,
+        round_config_id: str,
+        config_data: UpdateInterviewRoundConfigDTO
+    ):
+        """Update interview round config and manage panelists in a single transaction."""
+        try:
+            config = await self.interview_round_config_repository.get_interview_round_config_by_id(round_config_id)
+
+            if not config:
+                raise DomainError("Interview round configuration not found.", status_code=404)
+
+            panelists = config_data.panelists  # ✅ keep as DTO objects
+            update_data = config_data.model_dump(exclude_none=True, exclude={"panelists"})
+
+            # ✅ Update fields first
+            for field, value in update_data.items():
+                if hasattr(config, field):
+                    setattr(config, field, value)
+            new_panelists = []
+            if panelists is not None:
+                if panelists.add:
+                    new_panelists = await self.panelist_repository.bulk_add_panelist_to_round_config(round_config_id, panelists.add)
+                    new_panlest_ids = [str(p.id) for p in new_panelists]
+                    
+                    now = datetime.now(timezone.utc)
+                    remaining_seconds = (config.end_date - now).total_seconds()
+
+                    if remaining_seconds <= 0:
+                        raise DomainError("Round already expired.")
+                    
+                    token_expiry_in_min = max(1, int(remaining_seconds // 60))
+                    await self.panelist_repository.request_panelist_ids_for_availability(
+                        round_config_id,
+                        new_panlest_ids,
+                        token_expiry_in_min=token_expiry_in_min
+                    )  # Request availability immediately for new panelists with 7 days token expiry
+                
+                if panelists.edit:
+                    await self.panelist_repository.bulk_update_panelists(round_config_id,panelists.edit)
+                    
+                if panelists.delete:
+                    print("Deleting panelists with ids:", panelists.delete)
+                    await self.panelist_repository.delete_panelists_by_ids(round_config_id,panelists.delete)
+                    
+            # ✅ Commit once
+            await self.db.commit()
+            await self.db.refresh(config)
             
+            if new_panelists:
+                # Send availability request emails to newly added panelists
+                await asyncio.gather(*[
+                    self.panel_email_service.send_slot_availability_email(
+                        panelist_email=p.email,
+                        panelist_name=p.name,
+                        interview_round_title=config.title,
+                        form_link=f"{self.frontend_url}/panelist/availability?token={p.availability_token}",
+                    )
+                    for p in new_panelists
+                ])
+
             return config
+
         except Exception as e:
             await self.db.rollback()
             self.logger.error(f"Error updating interview round config {round_config_id}: {str(e)}")
-            raise 
+            raise
              
     async def get_interview_round_configs_by_job(self, job_id: str):
         try:

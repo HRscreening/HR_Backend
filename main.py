@@ -20,7 +20,8 @@ from src.middlewares.verify_user import auth_required
 
 
 import logging
-from exception_handlers import domain_exception_handler
+from exception_handlers import domain_exception_handler, validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from src.services.errors.base import DomainError
 from configs.supabase_config import supabase
 import src.models
@@ -36,6 +37,7 @@ logging.basicConfig(level=logging.INFO)
 
 
 app.add_exception_handler(DomainError, domain_exception_handler)
+app.add_exception_handler(RequestValidationError, validation_exception_handler)
 
 app.add_middleware(
     CORSMiddleware,
