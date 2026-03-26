@@ -92,7 +92,7 @@ class InterviewRoundConfigService:
             self.logger.error(f"Error creating interview round config for job {job_id}: {str(e)}")
             raise 
 
-
+    # TODO: Opptimization needed
     async def bulk_create_interview_round_configs(self, data: BulkCreateInterviewRoundConfigDTO):
         """Create all rounds for a job in a single transaction."""
         job_id = data.job_id
@@ -111,7 +111,11 @@ class InterviewRoundConfigService:
                     f"Round number(s) {sorted(conflicts)} already exist for this job.",
                     status_code=400,
                 )
-
+            job_settings = await self.job_repository.get_job_settings(data.job_id) 
+            
+            if not job_settings:
+                raise DomainError("Job settings not found for the job.", status_code=404)
+            
             created_rounds = await self.interview_round_config_repository.bulk_create_interview_round_configs(job_id, data.rounds)
             
             tasks = []
@@ -136,6 +140,22 @@ class InterviewRoundConfigService:
                             )
                             for p in panelists
                         ])
+                        
+
+                        panelist_reminder_settings = ReminderSettingsDTO.model_validate(job_settings.panel_reminders) if job_settings and job_settings.panel_reminders else None
+                        reminders_payload = self._create_form_reminder_payload_for_panelist(panelists, created_row, panelist_reminder_settings) if panelist_reminder_settings and panelist_reminder_settings.enabled else []
+                        
+                        if reminders_payload:
+                            reminders = await self.reminder_repository.create_reminders(reminders_payload)
+
+                            
+                            reminder_map = {str(r.id): r for r in reminders}
+                            enqueue_payloads = [EnqueueReminderPayload(reminder_id=r.id,run_at=r.next_run_at)for r in reminders]
+                            enqueue_results = await self.email_producer.enqueue_reminder_email_task(enqueue_payloads)
+
+                            for res in enqueue_results:
+                                if res.status == "success":
+                                    reminder_map[str(res.reminder_id)].worker_job_id = res.job_id 
             
             await self.db.commit()
             

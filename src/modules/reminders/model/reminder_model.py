@@ -27,6 +27,7 @@ class Reminder(Base):
 
     status = Column(SQLEnum(ReminderStatus, name="reminder_status_enum",values_callable=lambda obj: [e.value for e in obj]), default=ReminderStatus.PENDING, nullable=False)
 
+    #TODO: can be removed as keeping the worker_job_id = reminder_id for now for easy tracking and management of reminders. Can be used in future for grouping of reminders if needed.
     worker_job_id = Column(String, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
