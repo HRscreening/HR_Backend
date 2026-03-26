@@ -102,4 +102,51 @@ class CandidateEmailService(BaseEmailService):
         except Exception as e:
             self.logger.error(f"Failed to send interview rescheduling email to {candidate_email}: {e}")
             raise
+        
+        
+    async def send_booking_link_reminder_email(
+        self,
+        candidate_email: str,
+        candidate_name: str,
+        interview_round_title: str,
+        booking_link: str,
+    ):
+        subject = f"Reminder: Book Your Interview Slot — {interview_round_title}"
+        body = self.templates.get_booking_link_reminder_email_template(
+            candidate_name=candidate_name,
+            interview_round_title=interview_round_title,
+            booking_link=booking_link,
+        )
+        try:
+            await self.send_email(receiver_email=candidate_email, subject=subject, body=body)
+            self.logger.info(f"Sent booking link reminder email to {candidate_email}")
+        except Exception as e:
+            self.logger.error(f"Failed to send booking link reminder email to {candidate_email}: {e}")
+            raise
+        
+    async def send_interview_reminder_email(
+        self,
+        candidate_email: str,
+        candidate_name: str,
+        interview_round_title: str,
+        scheduled_start,
+        scheduled_end,
+        meet_link: str | None = None,
+        reschedule_link: str | None = None,
+    ):
+        subject = f"Reminder: Upcoming Interview — {interview_round_title}"
+        body = self.templates.get_interview_reminder_email_template(
+            candidate_name=candidate_name,
+            interview_round_title=interview_round_title,
+            scheduled_start=_format_dt_for_email(scheduled_start),
+            scheduled_end=_format_dt_for_email(scheduled_end),
+            meet_link=meet_link,
+            reschedule_link=reschedule_link,
+        )
+        try:
+            await self.send_email(receiver_email=candidate_email, subject=subject, body=body)
+            self.logger.info(f"Sent interview reminder email to {candidate_email}")
+        except Exception as e:
+            self.logger.error(f"Failed to send interview reminder email to {candidate_email}: {e}")
+            raise
 

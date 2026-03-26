@@ -13,13 +13,13 @@ from datetime import datetime, timedelta, timezone
 from src.services.errors.base import DomainError
 from typing import List
 
-from src.dependency.services.helper_services import JWTService,get_jwt_service
+from src.utils.jwt import JWTService
 
 
 class PanelistRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
-        self.jwt_service : JWTService = get_jwt_service()
+        self.jwt_service : JWTService = JWTService()
 
     async def add_panelists(
         self,
@@ -224,16 +224,19 @@ class PanelistRepository:
     async def get_all_panelists_by_round_config_id_and_not_status(
         self,
         round_config_id: str,
-        status:PanelistResponseStatus
+        status:PanelistResponseStatus,
+        exclude_deleted: bool = True
+        
     ) -> List[Panelist]:
         
         """Get all panelists for a round config who are not with the given status."""
 
-        result = await self.db.execute(
-            select(Panelist)
-            .where(Panelist.round_config_id == round_config_id,Panelist.response_status != status)
-        )
-
+        stmt = select(Panelist).where(Panelist.round_config_id == round_config_id,Panelist.response_status != status)
+       
+        if exclude_deleted:
+            stmt = stmt.where(Panelist.is_deleted.is_(False))
+       
+        result = await self.db.execute(stmt)
         return result.scalars().all()
 
     async def get_all_panelists_by_round_config_id_and_statuses(

@@ -9,10 +9,10 @@ from src.modules.interviews.services import *
 
 from src.modules.oauth.oauth_service import OAuthService
 from src.modules.oauth.providers.Calendar_provider_service import GoogleCalendarOAuthService
+from src.modules.reminders.reminder_service import ReminderAPIService, ReminderWorkerService
 from src.dependency.repositories.repositories import *
 from src.dependency.services.helper_services import *
-
-
+from src.modules.interviews.repositories import *
 
 
 def get_auth_service(
@@ -56,16 +56,24 @@ def get_application_service(
     panelist_repository: PanelistRepository = Depends(get_panelist_repository),
     interview_repository: InterviewRepository = Depends(get_interview_repository),
     job_repository: JobRepository = Depends(get_job_repository),
+    email_producer: EmailProducer = Depends(get_email_producer),
+    reminder_repository: ReminderRepository = Depends(get_reminder_repository),
+    candidate_email_service: CandidateEmailService = Depends(get_candidate_email_service),
+    panel_email_service: PanelEmailService = Depends(get_panel_email_service),
     db: AsyncSession = Depends(get_db)
 ):
     return ApplicationService(
         application_repository,
         candidate_repository,
-        interview_event_repository,
-        interview_round_config_repository,
-        panelist_repository,
         interview_repository,
+        panelist_repository,
+        interview_round_config_repository,
+        interview_event_repository,
         job_repository,
+        panel_email_service,
+        candidate_email_service,
+        reminder_repository,
+        email_producer,
         db
     )
 
@@ -115,6 +123,9 @@ def get_interview_round_config_service(
     interview_event_repository: InterviewEventRepository = Depends(get_interview_event_repository),
     panelist_repository: PanelistRepository = Depends(get_panelist_repository),
     panel_email_service: PanelEmailService = Depends(get_panel_email_service),
+    job_repository: JobRepository = Depends(get_job_repository),
+    email_producer: EmailProducer = Depends(get_email_producer),
+    reminder_repository: ReminderRepository = Depends(get_reminder_repository),
     db: AsyncSession = Depends(get_db),
 ):
     return InterviewRoundConfigService(
@@ -122,7 +133,10 @@ def get_interview_round_config_service(
         interview_event_repository,
         panelist_repository,
         panel_email_service,
-        db,
+        job_repository,
+        email_producer,
+        reminder_repository,
+        db
     )
 
 
@@ -137,6 +151,9 @@ def get_interview_service(
     application_repository: ApplicationRepository = Depends(get_application_repository),
     panel_email_service: PanelEmailService = Depends(get_panel_email_service),
     candidate_email_service: CandidateEmailService = Depends(get_candidate_email_service),
+    job_repository: JobRepository = Depends(get_job_repository),
+    email_producer: EmailProducer = Depends(get_email_producer),
+    reminder_repository: ReminderRepository = Depends(get_reminder_repository),
     db: AsyncSession = Depends(get_db),
 ):
     return InterviewService(
@@ -150,6 +167,9 @@ def get_interview_service(
         application_repository,
         panel_email_service,
         candidate_email_service,
+        job_repository,
+        reminder_repository,
+        email_producer,
         db,
     )
 
@@ -165,6 +185,9 @@ def get_panelist_service(
     calendar_service: CalendarService = Depends(get_calendar_service),
     panel_email_service: PanelEmailService = Depends(get_panel_email_service),
     candidate_email_service: CandidateEmailService = Depends(get_candidate_email_service),
+    job_repository: JobRepository = Depends(get_job_repository),
+    email_producer: EmailProducer = Depends(get_email_producer),
+    reminder_repository: ReminderRepository = Depends(get_reminder_repository),
     db: AsyncSession = Depends(get_db),
 ):
     return PanelistService(
@@ -173,10 +196,25 @@ def get_panelist_service(
         interview_repository,
         panelist_repository,
         slots_repository,
-        application_repository,
         calendar_repository,
+        application_repository,
         calendar_service,
         panel_email_service,
         candidate_email_service,
+        job_repository,
+        email_producer,
+        reminder_repository,
         db,
     )
+
+
+def get_reminder_worker_service(
+    reminder_repository: ReminderRepository = Depends(get_reminder_repository),
+    notification_service: NotificationService = Depends(get_notification_service),
+    db: AsyncSession = Depends(get_db),
+):
+    return ReminderWorkerService(
+        reminder_repository=reminder_repository,
+        notification_service=notification_service,
+        db=db
+        )

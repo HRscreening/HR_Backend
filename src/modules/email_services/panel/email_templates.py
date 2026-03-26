@@ -458,4 +458,138 @@ class PanelEmailTemplates:
 
         return _base_html(content)
     
+    @staticmethod
+    def get_panelist_reminder_email_template(
+        panelist_name: str | None,
+        interview_round_title: str,
+        form_link: str,
+    ) -> str:
+        """Reminder email asking panelist to fill availability form."""
+
+        greeting = panelist_name if panelist_name else "Sir/Madam"
+
+        content = f"""
+            <p style="margin:0 0 16px;font-size:15px;color:#374151;line-height:1.7;">
+            Dear <strong>{greeting}</strong>,
+            </p>
+
+            <p style="margin:0 0 16px;font-size:15px;color:#374151;line-height:1.7;">
+            This is a gentle reminder to submit your availability for the 
+            <strong style="color:#4f46e5;">{interview_round_title}</strong> round.
+            </p>
+
+            <p style="margin:0 0 12px;font-size:15px;color:#374151;line-height:1.7;">
+            We have not yet received your preferred time slots. Kindly fill out the availability form
+            at your earliest convenience so we can proceed with scheduling.
+            </p>
+
+            {_cta_button(form_link, "Submit Availability &rarr;")}
+
+            <p style="margin:16px 0 12px;font-size:14px;color:#6b7280;line-height:1.7;">
+            Your response is important for timely scheduling. If you have already submitted the form,
+            please ignore this message.
+            </p>
+
+            <p style="margin:24px 0 0;font-size:15px;color:#374151;line-height:1.7;">
+            Thank you for your time and support.<br/>
+            <strong>HR Team</strong>
+            </p>
+        """
+
+        return _base_html(content)
+        
+        
+    @staticmethod
+    def get_panelist_interview_reminder_template(
+        panelist_name: str | None,
+        candidate_name: str,
+        interview_round_title: str,
+        interview_date=str,
+        interview_time=str,
+        meet_link: str | None = None,
+        reschedule_link: str | None = None,
+    ) -> str:
+        """Reminder email for upcoming scheduled interview."""
+
+        greeting = panelist_name if panelist_name else "Sir/Madam"
+
+        meet_section = ""
+        if meet_link:
+            meet_section = f"""
+            <p style="margin:12px 0;font-size:14px;color:#374151;">
+                <strong>Meeting Link:</strong><br/>
+                <a href="{meet_link}" style="color:#4f46e5;text-decoration:none;">
+                    Join Interview
+                </a>
+            </p>
+            """
+
+        reschedule_section = ""
+        if reschedule_link:
+            reschedule_section = f"""
+            <p style="margin:12px 0;font-size:14px;color:#6b7280;">
+                If you need to reschedule, please use the link below:<br/>
+                <a href="{reschedule_link}" style="color:#4f46e5;text-decoration:none;">
+                    Reschedule Interview
+                </a>
+            </p>
+            """
+
+        content = f"""
+            <p style="margin:0 0 16px;font-size:15px;color:#374151;line-height:1.7;">
+            Dear <strong>{greeting}</strong>,
+            </p>
+
+            <p style="margin:0 0 16px;font-size:15px;color:#374151;line-height:1.7;">
+            This is a reminder for your upcoming interview scheduled for the 
+            <strong style="color:#4f46e5;">{interview_round_title}</strong> round.
+            </p>
+
+            <table role="presentation" cellpadding="0" cellspacing="0"
+                style="width:100%;margin-bottom:20px;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;">
+
+                <tr>
+                    <td style="padding:12px 16px;background-color:#f9fafb;font-size:13px;color:#6b7280;font-weight:600;width:120px;border-bottom:1px solid #e5e7eb;">
+                    Candidate
+                    </td>
+                    <td style="padding:12px 16px;font-size:14px;color:#374151;border-bottom:1px solid #e5e7eb;">
+                    {candidate_name}
+                    </td>
+                </tr>
+
+                <tr>
+                    <td style="padding:12px 16px;background-color:#f9fafb;font-size:13px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;">
+                    Date
+                    </td>
+                    <td style="padding:12px 16px;font-size:14px;color:#374151;border-bottom:1px solid #e5e7eb;">
+                    {interview_date}
+                    </td>
+                </tr>
+                <tr>
+                    <td style="padding:12px 16px;background-color:#f9fafb;font-size:13px;color:#6b7280;font-weight:600;border-bottom:1px solid #e5e7eb;">
+                    Time
+                    </td>
+                    <td style="padding:12px 16px;font-size:14px;color:#374151;border-bottom:1px solid #e5e7eb;">
+                    {interview_time}
+                    </td>
+                </tr>
+
+            </table>
+
+            {meet_section}
+
+            <p style="margin:0 0 12px;font-size:14px;color:#6b7280;line-height:1.7;">
+            Please ensure you are available at the scheduled time. Kindly join a few minutes early.
+            </p>
+
+            {reschedule_section}
+
+            <p style="margin:24px 0 0;font-size:15px;color:#374151;line-height:1.7;">
+            Thank you,<br/>
+            <strong>HR Team</strong>
+            </p>
+        """
+
+        return _base_html(content)
+        
 panelist_email_templates = PanelEmailTemplates()

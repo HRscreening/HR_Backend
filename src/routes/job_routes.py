@@ -25,12 +25,13 @@ from fastapi import (
     File,
     UploadFile,
     BackgroundTasks,
+    Body,
     Query,
 )
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
-
+from typing import Dict, Any
 from configs.postgress_db import get_db
 from src.schemas.rubric_schemas import SetRubricRequest, UpdateRubricRequest, GenerateRubricPreviewRequest
 from src.schemas.job_schemas import JobOverviewResponseNew, RubricVersionsResponse
@@ -38,7 +39,7 @@ from src.services.resume_services import score_resumes_service
 from src.dependency import get_job_service, JobService, get_application_service
 from src.services.application_service import ApplicationService
 from src.utils.file_manager import fileManager
-from src.dtos.job_settings_dto import ReminderSettingsDTO, PanelEscalationSettingsDTO, ReschedulingSettingsDTO,CreateJobSettingsDTO
+from src.dtos.job_settings_dto import CreateJobSettingsDTO,UpdateJobSettingsDTO
 
 router = APIRouter(prefix="/api/jobs", tags=["Job Management"])
 
@@ -456,6 +457,15 @@ async def get_job_settings(
 ):
     settings = await job_service.get_job_settings(str(job_id))
     return settings
+
+
+@router.patch("/{job_id}/edit-settings", status_code=status.HTTP_200_OK)
+async def update_job_settings(
+    job_id: UUID,
+    payload: UpdateJobSettingsDTO,
+    job_service: JobService = Depends(get_job_service)
+):
+    return await job_service.update_job_settings(str(job_id), payload)
 
 @router.post("/create-settings/{job_id}", status_code=status.HTTP_201_CREATED)
 async def create_job_settings(

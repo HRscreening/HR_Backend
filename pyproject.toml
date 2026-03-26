@@ -17,6 +17,7 @@ dependencies = [
     "dotenv>=0.9.9",
     "email-validator>=2.3.0",
     "fastapi>=0.128.0",
+    "fastapi-mail>=1.6.2",
     "jwt>=1.4.0",
     "langchain>=1.2.7",
     "langchain-google-genai>=4.2.0",

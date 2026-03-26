@@ -16,7 +16,7 @@ from configs.env_config import FRONTEND_URL
 
 from src.modules.interviews.models import Interview_Slot, Panelist,Interview
 from src.modules.interviews.repositories import InterviewSlotsRepository, InterviewRoundConfigsRepository, InterviewRepository, InterviewEventRepository
-from src.dependency.services.helper_services import JWTService, get_jwt_service
+from src.utils.jwt import JWTService
 from src.models.enums import InterviewStatus
 
 from src.modules.email_services.services import CandidateEmailService
@@ -127,7 +127,7 @@ class SlotComputationService:
         self.interview_repo = interview_repo
         self.event_repo = event_repo
         self.db = db
-        self.jwt_service: JWTService = get_jwt_service()
+        self.jwt_service: JWTService = JWTService()
         self.candidate_email_service: CandidateEmailService = candidate_email_service
         self.frontend_url = FRONTEND_URL
 

@@ -10,7 +10,14 @@ from src.repositories.org_repository import OrganizationRepository
 from src.repositories.batch_repositoy import BatchRepository
 from src.repositories.candidiate_repository import CandidateRepository
 
-from src.modules.interviews.repositories import *
+from src.modules.interviews.repositories.calendar_repository import CalendarRepository
+from src.modules.interviews.repositories.interview_event_repository import InterviewEventRepository
+from src.modules.interviews.repositories.interview_repository import InterviewRepository
+from src.modules.interviews.repositories.interview_round_configs_repository import InterviewRoundConfigsRepository
+from src.modules.interviews.repositories.interview_slots_repository import InterviewSlotsRepository
+from src.modules.interviews.repositories.panelist_repository import PanelistRepository
+
+from src.modules.reminders.reminder_repository import ReminderRepository
 from src.dependency.services.helper_services import *
 
 
@@ -60,3 +67,6 @@ def get_interview_slots_repository(db: AsyncSession = Depends(get_db)):
 def get_calendar_repository(db: AsyncSession = Depends(get_db),):
     return CalendarRepository(db)
 
+
+def get_reminder_repository(db: AsyncSession = Depends(get_db)):
+    return ReminderRepository(db)

@@ -8,7 +8,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional,List
 from src.models.enums import InterviewStatus
 from configs.log_config import get_logger
-from src.dependency.services.helper_services import JWTService, get_jwt_service
+from src.utils.jwt import JWTService
 
 
 
@@ -17,7 +17,7 @@ from src.dependency.services.helper_services import JWTService, get_jwt_service
 class InterviewRepository:
     def __init__(self,db: AsyncSession):
         self.db = db
-        self.jwt_service : JWTService = get_jwt_service()
+        self.jwt_service : JWTService = JWTService()
         self.logger = get_logger("InterviewRepository")
     
     async def create_interview(self, round_config_id: str,application_id: str,round_number:int ) -> Interview:

@@ -15,30 +15,30 @@ class ReminderSettingsDTO(BaseModel):
     enabled: bool = Field(default=True)
 
     form_reminder_count: int = Field(..., example=3)
-    form_reminder_hours: List[int] = Field(
+    form_reminder_sec: List[int] = Field(
         ..., example=[24, 12, 1],
         description="Hours AFTER form link is shared"
     )
 
     interview_reminder_count: int = Field(..., example=3)
-    interview_reminder_hours: List[int] = Field(
+    interview_reminder_sec: List[int] = Field(
         ..., example=[24, 12, 1],
         description="Hours BEFORE interview"
     )
 
     @model_validator(mode="after")
     def validate_reminders(self):
-        if self.form_reminder_count != len(self.form_reminder_hours):
+        if self.form_reminder_count != len(self.form_reminder_sec):
             raise ValueError("Form count must match number of timings")
 
-        if self.interview_reminder_count != len(self.interview_reminder_hours):
+        if self.interview_reminder_count != len(self.interview_reminder_sec):
             raise ValueError("Interview count must match number of timings")
 
-        if sorted(self.form_reminder_hours, reverse=True) != self.form_reminder_hours:
-            raise ValueError("Form timings must be in descending order")
+        # if sorted(self.form_reminder_hours, reverse=True) != self.form_reminder_hours:
+        #     raise ValueError("Form timings must be in descending order")
 
-        if sorted(self.interview_reminder_hours, reverse=True) != self.interview_reminder_hours:
-            raise ValueError("Interview timings must be in descending order")
+        # if sorted(self.interview_reminder_hours, reverse=True) != self.interview_reminder_hours:
+        #     raise ValueError("Interview timings must be in descending order")
 
         return self
     
@@ -52,9 +52,6 @@ class PanelEscalationSettingsDTO(BaseModel):
         description="Emails to notify on escalation"
     )
     
-from pydantic import BaseModel, Field, model_validator
-
-
 
 
 class ReschedulingSettingsDTO(BaseModel):
@@ -63,7 +60,8 @@ class ReschedulingSettingsDTO(BaseModel):
     panelist_rescheduling_allowed: bool = Field(default=True)
     candidate_rescheduling_allowed: bool = Field(default=True)
 
-    min_hours_before_interview_to_reschedule: int = Field(default=24, ge=0)
+    reschedule_window_for_panelist: int = Field(default=86400, ge=0) # second
+    reschedule_window_for_candidate: int = Field(default=86400, ge=0) # second
 
     no_show_action:no_show_action_enum  = "reject_candidate"
     no_show_grace_minutes: int = Field(default=15, ge=0)
@@ -117,3 +115,66 @@ class SettingsResponse(CreateJobSettingsDTO):
     model_config = {
         "from_attributes": True
     }
+    
+class GeneralSettingsDTO(BaseModel):
+    voice_ai_enabled: bool = Field(default=False)
+    is_confidential: bool = Field(default=False)
+
+    auto_score_every_resume: bool = Field(default=False)
+    auto_score_every_resume_on_manual_upload: bool = Field(default=False)
+    auto_offer_enabled: bool = Field(default=False)
+    ai_assessment_enabled: bool = Field(default=False)
+    
+    rescore_on_rubric_change: rescore_on_rubric_change_enum = "only_new"
+    auto_move_to_next_round: auto_move_to_next_round_enum = "panel_only"
+    
+    
+class UpdateJobSettingsDTO(BaseModel):
+    general: Optional[GeneralSettingsDTO] = None
+    panel_reminders: Optional[ReminderSettingsDTO] = None
+    candidate_reminders: Optional[ReminderSettingsDTO] = None
+    feedback_reminders:  Optional[ReminderSettingsDTO] = None
+    escalation: Optional[PanelEscalationSettingsDTO] = None
+    rescheduling: Optional[ReschedulingSettingsDTO] = None
+    
+    
+    
+    @model_validator(mode="after")
+    def validate_settings(self):
+
+        # ✅ At least one field required
+        if not any([
+            self.general,
+            self.panel_reminders,
+            self.candidate_reminders,
+            self.feedback_reminders,
+            self.escalation,
+            self.rescheduling
+        ]):
+            raise ValueError("At least one field must be provided for update")
+
+        # ✅ Panel reminders
+        if self.panel_reminders:
+            if not self.panel_reminders.enabled and (
+                self.panel_reminders.form_reminder_count > 0 or
+                self.panel_reminders.interview_reminder_count > 0
+            ):
+                raise ValueError("Panel reminders disabled but counts > 0")
+
+        # ✅ Candidate reminders
+        if self.candidate_reminders:
+            if not self.candidate_reminders.enabled and (
+                self.candidate_reminders.form_reminder_count > 0 or
+                self.candidate_reminders.interview_reminder_count > 0
+            ):
+                raise ValueError("Candidate reminders disabled but counts > 0")
+
+        # ✅ Feedback reminders
+        if self.feedback_reminders:
+            if not self.feedback_reminders.enabled and (
+                self.feedback_reminders.form_reminder_count > 0 or
+                self.feedback_reminders.interview_reminder_count > 0
+            ):
+                raise ValueError("Feedback reminders disabled but counts > 0")
+
+        return self

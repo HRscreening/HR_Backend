@@ -171,3 +171,80 @@ class PanelEmailService(BaseEmailService):
         except Exception as e:
             self.logger.error(f"Failed to send thanks for submitting availability email to {panelist_email}: {str(e)}")
 
+    
+    async def send_form_reminder_email_to_panelist(
+        self,
+        panelist_email: str,
+        panelist_name: str,
+        interview_round_title: str,
+        form_link: str
+    ):
+        subject = f"Reminder: Submit Availability for {interview_round_title}"
+
+        body = self.panelist_email_templates.get_panelist_reminder_email_template(
+            panelist_name=panelist_name,
+            interview_round_title=interview_round_title,
+            form_link=form_link
+        )
+
+        try:
+            await self.send_email(
+                receiver_email=panelist_email,
+                subject=subject,
+                body=body
+            )
+            self.logger.info(
+                f"Sent reminder email to {panelist_email} with subject '{subject}'"
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Failed to send reminder email to {panelist_email}: {str(e)}"
+            )
+            
+            
+    async def send_panelist_interview_reminder_email(
+        self,
+        panelist_email: str,
+        panelist_name: str | None,
+        candidate_name: str,
+        interview_round_title: str,
+        scheduled_start: datetime,
+        scheduled_end: datetime,
+        meet_link: str | None = None,
+        reschedule_link: str | None = None
+    ):
+        # Format datetime nicely (important!)
+        interview_date = _format_dt_for_email(scheduled_start).split(" at ")[0]
+        start = _to_ist(scheduled_start)
+        end = _to_ist(scheduled_end)
+        
+        start_time = start.strftime("%I:%M %p")
+        end_time = end.strftime("%I:%M %p")
+        interview_time = f"{start_time} – {end_time}"
+
+
+        subject = f"Reminder: Interview with {candidate_name} ({interview_round_title})"
+
+        body = self.panelist_email_templates.get_panelist_interview_reminder_template(
+            panelist_name=panelist_name,
+            candidate_name=candidate_name,
+            interview_round_title=interview_round_title,
+            interview_date=interview_date,
+            interview_time=interview_time,
+            meet_link=meet_link,
+            reschedule_link=reschedule_link
+        )
+
+        try:
+            await self.send_email(
+                receiver_email=panelist_email,
+                subject=subject,
+                body=body
+            )
+            self.logger.info(
+                f"Sent interview reminder to {panelist_email} with subject '{subject}'"
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Failed to send interview reminder to {panelist_email}: {str(e)}"
+            )

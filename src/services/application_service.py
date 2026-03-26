@@ -20,8 +20,14 @@ from src.repositories.job_repository import JobRepository
 
 from src.modules.email_services.services import CandidateEmailService, PanelEmailService
 from configs.env_config import FRONTEND_URL
-
-from src.dependency.services.helper_services import JWTService, get_jwt_service
+from src.modules.reminders.reminder_dtos import CreateReminderDTO
+from src.modules.notifications.notification_dtos import FormReminderPayloadDTO_Panel, InterviewReminderPayloadDTO_Panel, FormReminderPayloadDTO_Candidate, InterviewReminderPayloadDTO_Candidate
+from src.modules.reminders.model.reminder_enum import ReminderType, RecipientType, EntityType
+from datetime import timedelta
+from src.dtos.job_settings_dto import ReminderSettingsDTO,ReschedulingSettingsDTO
+from src.modules.reminders.reminder_repository import ReminderRepository
+from email_workers_async.email_tasks_producer import EmailProducer,EnqueueReminderPayload
+from src.utils.jwt import JWTService
 import asyncio
 
 class ApplicationService:
@@ -35,6 +41,8 @@ class ApplicationService:
         job_repository:JobRepository,
         panel_email_service:PanelEmailService,
         candidate_email_service:CandidateEmailService,
+        reminder_repository: ReminderRepository,
+        email_producer: EmailProducer,
         db: AsyncSession):
         
         
@@ -48,7 +56,9 @@ class ApplicationService:
         self.job_repository : JobRepository = job_repository
         self.panel_email_service : PanelEmailService = panel_email_service
         self.candidate_email_service : CandidateEmailService = candidate_email_service
-        self.jwt_service : JWTService = get_jwt_service()
+        self.jwt_service : JWTService = JWTService()
+        self.reminder_repository = reminder_repository
+        self.email_producer = email_producer
         
         self.frontend_url = FRONTEND_URL
         
@@ -81,7 +91,47 @@ class ApplicationService:
         if application.current_round and round_number < application.current_round:
             raise DomainError(message="Cannot move application back to a previous round", status_code=400)
         
-              
+    def _create_form_reminder_payload_for_panelist(self,requested_panelist,config, panelist_reminder_settings: ReminderSettingsDTO) -> list[CreateReminderDTO]:
+        reminders_payload = []
+        for panelist in requested_panelist:
+            for reminder_sec in set(panelist_reminder_settings.form_reminder_sec):
+                reminders_payload.append(CreateReminderDTO(
+                    entity_id=str(config.id),
+                    entity_type=EntityType.INTERVIEW,
+                    payload=FormReminderPayloadDTO_Panel(
+                        panelist_email=panelist.email,
+                        panelist_name=panelist.name,
+                        interview_round_title=config.title,
+                        form_link=f"{self.frontend_url}/panelist/availability?token={panelist.availability_token}"
+                    ).model_dump(),
+                    recipient_id=str(panelist.id),
+                    recipient_type=RecipientType.PANELIST,
+                    reminder_type=ReminderType.BOOKING_LINK,
+                    next_run_at= datetime.now(timezone.utc) + timedelta(seconds=reminder_sec)  #! for now doing in minutes, change to hours later       
+                ))
+                
+        return reminders_payload
+    
+    def _create_booking_reminder_payload_candidate(self, candidate, round_config, candidate_reminder_settings:ReminderSettingsDTO,booking_link,application_id) -> list[CreateReminderDTO]:
+        reminders_payload = []
+        if candidate_reminder_settings and candidate_reminder_settings.enabled and candidate_reminder_settings.form_reminder_sec:
+            for reminder_sec in candidate_reminder_settings.form_reminder_sec:
+                reminders_payload.append(CreateReminderDTO(
+                    entity_id=str(round_config.id),
+                    entity_type=EntityType.INTERVIEW,
+                    payload=FormReminderPayloadDTO_Candidate(
+                        candidate_email=candidate.email,
+                        candidate_name=candidate.full_name or candidate.email,
+                        interview_round_title=round_config.title,
+                        form_link=booking_link
+                    ).model_dump(),
+                    recipient_id=str(application_id),
+                    recipient_type=RecipientType.CANDIDATE,
+                    reminder_type=ReminderType.BOOKING_LINK,
+                    next_run_at= datetime.now(timezone.utc) + timedelta(seconds=reminder_sec)  #! for now doing in minutes, change to hours later       
+                ))
+            return reminders_payload
+    
     
     async def get_applications_of_job(
         self,
@@ -239,8 +289,6 @@ class ApplicationService:
             await self.application_repository.rollback()
             raise DomainError(message="Failed to flag application", status_code=500)
         
-        
-    
                 
     async def unflag_application(self,application_id:str,org_id:str=None):
         try:
@@ -316,7 +364,7 @@ class ApplicationService:
         
         
         
-        
+    # TODO: Need Optimization
     async def move_to_round(self,application_id:str,job_id:str,round_number:int):
         try:
             application = await self.application_repository.get_application_by_id(application_id=application_id)
@@ -383,18 +431,23 @@ class ApplicationService:
                 details={"round_number": round_number, "round_title": round_config.title},
             )
             
+                            
+            job_settings = await self.job_repository.get_job_settings(round_config.job_id) 
+        
+        
+            panelist_reminder_settings = ReminderSettingsDTO.model_validate(job_settings.panel_reminders) if job_settings and job_settings.panel_reminders else None
+            candidate_reminder_settings = ReminderSettingsDTO.model_validate(job_settings.candidate_reminders) if job_settings and job_settings.candidate_reminders else None
+                
+            
             # ! should we also check slot repository for available slot or rely on slot_available flag | when candidate choose slot we maintain this flag that time if error occurs then we will implement this
             application.current_round = round_number
             if not round_config.slots_available:
-                config = await self.interview_round_config_repository.get_interview_round_config_by_id(round_config.id)
-                if not config:
-                    raise DomainError("Interview round configuration not found.", status_code=404)
-
-                if config.end_date < datetime.now(timezone.utc):
+ 
+                if round_config.end_date < datetime.now(timezone.utc):
                     raise DomainError("This Round has already ended", status_code=400)
 
                 # Ask Panelist for new slots 
-                remaining_seconds = (config.end_date - datetime.now(timezone.utc)).total_seconds()
+                remaining_seconds = (round_config.end_date - datetime.now(timezone.utc)).total_seconds()
 
                 if remaining_seconds <= 0:
                     raise DomainError("Round already expired")
@@ -402,22 +455,38 @@ class ApplicationService:
                 token_expiry_in_min = max(1, int(remaining_seconds // 60))
                 
                 requested_panelist = await self.panelist_repository.request_panelist_for_availability(round_config.id, token_expiry_in_min)
+
+                if panelist_reminder_settings and panelist_reminder_settings.enabled and panelist_reminder_settings.form_reminder_hours:
+                    reminders_payload =  self._create_form_reminder_payload_for_panelist(requested_panelist, round_config, panelist_reminder_settings) if panelist_reminder_settings and panelist_reminder_settings.enabled else []
+                    
+                    if reminders_payload:
+                        reminders = await self.reminder_repository.create_reminders(reminders_payload)
+                        await self.db.commit()
+                        
+                        reminder_map = {str(r.id): r for r in reminders}
+                        enqueue_payloads = [EnqueueReminderPayload(reminder_id=r.id,run_at=r.next_run_at)for r in reminders]
+                        enqueue_results = await self.email_producer.enqueue_reminder_email_task(enqueue_payloads)
+
+                        for res in enqueue_results:
+                            if res.status == "success":
+                                reminder_map[str(res.reminder_id)].worker_job_id = res.job_id 
                 
+                    
+                    
+                    
                 await self.db.commit()
                 if len(requested_panelist) != 0:
                     await asyncio.gather(*[
                             self.panel_email_service.send_slot_availability_email(
                                 panelist_email=panelist.email,
                                 panelist_name=panelist.name,
-                                interview_round_title=config.title,
+                                interview_round_title=round_config.title,
                                 form_link=f"{self.frontend_url}/panelist/availability?token={panelist.availability_token}",
                             )
                             for panelist in requested_panelist
                         ])
                     self.logger.info(f"Sent slot availability email to panelists for round_config_id={round_config.id} and application_id={application_id}")
-
-                                    
-                        
+              
                 return {
                     "new_round": round_number,
                     "message":"Application moved to round successfully.Panelists have been requested for availability and booking link will be sent to candidate once slot will be available."
@@ -438,13 +507,33 @@ class ApplicationService:
                     expiration_minutes=token_expiry_min,
                 )
                 new_interview.booking_token = booking_token
-                new_interview.booking_token_expires_at = datetime.now(timezone.utc) + timedelta(minutes=token_expiry_min)
+                new_interview.booking_token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=token_expiry_min)
                 new_interview.status = InterviewStatus.READY_TO_BOOK
 
-                await self.db.commit()
 
                 # Send email (best-effort, after commit)
                 booking_link = f"{self.frontend_url}/interview/book?token={booking_token}"
+                
+                reminders_payload = self._create_booking_reminder_payload_candidate(candidate,round_config,candidate_reminder_settings,booking_link,application.id) if candidate_reminder_settings and candidate_reminder_settings.enabled else []
+            
+                if reminders_payload:
+                    reminders = await self.reminder_repository.create_reminders(reminders_payload)
+                    await self.db.commit()
+                    
+                    reminder_map = {str(r.id): r for r in reminders}
+                    enqueue_payloads = [EnqueueReminderPayload(reminder_id=r.id,run_at=r.next_run_at)for r in reminders]
+                    enqueue_results = await self.email_producer.enqueue_reminder_email_task(enqueue_payloads)
+
+                    for res in enqueue_results:
+                        if res.status == "success":
+                            reminder_map[str(res.reminder_id)].worker_job_id = res.job_id 
+                            
+                    self.logger.info(f"Enqueued {len(enqueue_payloads)} reminder emails for candidates {candidate.full_name or candidate.email} for round_config {round_config.id}")
+                    
+                
+                
+                await self.db.commit()
+                
                 try:
                     await self.candidate_email_service.send_booking_link_email(
                         candidate_email=candidate.email,

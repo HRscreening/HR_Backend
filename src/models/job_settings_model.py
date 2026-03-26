@@ -12,7 +12,7 @@ from sqlalchemy import Enum as SAEnum
 import uuid
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB,UUID,TEXT
-
+from sqlalchemy.ext.mutable import MutableDict
 from configs.postgress_db import Base
 from .enums import RescoreOnRubricChange,AutoMoveSettingsEnum
 
@@ -51,12 +51,12 @@ class JobSetting(Base):
         default=AutoMoveSettingsEnum.PANEL,
     )
 
-    panel_reminders = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
-    candidate_reminders = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
-    feedback_reminders = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
-    escalation = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
-    rescheduling = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
-    voice_nudges = Column(JSONB, nullable=False, server_default=text("'{}'::jsonb"))
+    panel_reminders = Column(MutableDict.as_mutable(JSONB), nullable=False, server_default=text("'{}'::jsonb"))
+    candidate_reminders = Column(MutableDict.as_mutable(JSONB), nullable=False, server_default=text("'{}'::jsonb"))
+    feedback_reminders = Column(MutableDict.as_mutable(JSONB), nullable=False, server_default=text("'{}'::jsonb"))
+    escalation = Column(MutableDict.as_mutable(JSONB), nullable=False, server_default=text("'{}'::jsonb"))
+    rescheduling = Column(MutableDict.as_mutable(JSONB), nullable=False, server_default=text("'{}'::jsonb"))
+    voice_nudges = Column(MutableDict.as_mutable(JSONB), nullable=False, server_default=text("'{}'::jsonb"))
 
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

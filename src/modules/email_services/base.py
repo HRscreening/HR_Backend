@@ -4,7 +4,7 @@ from email.mime.text import MIMEText
 from pydantic import EmailStr
 from configs.env_config import SENDER_EMAIL, SENDER_MAIL_PASSWORD
 from src.services.errors.base import DomainError
-
+from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
 
 class BaseEmailService:
     def __init__(

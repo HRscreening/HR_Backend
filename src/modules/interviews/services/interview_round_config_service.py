@@ -7,24 +7,36 @@ from src.modules.interviews.dtos.interview_round_config_dto import CreateIntervi
 from src.modules.interviews.repositories.interview_event_repository import InterviewEventRepository
 from src.modules.interviews.repositories.panelist_repository import PanelistRepository
 from src.modules.interviews.repositories.interview_round_configs_repository import InterviewRoundConfigsRepository
-
+from src.repositories.job_repository import JobRepository
+from email_workers_async.email_tasks_producer import EmailProducer,EnqueueReminderPayload
+from src.modules.reminders.reminder_repository import ReminderRepository
 from datetime import datetime, timezone
 from src.modules.email_services.services import PanelEmailService
 from uuid import UUID
 from src.utils.time_helper import format_time_according_to_timezone
-
+from src.dtos.job_settings_dto import ReminderSettingsDTO,ReschedulingSettingsDTO
+from src.modules.reminders.reminder_dtos import CreateReminderDTO
+from src.modules.notifications.notification_dtos import FormReminderPayloadDTO_Panel, InterviewReminderPayloadDTO_Panel, FormReminderPayloadDTO_Candidate, InterviewReminderPayloadDTO_Candidate
+from src.modules.reminders.model.reminder_enum import ReminderType, RecipientType, EntityType
+from datetime import timedelta
 
 class InterviewRoundConfigService:
     def __init__(self, interview_round_config_repository:InterviewRoundConfigsRepository,
                 interview_event_repository:InterviewEventRepository,
                 panelist_repository: PanelistRepository, 
                 panel_email_service: PanelEmailService,
+                job_repository: JobRepository,
+                email_producer: EmailProducer,
+                reminder_repository: ReminderRepository,
                 db: AsyncSession):
         self.db = db
         self.interview_event_repository = interview_event_repository 
         self.interview_round_config_repository = interview_round_config_repository
         self.panelist_repository = panelist_repository
         self.panel_email_service : PanelEmailService = panel_email_service
+        self.job_repository = job_repository
+        self.email_producer = email_producer
+        self.reminder_repository = reminder_repository
         
         self.frontend_url = FRONTEND_URL
         self.logger = get_logger("InterviewRoundConfigService") 
@@ -43,7 +55,27 @@ class InterviewRoundConfigService:
 
         return max(1, int(remaining_seconds // 60))
         
-        
+    def _create_form_reminder_payload_for_panelist(self,requested_panelist,config, panelist_reminder_settings: ReminderSettingsDTO) -> list[CreateReminderDTO]:
+        reminders_payload = []
+        for panelist in requested_panelist:
+            for reminder_sec in set(panelist_reminder_settings.form_reminder_sec):
+                reminders_payload.append(CreateReminderDTO(
+                    entity_id=str(config.id),
+                    entity_type=EntityType.INTERVIEW,
+                    payload=FormReminderPayloadDTO_Panel(
+                        panelist_email=panelist.email,
+                        panelist_name=panelist.name,
+                        interview_round_title=config.title,
+                        form_link=f"{self.frontend_url}/panelist/availability?token={panelist.availability_token}"
+                    ).model_dump(),
+                    recipient_id=str(panelist.id),
+                    recipient_type=RecipientType.PANELIST,
+                    reminder_type=ReminderType.BOOKING_LINK,
+                    next_run_at= datetime.now(timezone.utc) + timedelta(seconds=reminder_sec)  #! for now doing in minutes, change to hours later       
+                ))
+                
+        return reminders_payload
+            
     async def create_interview_round_config(self, job_id: str, config_data: CreateInterviewRoundConfigDTO):
         try:
             
@@ -265,15 +297,31 @@ class InterviewRoundConfigService:
             if remaining_seconds <= 0:
                 raise DomainError("Round already expired")
 
-            token_expiry_in_min = max(1, int(remaining_seconds // 60))
-            
+            token_expiry_in_min = max(1, int(remaining_seconds // 60)) 
             requested_panelist = await self.panelist_repository.request_panelist_for_availability(round_config_id, token_expiry_in_min)
             
             if len(requested_panelist) == 0:
                 return "All panelists have already been requested and are in pending state."
              
+            job_settings = await self.job_repository.get_job_settings(config.job_id) 
+            panelist_reminder_settings = ReminderSettingsDTO.model_validate(job_settings.panel_reminders) if job_settings and job_settings.panel_reminders else None
+            reminders_payload = self._create_form_reminder_payload_for_panelist(requested_panelist, config, panelist_reminder_settings) if panelist_reminder_settings and panelist_reminder_settings.enabled else []
+            
+            if reminders_payload:
+                reminders = await self.reminder_repository.create_reminders(reminders_payload)
+
+                
+                reminder_map = {str(r.id): r for r in reminders}
+                enqueue_payloads = [EnqueueReminderPayload(reminder_id=r.id,run_at=r.next_run_at)for r in reminders]
+                enqueue_results = await self.email_producer.enqueue_reminder_email_task(enqueue_payloads)
+
+                for res in enqueue_results:
+                    if res.status == "success":
+                        reminder_map[str(res.reminder_id)].worker_job_id = res.job_id 
+                
             await self.db.commit()
             
+            # ! enque them too
             await asyncio.gather(*[
                     self.panel_email_service.send_slot_availability_email(
                         panelist_email=panelist.email,
@@ -326,6 +374,20 @@ class InterviewRoundConfigService:
             requested_panelists = result["requested_panelists"]
             already_pending_ids = result["already_pending_ids"]
             invalid_ids = result["invalid_ids"]
+            
+            job_settings = await self.job_repository.get_job_settings(config.job_id) 
+            panelist_reminder_settings = ReminderSettingsDTO.model_validate(job_settings.panel_reminders) if job_settings and job_settings.panel_reminders else None
+            reminders_payload =  self._create_form_reminder_payload_for_panelist(requested_panelists, config, panelist_reminder_settings) if panelist_reminder_settings and panelist_reminder_settings.enabled else []
+            
+            if reminders_payload:
+                reminders = await self.reminder_repository.create_reminders(reminders_payload)
+                reminder_map = {str(r.id): r for r in reminders}
+                enqueue_payloads = [EnqueueReminderPayload(reminder_id=r.id,run_at=r.next_run_at)for r in reminders]
+                enqueue_results = await self.email_producer.enqueue_reminder_email_task(enqueue_payloads)
+
+                for res in enqueue_results:
+                    if res.status == "success":
+                        reminder_map[str(res.reminder_id)].worker_job_id = res.job_id 
 
             await self.db.commit()
 

@@ -96,45 +96,45 @@ class CandidateEmailTemplates:
         meeting_info = ""
         if meet_link:
             meeting_info = f"""\
-<p style="margin:0 0 12px;font-size:15px;color:#374151;line-height:1.6;">
-  <strong>Meeting Link:</strong>
-  <a href="{meet_link}" style="color:#4f46e5;text-decoration:underline;">{meet_link}</a>
-</p>"""
+    <p style="margin:0 0 12px;font-size:15px;color:#374151;line-height:1.6;">
+      <strong>Meeting Link:</strong>
+      <a href="{meet_link}" style="color:#4f46e5;text-decoration:underline;">{meet_link}</a>
+    </p>"""
 
-        reschedule_info = ""
-        if reschedule_link:
-            reschedule_info = f"""\
-<p style="margin:16px 0 0;font-size:13px;color:#6b7280;line-height:1.5;">
-  Need to change the time?
-  <a href="{reschedule_link}" style="color:#4f46e5;text-decoration:underline;">Reschedule your interview</a>
-</p>"""
+            reschedule_info = ""
+            if reschedule_link:
+                reschedule_info = f"""\
+    <p style="margin:16px 0 0;font-size:13px;color:#6b7280;line-height:1.5;">
+      Need to change the time?
+      <a href="{reschedule_link}" style="color:#4f46e5;text-decoration:underline;">Reschedule your interview</a>
+    </p>"""
 
-        content = f"""\
-<h2 style="margin:0 0 16px;font-size:18px;color:#1f2937;">
-  Interview Confirmed!
-</h2>
-<p style="margin:0 0 12px;font-size:15px;color:#374151;line-height:1.6;">
-  Hi {candidate_name},
-</p>
-<p style="margin:0 0 12px;font-size:15px;color:#374151;line-height:1.6;">
-  Your <strong>{interview_round_title}</strong> interview has been confirmed.
-</p>
-<table role="presentation" cellpadding="0" cellspacing="0"
-       style="margin:20px 0;background-color:#f9fafb;border-radius:6px;border:1px solid #e5e7eb;width:100%;">
-  <tr>
-    <td style="padding:16px;">
-      <p style="margin:0 0 8px;font-size:14px;color:#6b7280;">Start</p>
-      <p style="margin:0 0 16px;font-size:16px;color:#1f2937;font-weight:600;">{scheduled_start}</p>
-      <p style="margin:0 0 8px;font-size:14px;color:#6b7280;">End</p>
-      <p style="margin:0;font-size:16px;color:#1f2937;font-weight:600;">{scheduled_end}</p>
-    </td>
-  </tr>
-</table>
-{meeting_info}
-<p style="margin:0 0 12px;font-size:15px;color:#374151;line-height:1.6;">
-  Please be prepared and join on time. Good luck!
-</p>
-{reschedule_info}"""
+            content = f"""\
+    <h2 style="margin:0 0 16px;font-size:18px;color:#1f2937;">
+      Interview Confirmed!
+    </h2>
+    <p style="margin:0 0 12px;font-size:15px;color:#374151;line-height:1.6;">
+      Hi {candidate_name},
+    </p>
+    <p style="margin:0 0 12px;font-size:15px;color:#374151;line-height:1.6;">
+      Your <strong>{interview_round_title}</strong> interview has been confirmed.
+    </p>
+    <table role="presentation" cellpadding="0" cellspacing="0"
+          style="margin:20px 0;background-color:#f9fafb;border-radius:6px;border:1px solid #e5e7eb;width:100%;">
+      <tr>
+        <td style="padding:16px;">
+          <p style="margin:0 0 8px;font-size:14px;color:#6b7280;">Start</p>
+          <p style="margin:0 0 16px;font-size:16px;color:#1f2937;font-weight:600;">{scheduled_start}</p>
+          <p style="margin:0 0 8px;font-size:14px;color:#6b7280;">End</p>
+          <p style="margin:0;font-size:16px;color:#1f2937;font-weight:600;">{scheduled_end}</p>
+        </td>
+      </tr>
+    </table>
+    {meeting_info}
+    <p style="margin:0 0 12px;font-size:15px;color:#374151;line-height:1.6;">
+      Please be prepared and join on time. Good luck!
+    </p>
+    {reschedule_info}"""
         return _base_html(content)
       
       
@@ -194,5 +194,104 @@ class CandidateEmailTemplates:
       """
 
       return _base_html(content)
+    
+    
+    @staticmethod
+    def get_booking_link_reminder_email_template(
+          candidate_name: str,
+          interview_round_title: str,
+          booking_link: str,
+      ) -> str:
+          content = f"""\
+      <h2 style="margin:0 0 16px;font-size:18px;color:#1f2937;">
+        Reminder: Book Your Interview Slot
+      </h2>
+
+      <p style="margin:0 0 12px;font-size:15px;color:#374151;line-height:1.6;">
+        Hi {candidate_name},
+      </p>
+
+      <p style="margin:0 0 12px;font-size:15px;color:#374151;line-height:1.6;">
+        This is a gentle reminder to schedule your <strong>{interview_round_title}</strong> interview.
+        We noticed that you haven’t selected a time slot yet.
+      </p>
+
+      <p style="margin:0 0 12px;font-size:15px;color:#374151;line-height:1.6;">
+        Please choose a convenient time as soon as possible to proceed with your application.
+      </p>
+
+      {_cta_button(booking_link, "Book Your Interview Slot")}
+
+      <p style="margin:16px 0 8px;font-size:13px;color:#6b7280;line-height:1.5;">
+        If you’ve already booked your slot, please ignore this email.
+      </p>
+
+      <p style="margin:0 0 8px;font-size:13px;color:#6b7280;line-height:1.5;">
+        For any assistance, feel free to reach out using the contact details provided in your application.
+      </p>
+      """
+          return _base_html(content)
+        
+        
+    @staticmethod
+    def get_interview_reminder_email_template(
+        candidate_name: str,
+        interview_round_title: str,
+        scheduled_start: str,
+        scheduled_end: str,
+        meet_link: str | None = None,
+        reschedule_link: str | None = None,
+    ) -> str:
+        meeting_info = ""
+        if meet_link:
+            meeting_info = f"""\
+    <p style="margin:0 0 12px;font-size:15px;color:#374151;line-height:1.6;">
+      <strong>Meeting Link:</strong>
+      <a href="{meet_link}" style="color:#4f46e5;text-decoration:underline;">{meet_link}</a>
+    </p>"""
+
+        reschedule_info = ""
+        if reschedule_link:
+            reschedule_info = f"""\
+    <p style="margin:16px 0 0;font-size:13px;color:#6b7280;line-height:1.5;">
+      Need to change the time?
+      <a href="{reschedule_link}" style="color:#4f46e5;text-decoration:underline;">Reschedule your interview</a>
+    </p>"""
+
+        content = f"""\
+    <h2 style="margin:0 0 16px;font-size:18px;color:#1f2937;">
+      Interview Reminder
+    </h2>
+
+    <p style="margin:0 0 12px;font-size:15px;color:#374151;line-height:1.6;">
+      Hi {candidate_name},
+    </p>
+
+    <p style="margin:0 0 12px;font-size:15px;color:#374151;line-height:1.6;">
+      This is a reminder for your upcoming <strong>{interview_round_title}</strong> interview.
+    </p>
+
+    <table role="presentation" cellpadding="0" cellspacing="0"
+          style="margin:20px 0;background-color:#f9fafb;border-radius:6px;border:1px solid #e5e7eb;width:100%;">
+      <tr>
+        <td style="padding:16px;">
+          <p style="margin:0 0 8px;font-size:14px;color:#6b7280;">Start</p>
+          <p style="margin:0 0 16px;font-size:16px;color:#1f2937;font-weight:600;">{scheduled_start}</p>
+
+          <p style="margin:0 0 8px;font-size:14px;color:#6b7280;">End</p>
+          <p style="margin:0;font-size:16px;color:#1f2937;font-weight:600;">{scheduled_end}</p>
+        </td>
+      </tr>
+    </table>
+
+    {meeting_info}
+
+    <p style="margin:0 0 12px;font-size:15px;color:#374151;line-height:1.6;">
+      Please make sure to join on time. We look forward to speaking with you.
+    </p>
+
+    {reschedule_info}
+    """
+        return _base_html(content)
 
 candidate_email_templates = CandidateEmailTemplates()

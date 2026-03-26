@@ -148,6 +148,7 @@ class InterviewRoundConfigsRepository:
 
     
     async def get_interview_round_config_by_id(self, round_config_id: str) -> Optional[Interview_Round_Configs]:
+        """Fetches an interview round configuration by its ID."""
         result = await self.db.execute(
             select(Interview_Round_Configs).where(Interview_Round_Configs.id == round_config_id)
         )

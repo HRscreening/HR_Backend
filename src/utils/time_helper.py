@@ -1,6 +1,5 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
-
 
 def format_time_according_to_timezone(dt: datetime, timezone: str = "Asia/Kolkata") -> str:
     """
@@ -41,3 +40,16 @@ def format_interview_schedule(start: datetime, end: datetime, timezone: str = "A
     return f"{date}, {start_time} – {end_time} {zone}"
 
 
+def serialize_datetime(dt: datetime) -> str:
+    return dt.astimezone(timezone.utc).isoformat()
+
+
+
+def deserialize_datetime(dt) -> datetime:
+    if isinstance(dt, datetime):
+        return dt.astimezone(timezone.utc)
+
+    if isinstance(dt, str):
+        return datetime.fromisoformat(dt).astimezone(timezone.utc)
+
+    raise ValueError(f"Invalid datetime input: {dt}")

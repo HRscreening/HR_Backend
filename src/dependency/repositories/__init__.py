@@ -11,4 +11,5 @@ from .repositories import (
     get_interview_round_config_repository,
     get_interview_slots_repository,
     get_calendar_repository,
+    get_reminder_repository
 )

@@ -42,7 +42,7 @@ from configs.log_config import get_logger
 from src.repositories.document_repository import DocumentRepository
 from src.modules.interviews.repositories.interview_round_configs_repository  import InterviewRoundConfigsRepository 
 from src.utils.candidate_name import extract_candidate_full_name
-from src.dtos.job_settings_dto import ReminderSettingsDTO, PanelEscalationSettingsDTO, ReschedulingSettingsDTO,CreateJobSettingsDTO
+from src.dtos.job_settings_dto import ReminderSettingsDTO, PanelEscalationSettingsDTO, ReschedulingSettingsDTO,CreateJobSettingsDTO,UpdateJobSettingsDTO
 from uuid import UUID
 from sqlalchemy import select, func
 from src.models import Application, Score
@@ -79,6 +79,22 @@ class JobService:
 
     def _generate_batch_name(self, job_id: str) -> str:
         return f"application_processing_{job_id}_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}"
+
+    
+            
+    def _update_nested(self,existing_obj, new_obj):
+        for key, value in new_obj.model_dump(exclude_unset=True).items():
+            setattr(existing_obj, key, value)
+
+    def _update_jsonb(self,existing_dict: dict, new_obj):
+        new_data = new_obj.model_dump(exclude_unset=True)
+        existing_dict.update(new_data)
+        
+    def _merge_jsonb(self, existing: dict, new_obj):
+        return {
+            **existing,
+            **new_obj.model_dump(exclude_unset=True)
+        }
 
     # ─── 1. Extract JD (preview only — NO DB writes) ──────────────────
 
@@ -980,9 +996,6 @@ class JobService:
 
             settings = await self.job_repository.get_job_settings(job_id)
             
-
-            
-            print("job settings in service: ", settings)
             # return settings
             return JobSettingsResposnse(
                     job_details=Job_Details(
@@ -996,7 +1009,7 @@ class JobService:
                     job_metadata=job.job_metadata,
                     closing_reason=job.closing_reason,
                     ),
-                    settings=settings
+                    settings=settings if settings else None,
             )
         except JobNotFound:
             self.logger.warning("Job not found when fetching settings for job_id=%s", job_id)
@@ -1015,7 +1028,7 @@ class JobService:
             
             if existing_settings:
                 raise DomainError(
-                    message="Settings already exist for this job. Use update endpoint to modify.",
+                    message="Settings already exist for this job.Update in Job Settings",
                     status_code=400,
                 )
             
@@ -1028,4 +1041,62 @@ class JobService:
         except Exception as e:
             await self.db.rollback()
             self.logger.exception("Error updating job settings for %s: %s", job_id, e)
+            raise
+        
+
+    async def update_job_settings(self, job_id: str, payload: UpdateJobSettingsDTO):
+        try:
+            job = await self.job_repository.get_job_by_id(job_id)
+            if not job:
+                raise JobNotFound(status_code=404)
+
+            existing_settings = await self.job_repository.get_job_settings(job_id)
+            if not existing_settings:
+                raise DomainError(
+                    message="Settings do not exist for this job. Create first",
+                    status_code=400,
+                )
+
+            # JSONB fields
+            if payload.panel_reminders:
+                existing_settings.panel_reminders = self._merge_jsonb(
+                    existing_settings.panel_reminders,
+                    payload.panel_reminders
+                )
+
+            if payload.candidate_reminders:
+                existing_settings.candidate_reminders = self._merge_jsonb(
+                    existing_settings.candidate_reminders,
+                    payload.candidate_reminders
+                )
+
+            if payload.feedback_reminders:
+                existing_settings.feedback_reminders = self._merge_jsonb(
+                    existing_settings.feedback_reminders,
+                    payload.feedback_reminders
+                )
+
+            if payload.escalation:
+                existing_settings.escalation = self._merge_jsonb(
+                    existing_settings.escalation,
+                    payload.escalation
+                )
+
+            if payload.rescheduling:
+                existing_settings.rescheduling = self._merge_jsonb(
+                    existing_settings.rescheduling,
+                    payload.rescheduling
+                )
+
+            # General settings
+            if payload.general:
+                self._update_nested(existing_settings, payload.general)
+
+            await self.db.commit()
+
+            return existing_settings
+
+        except Exception:
+            await self.db.rollback()
+            self.logger.exception("Error updating job settings for %s", job_id)
             raise
