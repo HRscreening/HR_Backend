@@ -22,7 +22,8 @@ from src.utils.time_helper import format_interview_time, format_interview_schedu
 from src.utils.jwt import JWTService
 from src.modules.interviews.services.calendar_service import CalendarService
 from src.modules.reminders.reminder_dtos import CreateReminderDTO
-from src.modules.notifications.notification_dtos import FormReminderPayloadDTO_Panel, InterviewReminderPayloadDTO_Panel, FormReminderPayloadDTO_Candidate, InterviewReminderPayloadDTO_Candidate
+from src.dtos.emails.panel_dto import PanelistReminderAvailabilityData,PanelistInterviewReminderData,PanelistBookingData,AvailableSlotsData,ThankYouPanelistData,PanelistSlotReleasedData,PanelistMeetingRescheduledData
+from src.dtos.emails.candidate_dto import CandidateBookingLinkReminderData,CandidateInterviewReminderData,CandidateBookingLinkData,CandidateBookingConfirmationData,CandidateRescheduleNewSlotsData
 from src.modules.reminders.model.reminder_enum import ReminderType, RecipientType, EntityType,ReminderStatus
 from datetime import timedelta
 from src.dtos.job_settings_dto import ReminderSettingsDTO,ReschedulingSettingsDTO
@@ -260,7 +261,7 @@ class InterviewService:
             reminders_payload.append(CreateReminderDTO(
             entity_id=str(interview.id),
             entity_type=EntityType.INTERVIEW,
-            payload=InterviewReminderPayloadDTO_Panel(
+            payload=PanelistInterviewReminderData(
                 candidate_name=candidate_display,
                 panelist_name=panelist.name,
                 panelist_email=panelist.email,
@@ -269,7 +270,7 @@ class InterviewService:
                 scheduled_end=serialize_datetime(slot.slot_end),
                 meet_link=meet_link,
                 reschedule_link=panelist_reschedule_link   
-            ).model_dump(),
+            ).model_dump(mode="json"),
             recipient_id=str(panelist.id),
             recipient_type=RecipientType.PANELIST,
             reminder_type=ReminderType.INTERVIEW_UPCOMING,
@@ -297,7 +298,7 @@ class InterviewService:
             reminders_payload.append(CreateReminderDTO(
             entity_id=str(interview.id),
             entity_type=EntityType.INTERVIEW,
-            payload=InterviewReminderPayloadDTO_Candidate(
+            payload=CandidateInterviewReminderData(
                 candidate_name=candidate_display,
                 candidate_email=candidate.email,
                 interview_round_title=config.title,
@@ -305,7 +306,7 @@ class InterviewService:
                 scheduled_end=serialize_datetime(slot.slot_end),
                 meet_link=meet_link,
                 reschedule_link=cand_reschedule_link   
-            ).model_dump(),
+            ).model_dump(mode="json"),
             recipient_id=str(candidate.id or candidate_email),
             recipient_type=RecipientType.CANDIDATE,
             reminder_type=ReminderType.INTERVIEW_UPCOMING,
@@ -336,7 +337,7 @@ class InterviewService:
                 reminders_payload.append(CreateReminderDTO(
                     entity_id=str(config.id),
                     entity_type=EntityType.INTERVIEW,
-                    payload=FormReminderPayloadDTO_Panel(
+                    payload=PanelistReminderAvailabilityData(
                         panelist_email=panelist.email,
                         panelist_name=panelist.name,
                         interview_round_title=config.title,
@@ -576,6 +577,7 @@ class InterviewService:
                 
                 if candidate:
                     await self.candidate_email_service.send_booking_confirmation_email(
+                        CandidateBookingConfirmationData(
                         candidate_email=candidate.email,
                         candidate_name=candidate_display,
                         interview_round_title=round_config.title,
@@ -583,6 +585,7 @@ class InterviewService:
                         scheduled_end=slot.slot_end,
                         meet_link=meet_link,
                         reschedule_link=cand_reschedule_link,
+                        )
                     )
             except Exception as e:
                 self.logger.error(f"Failed to send booking confirmation email: {e}")
@@ -592,6 +595,7 @@ class InterviewService:
                
                
                 await self.panel_email_service.send_booking_confirmation_to_panelist(
+                    PanelistBookingData(
                     panelist_email=panelist.email,
                     panelist_name=panelist.name,
                     candidate_name=candidate_display,
@@ -600,6 +604,7 @@ class InterviewService:
                     scheduled_end=slot.slot_end,
                     meet_link=meet_link,
                     reschedule_link=panelist_reschedule_link
+                    )
                 )
             except Exception as e:
                 self.logger.error(f"Failed to send panelist booking notifications: {e}")
@@ -746,6 +751,8 @@ class InterviewService:
                 if candidate:
                     
                    tasks.append(self.candidate_email_service.send_booking_confirmation_email(
+                       CandidateBookingConfirmationData(
+                           
                         candidate_email=candidate.email,
                         candidate_name=candidate.full_name or candidate.email,
                         interview_round_title=round_config.title,
@@ -753,6 +760,7 @@ class InterviewService:
                         scheduled_end=new_slot.slot_end,
                         meet_link=meet_link,
                         reschedule_link=cand_reschedule_link,
+                       )
                     ))
             except Exception as e:
                 self.logger.error(f"Failed to send booking confirmation email: {e}")
@@ -767,12 +775,14 @@ class InterviewService:
                     
                     # Notify old panelist about the reschedule
                     tasks.append( self.panel_email_service.send_slot_released_to_panelist(
+                        PanelistSlotReleasedData(   
                         panelist_email=old_panelist.email,
                         panelist_name=old_panelist.name,
                         candidate_name=candidate_display,
                         interview_round_title=round_config.title,
                         old_scheduled_start=booked_slot.slot_start,
                         old_scheduled_end=booked_slot.slot_end,
+                        )
                     ))
                     
                     await self.interview_event_repository.create_interview_event(
@@ -799,6 +809,7 @@ class InterviewService:
                                
                     # Notify new panelist about the reschedule and new booking
                     tasks.append( self.panel_email_service.send_booking_confirmation_to_panelist(
+                        PanelistBookingData(
                         panelist_email=new_panelist.email,
                         panelist_name=new_panelist.name,
                         candidate_name=candidate_display,
@@ -807,6 +818,7 @@ class InterviewService:
                         scheduled_end=new_slot.slot_end,
                         meet_link=meet_link,
                         reschedule_link=panelist_reschedule_link
+                        )
                     ))
                 else:                     
                     await self.interview_event_repository.create_interview_event(
@@ -830,6 +842,7 @@ class InterviewService:
                     
                     # sending reschuduled email to the same panelist if the panelist is same for old slot and new slot because of the time change 
                     tasks.append( self.panel_email_service.send_meeting_rescheduled_email_to_panelist(
+                        PanelistMeetingRescheduledData(
                         panelist_email=new_panelist.email,
                         panelist_name=new_panelist.name,
                         candidate_name=candidate_display,
@@ -840,7 +853,7 @@ class InterviewService:
                         new_scheduled_end=new_slot.slot_end,
                         new_meet_link=meet_link,
                         reschedule_link=panelist_reschedule_link
-                    ))
+                    )))
 
             except Exception as e:
                 self.logger.error(f"Failed to send panelist booking notifications: {e}")
@@ -957,10 +970,12 @@ class InterviewService:
             # TODO: Enque email sending task if many panelists to avoid delays in response
             tasks = [
                 self.panel_email_service.send_slot_availability_email(
+                    AvailableSlotsData(   
                     panelist_email=panelist.email,
                     panelist_name=panelist.name,
                     interview_round_title=round_config.title,
                     form_link=f"{self.frontend_url}/panelist/availability?token={panelist.availability_token}",
+                    )
                 )
                 for panelist in panelists
             ]

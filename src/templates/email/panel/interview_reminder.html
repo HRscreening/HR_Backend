@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% import "components.html" as comp %}
+
+{% block content %}
+
+{{ comp.greeting(panelist_name) }}
+
+<p style="margin:0 0 16px;font-size:15px;color:#374151;line-height:1.7;">
+    This is a reminder for your upcoming interview scheduled for the 
+    <strong style="color:#4f46e5;">{{ interview_round_title }}</strong> round.
+</p>
+
+<table style="width:100%;margin-bottom:20px;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;">
+    {{ comp.info_row("Candidate", candidate_name) }}
+    {{ comp.info_row("Date", interview_date) }}
+    {{ comp.info_row("Time", interview_time, border=False) }}
+</table>
+
+{% if meet_link %}
+<p style="margin:12px 0;font-size:14px;color:#374151;">
+    <strong>Meeting Link:</strong><br/>
+    <a href="{{ meet_link }}" style="color:#4f46e5;text-decoration:none;">
+        Join Interview
+    </a>
+</p>
+{% endif %}
+
+<p style="margin:0 0 12px;font-size:14px;color:#6b7280;line-height:1.7;">
+    Please ensure you are available at the scheduled time. Kindly join a few minutes early.
+</p>
+
+{% if reschedule_link %}
+<p style="margin:12px 0;font-size:14px;color:#6b7280;">
+    If you need to reschedule, please use the link below:<br/>
+    <a href="{{ reschedule_link }}" style="color:#4f46e5;text-decoration:none;">
+        Reschedule Interview
+    </a>
+</p>
+{% endif %}
+
+<p style="margin:24px 0 0;font-size:15px;color:#374151;line-height:1.7;">
+    Thank you,<br/>
+    <strong>HR Team</strong>
+</p>
+
+{% endblock %}

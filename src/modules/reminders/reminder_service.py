@@ -13,8 +13,8 @@ from src.modules.reminders.reminder_dtos import CreateReminderDTO
 from src.modules.notifications.notification_service import NotificationService
 from src.modules.reminders.model.reminder_enum import RecipientType,EntityType,ReminderStatus,ReminderType
 from src.modules.interviews.repositories.interview_event_repository import InterviewEventRepository
-from src.modules.notifications.notification_dtos import FormReminderPayloadDTO_Panel, InterviewReminderPayloadDTO_Panel, FormReminderPayloadDTO_Candidate, InterviewReminderPayloadDTO_Candidate
-
+from src.dtos.emails.panel_dto import PanelistReminderAvailabilityData,PanelistInterviewReminderData
+from src.dtos.emails.candidate_dto import CandidateBookingLinkReminderData,CandidateInterviewReminderData
 
 class BaseReminderService:
     def __init__(self,reminder_repository: ReminderRepository,interview_event_repository:InterviewEventRepository,db: AsyncSession):
@@ -80,25 +80,25 @@ class ReminderWorkerService(BaseReminderService):
             # ✅ DTO conversion
             if reminder.recipient_type == RecipientType.PANELIST and reminder.reminder_type == ReminderType.BOOKING_LINK:
                 await self.notification_service.send_form_reminder_notification_to_panelist(
-                    payload=FormReminderPayloadDTO_Panel(**payload_dict),
+                    payload=PanelistReminderAvailabilityData(**payload_dict),
                     channel="EMAIL"
                 )
 
             elif reminder.recipient_type == RecipientType.PANELIST and reminder.reminder_type == ReminderType.INTERVIEW_UPCOMING:
                 await self.notification_service.send_interview_reminder_notification_to_panelist(
-                    payload=InterviewReminderPayloadDTO_Panel(**payload_dict),
+                    payload=PanelistInterviewReminderData(**payload_dict),
                     channel="EMAIL"
                 )
                 
             elif reminder.recipient_type == RecipientType.CANDIDATE and reminder.reminder_type == ReminderType.BOOKING_LINK:
                await self.notification_service.send_form_reminder_notification_to_candidate(
-                    payload=FormReminderPayloadDTO_Candidate(**payload_dict),
+                    payload=CandidateBookingLinkReminderData(**payload_dict),
                     channel="EMAIL"
                 )
            
             elif reminder.recipient_type == RecipientType.CANDIDATE and reminder.reminder_type == ReminderType.INTERVIEW_UPCOMING:   
                 await self.notification_service.send_interview_reminder_notification_to_candidate(
-                    payload=InterviewReminderPayloadDTO_Candidate(**payload_dict),
+                    payload=CandidateInterviewReminderData(**payload_dict),
                     channel="EMAIL"
                 )
 

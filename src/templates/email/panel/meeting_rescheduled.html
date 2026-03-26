@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% import "components.html" as comp %}
+
+{% block content %}
+
+{{ comp.greeting(panelist_name) }}
+
+<p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.7;">
+    The candidate <strong>{{ candidate_name }}</strong> has rescheduled their interview for the
+    <strong style="color:#4f46e5;">{{ interview_round_title }}</strong> round.
+</p>
+
+<p style="margin:0 0 10px;font-size:14px;color:#6b7280;">
+    <strong>Previous Schedule</strong>
+</p>
+
+<table style="width:100%;margin-bottom:20px;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;">
+    {{ comp.info_row("Date", old_date) }}
+    {{ comp.info_row("Time", old_time, border=False) }}
+</table>
+
+<p style="margin:0 0 10px;font-size:14px;color:#6b7280;">
+    <strong>New Schedule</strong>
+</p>
+
+<table style="width:100%;margin-bottom:24px;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;">
+    {{ comp.info_row("Date", new_date) }}
+    {{ comp.info_row("Time", new_time) }}
+
+    {% if meet_link %}
+        {{ comp.info_row("Meet Link", meet_link, border=False) }}
+    {% endif %}
+</table>
+
+<p style="margin:0 0 16px;font-size:14px;color:#6b7280;line-height:1.7;">
+    Please ensure you are available at the updated time for the interview.
+</p>
+
+{% if reschedule_link %}
+    {{ comp.cta_button(reschedule_link, "Reschedule Interview →") }}
+{% endif %}
+
+<p style="margin:24px 0 0;font-size:15px;color:#374151;line-height:1.7;">
+    Thank you,<br/>
+    <strong>HR Team</strong>
+</p>
+
+{% endblock %}

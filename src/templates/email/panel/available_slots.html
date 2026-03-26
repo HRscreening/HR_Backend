@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% import "components.html" as comp %}
+
+{% block content %}
+
+<p style="margin:0 0 16px;font-size:15px;color:#374151;line-height:1.7;">
+    Dear <strong>{{ panelist_name or "Sir/Madam" }}</strong>,
+</p>
+
+<p style="margin:0 0 16px;font-size:15px;color:#374151;line-height:1.7;">
+    You have been selected as a panelist for the
+    <strong style="color:#4f46e5;">{{ interview_round_title }}</strong> round.
+    We sincerely appreciate your support and time.
+</p>
+
+<p style="margin:0 0 8px;font-size:15px;color:#374151;line-height:1.7;">
+    Please share your availability by selecting suitable time slots using the button below:
+</p>
+
+{{ comp.cta_button(form_link, "Submit Your Availability →") }}
+
+<p style="margin:0 0 16px;font-size:14px;color:#6b7280;line-height:1.7;">
+    If none of the available slots work for you, feel free to suggest alternative times
+    at your convenience.
+</p>
+
+<p style="margin:0 0 4px;font-size:14px;color:#6b7280;line-height:1.7;">
+    We request you to respond at your earliest so we can finalize the schedule.
+</p>
+
+<p style="margin:24px 0 0;font-size:15px;color:#374151;line-height:1.7;">
+    Thank you,<br/>
+    <strong>HR Team</strong>
+</p>
+
+{% endblock %}

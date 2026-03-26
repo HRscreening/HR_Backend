@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% import "components.html" as comp %}
+
+{% block content %}
+
+<p style="margin:0 0 16px;font-size:15px;color:#374151;line-height:1.7;">
+    Dear <strong>{{ panelist_name or "Sir/Madam" }}</strong>,
+</p>
+
+<p style="margin:0 0 16px;font-size:15px;color:#374151;line-height:1.7;">
+    Thank you for submitting your availability for the
+    <strong style="color:#4f46e5;">{{ interview_round_title }}</strong> round.
+</p>
+
+<p style="margin:0 0 8px;font-size:15px;color:#374151;line-height:1.7;">
+    If you wish to edit or add new slots, please use the button below:
+</p>
+
+{{ comp.cta_button(edit_slots_link, "Edit/Add Slots →") }}
+
+{% if validity_period %}
+<p style="margin:0 0 16px;font-size:14px;color:#ef4444;line-height:1.7;">
+    Note: You can edit or add new slots using the button below for a limited time:
+    <strong>{{ validity_period }}</strong>.
+</p>
+{% endif %}
+
+<p style="margin:24px 0 0;font-size:15px;color:#374151;line-height:1.7;">
+    We appreciate your support and cooperation.<br/>
+    <strong>HR Team</strong>
+</p>
+
+{% endblock %}

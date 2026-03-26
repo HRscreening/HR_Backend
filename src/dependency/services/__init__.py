@@ -36,6 +36,7 @@ from .api_services import (
     FormConfigService,
 )
 
-from .helper_services import get_jwt_service, get_email_service, get_password_service, get_candidate_email_service, get_panel_email_service,get_notification_service
-from .helper_services import JWTService, EmailService, PasswordService, CandidateEmailService, PanelEmailService
+from .helpers.helper_services import get_jwt_service, get_email_service, get_password_service, get_candidate_email_service, get_panel_email_service,get_notification_service
+from .helpers.helper_services import JWTService, EmailService, PasswordService
+from .helpers.email_services import CandidateEmailService, PanelEmailService, get_candidate_email_service, get_panel_email_service
 

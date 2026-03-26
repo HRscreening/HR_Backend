@@ -17,13 +17,16 @@ from src.modules.oauth.oauth_service import OAuthService
 from src.modules.oauth.providers.Calendar_provider_service import GoogleCalendarOAuthService
 from src.modules.reminders.reminder_service import ReminderAPIService, ReminderWorkerService
 from src.dependency.repositories.repositories import *
-from src.dependency.services.helper_services import *
+from src.dependency.services.helpers.helper_services import *
 from src.modules.interviews.repositories import *
+
+
+from src.modules.email_services.services import EmailService, CandidateEmailService, PanelEmailService
 
 
 def get_auth_service(
     repo: UserRepository = Depends(get_user_repository),
-    emailService: EmailService = Depends(get_email_service),
+    emailService: EmailService = Depends(get_email_service___),
     passwordService: PasswordService = Depends(get_password_service),
     db: AsyncSession = Depends(get_db)
 ):

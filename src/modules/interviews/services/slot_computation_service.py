@@ -18,7 +18,8 @@ from src.modules.interviews.models import Interview_Slot, Panelist,Interview
 from src.modules.interviews.repositories import InterviewSlotsRepository, InterviewRoundConfigsRepository, InterviewRepository, InterviewEventRepository
 from src.utils.jwt import JWTService
 from src.models.enums import InterviewStatus
-
+from src.dtos.emails.panel_dto import PanelistReminderAvailabilityData,PanelistInterviewReminderData,PanelistBookingData,AvailableSlotsData,ThankYouPanelistData,PanelistSlotReleasedData,PanelistMeetingRescheduledData
+from src.dtos.emails.candidate_dto import CandidateBookingLinkReminderData,CandidateInterviewReminderData,CandidateBookingLinkData,CandidateBookingConfirmationData,CandidateRescheduleNewSlotsData
 from src.modules.email_services.services import CandidateEmailService
 logger = get_logger("SlotComputationService")
 
@@ -454,10 +455,12 @@ class SlotComputationService:
             booking_link = f"{self.frontend_url}/interview/book?token={booking_token}"
             try:
                 await self.candidate_email_service.send_booking_link_email(
+                    CandidateBookingLinkData(
                     candidate_email=candidate_email,
                     candidate_name=candidate.full_name or candidate_email,
                     interview_round_title=round_config.title,
                     booking_link=booking_link,
+                    )
                 )
             except Exception as e:
                 logger.error(f"Failed to send booking email to {candidate_email}: {e}")

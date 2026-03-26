@@ -21,7 +21,8 @@ from src.repositories.job_repository import JobRepository
 from src.modules.email_services.services import CandidateEmailService, PanelEmailService
 from configs.env_config import FRONTEND_URL
 from src.modules.reminders.reminder_dtos import CreateReminderDTO
-from src.modules.notifications.notification_dtos import FormReminderPayloadDTO_Panel, InterviewReminderPayloadDTO_Panel, FormReminderPayloadDTO_Candidate, InterviewReminderPayloadDTO_Candidate
+from src.dtos.emails.panel_dto import PanelistReminderAvailabilityData,PanelistInterviewReminderData,PanelistBookingData,AvailableSlotsData,ThankYouPanelistData,PanelistSlotReleasedData,PanelistMeetingRescheduledData
+from src.dtos.emails.candidate_dto import CandidateBookingLinkReminderData,CandidateInterviewReminderData,CandidateBookingLinkData,CandidateBookingConfirmationData,CandidateRescheduleNewSlotsData
 from src.modules.reminders.model.reminder_enum import ReminderType, RecipientType, EntityType
 from datetime import timedelta
 from src.dtos.job_settings_dto import ReminderSettingsDTO,ReschedulingSettingsDTO
@@ -98,7 +99,7 @@ class ApplicationService:
                 reminders_payload.append(CreateReminderDTO(
                     entity_id=str(config.id),
                     entity_type=EntityType.INTERVIEW,
-                    payload=FormReminderPayloadDTO_Panel(
+                    payload=PanelistReminderAvailabilityData(
                         panelist_email=panelist.email,
                         panelist_name=panelist.name,
                         interview_round_title=config.title,
@@ -119,11 +120,11 @@ class ApplicationService:
                 reminders_payload.append(CreateReminderDTO(
                     entity_id=str(round_config.id),
                     entity_type=EntityType.INTERVIEW,
-                    payload=FormReminderPayloadDTO_Candidate(
+                    payload=CandidateBookingLinkReminderData(
                         candidate_email=candidate.email,
                         candidate_name=candidate.full_name or candidate.email,
                         interview_round_title=round_config.title,
-                        form_link=booking_link
+                        booking_link=booking_link
                     ).model_dump(),
                     recipient_id=str(application_id),
                     recipient_type=RecipientType.CANDIDATE,
@@ -478,11 +479,12 @@ class ApplicationService:
                 if len(requested_panelist) != 0:
                     await asyncio.gather(*[
                             self.panel_email_service.send_slot_availability_email(
+                                AvailableSlotsData(
                                 panelist_email=panelist.email,
                                 panelist_name=panelist.name,
                                 interview_round_title=round_config.title,
                                 form_link=f"{self.frontend_url}/panelist/availability?token={panelist.availability_token}",
-                            )
+                                ))
                             for panelist in requested_panelist
                         ])
                     self.logger.info(f"Sent slot availability email to panelists for round_config_id={round_config.id} and application_id={application_id}")
@@ -536,11 +538,12 @@ class ApplicationService:
                 
                 try:
                     await self.candidate_email_service.send_booking_link_email(
-                        candidate_email=candidate.email,
-                        candidate_name=candidate.full_name or candidate.email,
-                        interview_round_title=round_config.title,
-                        booking_link=booking_link,
-                    )
+                            CandidateBookingLinkData(
+                            candidate_email=candidate.email,
+                            candidate_name=candidate.full_name or candidate.email,
+                            interview_round_title=round_config.title,
+                            booking_link=booking_link,
+                            ))
                 except Exception as e:
                     self.logger.error(f"Failed to send booking link email: {e}")
 

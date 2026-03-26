@@ -18,7 +18,7 @@ from src.modules.interviews.repositories.interview_slots_repository import Inter
 from src.modules.interviews.repositories.panelist_repository import PanelistRepository
 
 from src.modules.reminders.reminder_repository import ReminderRepository
-from src.dependency.services.helper_services import *
+from src.dependency.services.helpers.helper_services import *
 
 from src.repositories.jd_repository import JDRepository
 from src.repositories.form_config_repository import FormConfigRepository

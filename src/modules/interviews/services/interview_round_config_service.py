@@ -16,9 +16,10 @@ from uuid import UUID
 from src.utils.time_helper import format_time_according_to_timezone
 from src.dtos.job_settings_dto import ReminderSettingsDTO,ReschedulingSettingsDTO
 from src.modules.reminders.reminder_dtos import CreateReminderDTO
-from src.modules.notifications.notification_dtos import FormReminderPayloadDTO_Panel, InterviewReminderPayloadDTO_Panel, FormReminderPayloadDTO_Candidate, InterviewReminderPayloadDTO_Candidate
+from src.dtos.emails.panel_dto import PanelistReminderAvailabilityData
 from src.modules.reminders.model.reminder_enum import ReminderType, RecipientType, EntityType
 from datetime import timedelta
+from src.dtos.emails.panel_dto import PanelistBookingData,AvailableSlotsData,ThankYouPanelistData,PanelistSlotReleasedData,PanelistMeetingRescheduledData,PanelistReminderAvailabilityData,PanelistInterviewReminderData
 
 class InterviewRoundConfigService:
     def __init__(self, interview_round_config_repository:InterviewRoundConfigsRepository,
@@ -62,7 +63,7 @@ class InterviewRoundConfigService:
                 reminders_payload.append(CreateReminderDTO(
                     entity_id=str(config.id),
                     entity_type=EntityType.INTERVIEW,
-                    payload=FormReminderPayloadDTO_Panel(
+                    payload=PanelistReminderAvailabilityData(
                         panelist_email=panelist.email,
                         panelist_name=panelist.name,
                         interview_round_title=config.title,
@@ -130,13 +131,16 @@ class InterviewRoundConfigService:
                             token_expiry_in_min=expiry_time 
                         )
                     panelists = result["requested_panelists"]
+                    
                     if panelists:
                         tasks.extend([
                             self.panel_email_service.send_slot_availability_email(
+                                AvailableSlotsData(
                                 panelist_email=p.email,
                                 panelist_name=p.name,
                                 interview_round_title=created_row.title,
                                 form_link=f"{self.frontend_url}/panelist/availability?token={p.availability_token}",
+                        )           
                             )
                             for p in panelists
                         ])
@@ -278,11 +282,12 @@ class InterviewRoundConfigService:
                 # Send availability request emails to newly added panelists
                 await asyncio.gather(*[
                     self.panel_email_service.send_slot_availability_email(
+                        AvailableSlotsData(
                         panelist_email=p.email,
                         panelist_name=p.name,
                         interview_round_title=config.title,
                         form_link=f"{self.frontend_url}/panelist/availability?token={p.availability_token}",
-                    )
+                        ))
                     for p in new_panelists
                 ])
 
@@ -344,11 +349,12 @@ class InterviewRoundConfigService:
             # ! enque them too
             await asyncio.gather(*[
                     self.panel_email_service.send_slot_availability_email(
+                        AvailableSlotsData(
                         panelist_email=panelist.email,
                         panelist_name=panelist.name,
                         interview_round_title=config.title,
                         form_link=f"{self.frontend_url}/panelist/availability?token={panelist.availability_token}",
-                    )
+                        ))
                     for panelist in requested_panelist
                 ])
 
@@ -414,11 +420,12 @@ class InterviewRoundConfigService:
             # Send emails only to newly requested panelists
             await asyncio.gather(*[
                 self.panel_email_service.send_slot_availability_email(
+                    AvailableSlotsData(
                     panelist_email=p.email,
                     panelist_name=p.name,
                     interview_round_title=config.title,
                     form_link=f"{self.frontend_url}/panelist/availability?token={p.availability_token}",
-                )
+                    ))
                 for p in requested_panelists
             ])
 

@@ -5,8 +5,9 @@ from async_workers.producer import ARQProducer
 from src.modules.interviews.repositories.interview_event_repository import InterviewEventRepository
 from src.modules.notifications.notification_service import NotificationService
 from src.modules.reminders.reminder_service import ReminderWorkerService
-from src.modules.email_services.candidate.candidate_email_service import CandidateEmailService
-from src.modules.email_services.panel.panel_email_service import PanelEmailService
+from src.modules.email_services.services.candidate_email_service import CandidateEmailService
+from src.modules.email_services.services.panel_email_service import PanelEmailService
+from src.modules.email_services.services import EmailService
 from src.modules.reminders.reminder_repository import ReminderRepository 
 
 @asynccontextmanager
@@ -27,9 +28,13 @@ async def job_context(ctx):
         candidate_email_service = CandidateEmailService()
         panel_email_service = PanelEmailService()
         
+        email_service = EmailService(
+            candidate_service=candidate_email_service,
+            panel_service=panel_email_service
+        )
+        
         notification_service = NotificationService(
-            panel_email_service=panel_email_service,
-            candidate_email_service=candidate_email_service
+            email_service=email_service
         )
         
         reminder_worker_service = ReminderWorkerService(

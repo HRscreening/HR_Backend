@@ -30,7 +30,8 @@ from src.utils.jwt import JWTService
 import asyncio
 from src.dtos.job_settings_dto import ReminderSettingsDTO,ReschedulingSettingsDTO
 from src.modules.reminders.reminder_dtos import CreateReminderDTO
-from src.modules.notifications.notification_dtos import FormReminderPayloadDTO_Panel, InterviewReminderPayloadDTO_Panel, FormReminderPayloadDTO_Candidate, InterviewReminderPayloadDTO_Candidate
+from src.dtos.emails.panel_dto import PanelistReminderAvailabilityData,PanelistInterviewReminderData,PanelistBookingData,AvailableSlotsData,ThankYouPanelistData,PanelistSlotReleasedData,PanelistMeetingRescheduledData
+from src.dtos.emails.candidate_dto import CandidateBookingLinkReminderData,CandidateInterviewReminderData,CandidateBookingLinkData,CandidateBookingConfirmationData,CandidateRescheduleNewSlotsData
 from src.modules.reminders.model.reminder_enum import ReminderType, RecipientType, EntityType,ReminderStatus
 from datetime import timedelta
 
@@ -212,12 +213,12 @@ class PanelistService:
                 reminders_payload.append(CreateReminderDTO(
                     entity_id=str(round_config.id),
                     entity_type=EntityType.INTERVIEW,
-                    payload=FormReminderPayloadDTO_Candidate(
+                    payload=CandidateBookingLinkReminderData(
                         candidate_email=cand["candidate_email"],
                         candidate_full_name=cand["candidate_full_name"],
                         interview_round_title=round_config.title,
                         form_link=f"{self.frontend_url}/interview/book?token={cand["booking_token"]}"
-                    ).model_dump(),
+                    ).model_dump(mode="json"),
                     recipient_id=str(cand["id"]),
                     recipient_type=RecipientType.CANDIDATE,
                     reminder_type=ReminderType.BOOKING_LINK,
@@ -233,7 +234,7 @@ class PanelistService:
             reminders_payload.append(CreateReminderDTO(
             entity_id=str(interview.id),
             entity_type=EntityType.INTERVIEW,
-            payload=InterviewReminderPayloadDTO_Panel(
+            payload=PanelistInterviewReminderData(
                 candidate_name=candidate_display,
                 panelist_name=panelist.name,
                 panelist_email=panelist.email,
@@ -242,7 +243,7 @@ class PanelistService:
                 scheduled_end=serialize_datetime(slot.slot_end),
                 meet_link=meet_link,
                 reschedule_link=panelist_reschedule_link   
-            ).model_dump(),
+            ).model_dump(mode="json"),
             recipient_id=str(panelist.id),
             recipient_type=RecipientType.PANELIST,
             reminder_type=ReminderType.INTERVIEW_UPCOMING,
@@ -264,7 +265,7 @@ class PanelistService:
             reminders_payload.append(CreateReminderDTO(
             entity_id=str(interview.id),
             entity_type=EntityType.INTERVIEW,
-            payload=InterviewReminderPayloadDTO_Candidate(
+            payload=CandidateInterviewReminderData(
                 candidate_name=candidate_display,
                 candidate_email=candidate.email,
                 interview_round_title=config.title,
@@ -272,7 +273,7 @@ class PanelistService:
                 scheduled_end=serialize_datetime(slot.slot_end),
                 meet_link=meet_link,
                 reschedule_link=cand_reschedule_link   
-            ).model_dump(),
+            ).model_dump(mode="json"),
             recipient_id=str(candidate.id or candidate_email),
             recipient_type=RecipientType.CANDIDATE,
             reminder_type=ReminderType.INTERVIEW_UPCOMING,
@@ -593,22 +594,26 @@ class PanelistService:
             await self.db.commit()
             
             await self.panel_email_service.send_thanks_for_submitting_availability_email(
+                ThankYouPanelistData(
+                    
                 panelist_email=panelist.email,
                 panelist_name=panelist.name,
                 interview_round_title=round_config.title,
                 edit_slots_link=f"{self.frontend_url}/panelist/edit-slots?token={edit_token}",
                 validity_period=f"{round_config.end_date.astimezone().strftime('%Y-%m-%d %H:%M %Z')}",
+                )
             )
             
             # Notify Waiting Candidates
 
             await asyncio.gather(*[
                 self.candidate_email_service.send_booking_link_email(
+                    CandidateBookingLinkData(
                     candidate_email=data["candidate_email"],
                     candidate_name=data["candidate_full_name"],
                     interview_round_title=round_config.title,
                     booking_link=f"{self.frontend_url}/interview/book?token={data["booking_token"]}",
-                ) for data in cand_interview_data
+                )) for data in cand_interview_data
             ])
             
 
@@ -725,11 +730,12 @@ class PanelistService:
             
             await asyncio.gather(*[
                 self.candidate_email_service.send_booking_link_email(
+                    CandidateBookingLinkData(
                     candidate_email=data["candidate_email"],
                     candidate_name=data["candidate_full_name"],
                     interview_round_title=round_config.title,
                     booking_link=f"{self.frontend_url}/interview/book?token={data["booking_token"]}",
-                ) for data in cand_interview_data
+                )) for data in cand_interview_data
             ])
             
 
@@ -987,6 +993,8 @@ class PanelistService:
             # TODO: stop candidate receiving reminders for old slot
 
             await self.candidate_email_service.send_interview_rescheduled_email(
+                CandidateRescheduleNewSlotsData(
+                    
                 candidate_email=candidate.email,
                 candidate_name=candidate.full_name,
                 interview_round_title=round_config.title,
@@ -994,6 +1002,7 @@ class PanelistService:
                 scheduled_start=current_slot.slot_start,
                 scheduled_end=current_slot.slot_end,
                 reason="The panelist has rescheduled the interview.",
+                )
             )
         
             
