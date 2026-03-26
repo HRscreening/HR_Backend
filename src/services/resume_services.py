@@ -250,6 +250,44 @@ def finalize_batch_parsed(batch_id: str):
         logger.info(f"[FINALIZE_DB] batch {batch_id} finalized and committed")
 
 
+async def score_all_service(job_id: str, db: AsyncSession) -> dict:
+    """
+    Enqueue scoring for all PARSED resumes of a job via the RQ worker.
+
+    Returns a dict with enqueued_count, batch_ids, and a message.
+    Raises DomainError if no parsed resumes exist or no active rubric found.
+    """
+    resume_result = await db.execute(
+        select(Resume)
+        .join(Application, Resume.application_id == Application.id)
+        .where(
+            Application.job_id == job_id,
+            Resume.status == ResumeStatus.PARSED,
+        )
+    )
+    resumes = resume_result.scalars().all()
+
+    if not resumes:
+        raise DomainError(f"No parsed resumes found for job {job_id}")
+
+    rubric_result = await db.execute(
+        select(Rubric).where(Rubric.job_id == job_id, Rubric.is_active == True)
+    )
+    rubric = rubric_result.scalar_one_or_none()
+
+    if not rubric:
+        raise DomainError(f"No active rubric found for job {job_id}")
+
+    resume_ids = [str(r.id) for r in resumes]
+    batch_ids = enqueue_resumes_scoring(job_id=job_id, resume_ids=resume_ids)
+
+    return {
+        "enqueued_count": len(resume_ids),
+        "batch_ids": batch_ids,
+        "message": f"Scoring enqueued for {len(resume_ids)} resume(s)",
+    }
+
+
 # Should be for worker but now testing as an API
 # TODO: For workers we will be passing batch_id only
 async def score_resumes_service(job_id: str, db: AsyncSession):

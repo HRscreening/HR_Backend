@@ -35,7 +35,7 @@ from typing import Dict, Any
 from configs.postgress_db import get_db
 from src.schemas.rubric_schemas import SetRubricRequest, UpdateRubricRequest, GenerateRubricPreviewRequest
 from src.schemas.job_schemas import JobOverviewResponseNew, RubricVersionsResponse
-from src.services.resume_services import score_resumes_service
+from src.services.resume_services import score_resumes_service, score_all_service
 from src.dependency import get_job_service, JobService, get_application_service
 from src.services.application_service import ApplicationService
 from src.utils.file_manager import fileManager
@@ -403,7 +403,28 @@ async def trigger_scoring(
     )
 
 
-# ─── 9. Batch Progress ───────────────────────────────────────────────
+# ─── 9. Score All Parsed Resumes ─────────────────────────────────────
+
+@router.post(
+    "/{job_id}/score-all",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def score_all(
+    job_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Enqueue scoring for all PARSED resumes of a job via the RQ worker.
+    Returns batch IDs so the client can poll for progress.
+    """
+    from src.services.errors.base import DomainError
+    try:
+        return await score_all_service(job_id=str(job_id), db=db)
+    except DomainError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+# ─── 10. Batch Progress ───────────────────────────────────────────────
 
 @router.get("/{job_id}/batch-progress", status_code=status.HTTP_200_OK)
 async def get_batch_progress(

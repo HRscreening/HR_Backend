@@ -5,7 +5,11 @@ from sqlalchemy.orm import selectinload,  aliased
 
 from typing import Optional, List
 
-from src.models import Job, Rubric, Application, Score, Resume, BulkUploadBatches, Document,Interview,JobSetting
+from src.models import (
+    Job, Rubric, Application, Score, Resume, BulkUploadBatches, Document,Interview,JobSetting,
+    JobDescription, ApplicationFormConfig,
+    Interview_Round_Configs, Panelist, Interview, Interview_TimeLine_Events, Interview_Slot,
+)
 from configs.log_config import get_logger
 from src.dtos.job_settings_dto import ReminderSettingsDTO, PanelEscalationSettingsDTO, ReschedulingSettingsDTO,CreateJobSettingsDTO
 
@@ -75,29 +79,48 @@ class JobRepository:
         if not job:
             return False
 
-        # Subquery: application ids for this job
-        app_subq = select(Application.id).where(Application.job_id == job_id)
+        job_uuid = UUID(job_id) if isinstance(job_id, str) else job_id
 
-        # 1. Scores (reference applications and rubrics)
+        # Subqueries
+        app_subq = select(Application.id).where(Application.job_id == job_uuid)
+        round_subq = select(Interview_Round_Configs.id).where(Interview_Round_Configs.job_id == job_uuid)
+        interview_subq = select(Interview.id).where(Interview.round_config_id.in_(round_subq))
+
+        # 1. Scores
         await self.db.execute(delete(Score).where(Score.application_id.in_(app_subq)))
-        # 2. Resumes (reference applications)
+        # 2. Resumes
         await self.db.execute(delete(Resume).where(Resume.application_id.in_(app_subq)))
         # 3. Applications
-        await self.db.execute(delete(Application).where(Application.job_id == job_id))
-        # 4. Rubrics
-        await self.db.execute(delete(Rubric).where(Rubric.job_id == job_id))
-        # 5. Bulk upload batches
-        await self.db.execute(delete(BulkUploadBatches).where(BulkUploadBatches.job_id == job_id))
-        # 6. Documents linked to this job (e.g. job_description)
-        job_uuid = UUID(job_id) if isinstance(job_id, str) else job_id
+        await self.db.execute(delete(Application).where(Application.job_id == job_uuid))
+        # 4. Interview timeline events
+        await self.db.execute(delete(Interview_TimeLine_Events).where(Interview_TimeLine_Events.interview_id.in_(interview_subq)))
+        # 5. Interview slots
+        await self.db.execute(delete(Interview_Slot).where(Interview_Slot.round_config_id.in_(round_subq)))
+        # 6. Interviews
+        await self.db.execute(delete(Interview).where(Interview.round_config_id.in_(round_subq)))
+        # 7. Panelists (belong to round configs)
+        await self.db.execute(delete(Panelist).where(Panelist.round_config_id.in_(round_subq)))
+        # 8. Interview round configs
+        await self.db.execute(delete(Interview_Round_Configs).where(Interview_Round_Configs.job_id == job_uuid))
+        # 9. Rubrics
+        await self.db.execute(delete(Rubric).where(Rubric.job_id == job_uuid))
+        # 10. Bulk upload batches
+        await self.db.execute(delete(BulkUploadBatches).where(BulkUploadBatches.job_id == job_uuid))
+        # 11. JD versions — clear FK pointer first
+        await self.db.execute(Job.__table__.update().where(Job.id == job_uuid).values(active_jd_id=None))
+        await self.db.execute(delete(JobDescription).where(JobDescription.job_id == job_uuid))
+        # 12. Form configs — clear FK pointer first
+        await self.db.execute(Job.__table__.update().where(Job.id == job_uuid).values(active_form_config_id=None))
+        await self.db.execute(delete(ApplicationFormConfig).where(ApplicationFormConfig.job_id == job_uuid))
+        # 13. Documents
         await self.db.execute(
             delete(Document).where(
                 Document.entity_type == "jobs",
                 Document.entity_id == job_uuid,
             )
         )
-        # 7. Job
-        await self.db.execute(delete(Job).where(Job.id == job_id))
+        # 14. Job itself
+        await self.db.execute(delete(Job).where(Job.id == job_uuid))
 
         await self.db.flush()
         return True

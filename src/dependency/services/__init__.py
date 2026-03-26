@@ -11,7 +11,12 @@ from .api_services import (
     get_calendar_service,
     get_oauth_service,
     get_auth_service,
-    get_reminder_worker_service
+    get_reminder_worker_service,
+    get_jd_service,
+    get_form_config_service,
+    get_jd_builder_service,
+    get_public_apply_service,
+
 )
 
 from .api_services import (
@@ -27,6 +32,8 @@ from .api_services import (
     CalendarService,
     GoogleCalendarOAuthService,
     OAuthService,
+    JDService,
+    FormConfigService,
 )
 
 from .helper_services import get_jwt_service, get_email_service, get_password_service, get_candidate_email_service, get_panel_email_service,get_notification_service

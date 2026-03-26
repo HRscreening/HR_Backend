@@ -20,7 +20,8 @@ from src.modules.interviews.repositories.panelist_repository import PanelistRepo
 from src.modules.reminders.reminder_repository import ReminderRepository
 from src.dependency.services.helper_services import *
 
-
+from src.repositories.jd_repository import JDRepository
+from src.repositories.form_config_repository import FormConfigRepository
 
 def get_batch_repository(db: AsyncSession = Depends(get_db)): return BatchRepository(db)
 
@@ -70,3 +71,11 @@ def get_calendar_repository(db: AsyncSession = Depends(get_db),):
 
 def get_reminder_repository(db: AsyncSession = Depends(get_db)):
     return ReminderRepository(db)
+
+
+def get_jd_repository(db: AsyncSession = Depends(get_db)):
+    return JDRepository(db)
+
+
+def get_form_config_repository(db: AsyncSession = Depends(get_db)):
+    return FormConfigRepository(db)

@@ -5,6 +5,12 @@ from src.services.application_service import ApplicationService
 from src.services.batch_service import BatchService
 from src.services.candidate_service import CandidateService
 
+
+from src.services.jd_service import JDService
+from src.services.form_config_service import FormConfigService
+from src.services.jd_builder_service import JDBuilderService
+from src.services.public_apply_service import PublicApplyService
+
 from src.modules.interviews.services import *
 
 from src.modules.oauth.oauth_service import OAuthService
@@ -96,6 +102,62 @@ def get_candidate_service(
         application_repository,
         db,
     )
+
+
+
+def get_jd_service(
+    jd_repo: JDRepository = Depends(get_jd_repository),
+    form_config_repo: FormConfigRepository = Depends(get_form_config_repository),
+    job_repo: JobRepository = Depends(get_job_repository),
+    db: AsyncSession = Depends(get_db),
+):
+    return JDService(
+        jd_repository=jd_repo,
+        form_config_repository=form_config_repo,
+        job_repository=job_repo,
+        db=db,
+    )
+
+
+def get_form_config_service(
+    form_config_repo: FormConfigRepository = Depends(get_form_config_repository),
+    job_repo: JobRepository = Depends(get_job_repository),
+    db: AsyncSession = Depends(get_db),
+):
+    return FormConfigService(
+        form_config_repository=form_config_repo,
+        job_repository=job_repo,
+        db=db,
+    )
+
+
+
+def get_jd_builder_service(
+    jd_repo: JDRepository = Depends(get_jd_repository),
+    db: AsyncSession = Depends(get_db),
+):
+    return JDBuilderService(jd_repository=jd_repo, db=db)
+
+
+def get_public_apply_service(
+    job_repo: JobRepository = Depends(get_job_repository),
+    jd_repo: JDRepository = Depends(get_jd_repository),
+    form_config_repo: FormConfigRepository = Depends(get_form_config_repository),
+    candidate_repo: CandidateRepository = Depends(get_candidate_repository),
+    file_manager: FileManagerService = Depends(get_file_manager_service),
+    db: AsyncSession = Depends(get_db),
+):
+    return PublicApplyService(
+        job_repository=job_repo,
+        jd_repository=jd_repo,
+        form_config_repository=form_config_repo,
+        candidate_repository=candidate_repo,
+        file_manager=file_manager,
+        db=db,
+    )
+
+
+
 
 
 def get_calendar_service():
