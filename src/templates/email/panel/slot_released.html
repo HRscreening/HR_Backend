@@ -1,0 +1,29 @@
+{% extends "email/base.html" %}
+{% import "email/components.html" as comp %}
+
+{% block content %}
+
+{{ comp.greeting(panelist_name) }}
+
+<p style="margin:0 0 20px;font-size:15px;color:#374151;line-height:1.7;">
+    This is to inform you that the candidate 
+    <strong>{{ candidate_name }}</strong> has released their previously booked interview slot for the 
+    <strong style="color:#4f46e5;">{{ interview_round_title }}</strong> round.
+</p>
+
+<table style="width:100%;margin-bottom:24px;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;">
+    {{ comp.info_row("Candidate", candidate_name) }}
+    {{ comp.info_row("Date", interview_date) }}
+    {{ comp.info_row("Time", interview_time, border=False) }}
+</table>
+
+<p style="margin:0 0 16px;font-size:14px;color:#6b7280;line-height:1.7;">
+    The slot is now available again and may be booked by another candidate.
+</p>
+
+<p style="margin:24px 0 0;font-size:15px;color:#374151;line-height:1.7;">
+    Thank you for your continued support.<br/>
+    <strong>HR Team</strong>
+</p>
+
+{% endblock %}

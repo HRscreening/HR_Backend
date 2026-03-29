@@ -1,0 +1,31 @@
+{% extends "email/base.html" %}
+{% import "email/components.html" as comp %}
+
+{% block content %}
+<h2 style="margin:0 0 16px;font-size:18px;color:#1f2937;">
+  Reminder: Book Your Interview Slot
+</h2>
+
+<p style="margin:0 0 12px;font-size:15px;color:#374151;line-height:1.6;">
+  Hi {{ candidate_name }},
+</p>
+
+<p style="margin:0 0 12px;font-size:15px;color:#374151;line-height:1.6;">
+  This is a gentle reminder to schedule your <strong>{{ interview_round_title }}</strong> interview.
+  We noticed that you haven’t selected a time slot yet.
+</p>
+
+<p style="margin:0 0 12px;font-size:15px;color:#374151;line-height:1.6;">
+  Please choose a convenient time as soon as possible to proceed with your application.
+</p>
+
+{{ comp.cta_button(booking_link, "Book Your Interview Slot") }}
+
+<p style="margin:16px 0 8px;font-size:13px;color:#6b7280;line-height:1.5;">
+  If you’ve already booked your slot, please ignore this email.
+</p>
+
+<p style="margin:0 0 8px;font-size:13px;color:#6b7280;line-height:1.5;">
+  For any assistance, feel free to reach out using the contact details provided in your application.
+</p>
+{% endblock %}

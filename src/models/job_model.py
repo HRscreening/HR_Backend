@@ -167,3 +167,11 @@ class Job(Base):
         post_update=True,
         uselist=False,
     )
+    
+
+    setting = relationship(
+        "JobSetting",
+        back_populates="job",
+        uselist=False, 
+        cascade="all, delete-orphan"
+    )

@@ -1,0 +1,30 @@
+{% extends "email/base.html" %}
+{% import "email/components.html" as comp %}
+
+{% block content %}
+
+{{ comp.greeting(panelist_name) }}
+
+<p style="margin:0 0 16px;font-size:15px;color:#374151;line-height:1.7;">
+    This is a gentle reminder to submit your availability for the 
+    <strong style="color:#4f46e5;">{{ interview_round_title }}</strong> round.
+</p>
+
+<p style="margin:0 0 12px;font-size:15px;color:#374151;line-height:1.7;">
+    We have not yet received your preferred time slots. Kindly fill out the availability form
+    at your earliest convenience so we can proceed with scheduling.
+</p>
+
+{{ comp.cta_button(form_link, "Submit Availability →") }}
+
+<p style="margin:16px 0 12px;font-size:14px;color:#6b7280;line-height:1.7;">
+    Your response is important for timely scheduling. If you have already submitted the form,
+    please ignore this message.
+</p>
+
+<p style="margin:24px 0 0;font-size:15px;color:#374151;line-height:1.7;">
+    Thank you for your time and support.<br/>
+    <strong>HR Team</strong>
+</p>
+
+{% endblock %}

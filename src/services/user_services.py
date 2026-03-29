@@ -10,7 +10,7 @@ from src.services.errors.base import DomainError
 
 from src.models.enums import CalendarProvider
 from src.repositories.user_repository import UserRepository
-from src.repositories.interview_respositories.calendar_repository import CalendarRepository
+from src.modules.interviews.repositories.calendar_repository import CalendarRepository
 
 
 

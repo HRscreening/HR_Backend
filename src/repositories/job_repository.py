@@ -1,16 +1,17 @@
 from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update, delete
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload,  aliased
 
 from typing import Optional, List
 
 from src.models import (
-    Job, Rubric, Application, Score, Resume, BulkUploadBatches, Document,
+    Job, Rubric, Application, Score, Resume, BulkUploadBatches, Document,Interview,JobSetting,
     JobDescription, ApplicationFormConfig,
     Interview_Round_Configs, Panelist, Interview, Interview_TimeLine_Events, Interview_Slot,
 )
 from configs.log_config import get_logger
+from src.dtos.job_settings_dto import ReminderSettingsDTO, PanelEscalationSettingsDTO, ReschedulingSettingsDTO,CreateJobSettingsDTO
 
 
 class JobRepository:
@@ -242,6 +243,45 @@ class JobRepository:
         )
         return result.scalar_one()
 
+    # async def get_applications_of_job(
+    #     self,
+    #     job_id: str,
+    #     current_rubric_id: str,
+    #     page_size: int = 15,
+    #     offset: int = 0,
+    #     sort: str = "score_desc",
+    # ):
+    #     stmt = (
+    #         select(Application, Score)
+    #         .outerjoin(
+    #             Score,
+    #             (Score.application_id == Application.id)
+    #             & (Score.rubric_id == current_rubric_id)
+    #             & (Score.is_active.is_(True)),
+    #         )
+    #         .where(
+    #             Application.job_id == job_id,
+    #             Application.deleted_at.is_(None),
+    #         )
+    #         .options(
+    #             selectinload(Application.candidate),
+    #             selectinload(Application.resume),
+    #             selectinload(Application.interviews),  
+    #         )
+    #     )
+
+    #     if sort == "score_desc":
+    #         stmt = stmt.order_by(
+    #             Score.overall_score.desc().nulls_last(),
+    #             Application.created_at.desc(),
+    #         )
+    #     else:
+    #         stmt = stmt.order_by(Application.created_at.desc())
+
+    #     stmt = stmt.limit(page_size).offset(offset)
+    #     result = await self.db.execute(stmt)
+    #     return result.all()
+    
     async def get_applications_of_job(
         self,
         job_id: str,
@@ -250,13 +290,34 @@ class JobRepository:
         offset: int = 0,
         sort: str = "score_desc",
     ):
+        latest_round_subq = (
+            select(
+                Interview.application_id,
+                func.max(Interview.round_number).label("max_round"),
+            )
+            .group_by(Interview.application_id)
+            .subquery()
+        )
+        
+        
+        LatestInterview = aliased(Interview)
+
         stmt = (
-            select(Application, Score)
+            select(Application, Score, LatestInterview)
             .outerjoin(
                 Score,
                 (Score.application_id == Application.id)
                 & (Score.rubric_id == current_rubric_id)
                 & (Score.is_active.is_(True)),
+            )
+            .outerjoin(
+                latest_round_subq,
+                latest_round_subq.c.application_id == Application.id,
+            )
+            .outerjoin(
+                LatestInterview,
+                (LatestInterview.application_id == Application.id)
+                & (LatestInterview.round_number == latest_round_subq.c.max_round),
             )
             .where(
                 Application.job_id == job_id,
@@ -267,7 +328,6 @@ class JobRepository:
                 selectinload(Application.resume),
             )
         )
-
         if sort == "score_desc":
             stmt = stmt.order_by(
                 Score.overall_score.desc().nulls_last(),
@@ -277,6 +337,7 @@ class JobRepository:
             stmt = stmt.order_by(Application.created_at.desc())
 
         stmt = stmt.limit(page_size).offset(offset)
+
         result = await self.db.execute(stmt)
         return result.all()
 
@@ -287,3 +348,37 @@ class JobRepository:
 
     async def rollback(self):
         await self.db.rollback()
+        
+        
+    # ───── JOB SETTINGS ───────────────────────────────────────────────────
+    async def create_job_settings(self, job_id:str | UUID,setting_data:CreateJobSettingsDTO) -> Job:
+        """Create a new Job record. Does NOT commit (caller manages transaction)."""
+        job_setting = JobSetting(
+            job_id = job_id,
+            is_confidential=setting_data.is_confidential,
+            voice_ai_enabled=setting_data.voice_ai_enabled,
+            manual_rounds_count=setting_data.manual_rounds_count,
+            auto_score_every_resume=setting_data.auto_score_every_resume,
+            auto_score_every_resume_on_manual_upload=setting_data.auto_score_every_resume_on_manual_upload,
+            auto_offer_enabled=setting_data.auto_offer_enabled,
+            ai_assessment_enabled=setting_data.ai_assessment_enabled,
+            rescore_on_rubric_change=setting_data.rescore_on_rubric_change,
+            auto_move_to_next_round=setting_data.auto_move_to_next_round,
+            panel_reminders=setting_data.panel_reminders.model_dump(),
+            candidate_reminders=setting_data.candidate_reminders.model_dump(),
+            feedback_reminders=setting_data.feedback_reminders.model_dump(),
+            escalation=setting_data.escalation.model_dump() if setting_data.escalation else {},
+            rescheduling=setting_data.rescheduling.model_dump() if setting_data.rescheduling else {},
+            # voice_nudges=setting_data.voice_nudges.model_dump() if setting_data.voice_nudges else {},
+        )
+        self.db.add(job_setting)
+        await self.db.flush()
+        return job_setting
+    
+    
+    async def get_job_settings(self, job_id: str) -> Optional[JobSetting]:
+        result = await self.db.execute(
+            select(JobSetting).where(JobSetting.job_id == job_id)
+        )
+        return result.scalar_one_or_none()
+

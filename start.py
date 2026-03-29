@@ -72,6 +72,11 @@ def main():
     env["QUEUES"] = "jd_extraction,candidate_extraction"
     WORKER_PROCS.append(start_process([PYTHON_EXEC, "-m", "workers.worker"], env))
 
+    print("Starting email worker...")
+    env = os.environ.copy()
+    env["QUEUES"] = "email_jobs"
+    WORKER_PROCS.append(start_process([PYTHON_EXEC, "-m", "email_workers_async.worker"]))
+    
     print(
         f"API pid={API_PROC.pid} | Worker pids={[p.pid for p in WORKER_PROCS]}"
     )

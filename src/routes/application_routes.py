@@ -212,13 +212,9 @@ async def delete_application(application_id: UUID, request: Request,application_
 
 @router.post("/move-to-round/{application_id}",status_code=status.HTTP_200_OK)
 async def move_application_to_round(application_id: UUID, data:MoveApplicationRequest,application_service: ApplicationService = Depends(get_application_service)):
-    await application_service.move_to_round(
+    return await application_service.move_to_round(
         application_id=application_id,
         round_number=data.target_round,
         job_id=data.job_id
     )
-
-    return {
-        "status": "success",
-        "message": f"Application moved to round {data.target_round} successfully"
-    }
+    

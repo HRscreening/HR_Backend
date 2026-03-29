@@ -1,8 +1,10 @@
 from fastapi import APIRouter,Request,Depends,status
 from  typing import Optional
 
-router = APIRouter(prefix="/api/user", tags=["User Management"])
 from src.dependency import get_user_service,UserService
+
+
+router = APIRouter(prefix="/api/user", tags=["User Management"])
 
 
 @router.get("/get-user",status_code=status.HTTP_200_OK)
