@@ -51,12 +51,12 @@ async def rubric(jd_text):
 
     print(f"  threshold_score  : {result.get('threshold_score')}")
     print(f"  total sections   : {len(result.get('sections', []))}")
+    all_cw = sum(c.get("weight", 0) for s in result.get("sections", []) for c in s.get("criteria", []))
+    print(f"  global_criteria_weight_sum: {all_cw:.1f}")
     for s in result.get("sections", []):
-        cw = sum(c.get("weight", 0) for c in s.get("criteria", []))
-        print(f"  [{s['key']}]  section_weight={s['weight']}  "
-              f"criteria={len(s['criteria'])}  crit_weight_sum={cw:.1f}")
+        print(f"  [{s['key']}]  criteria={len(s.get('criteria', []))}")
         for c in s["criteria"]:
-            print(f"    - {c['name']} (w={c.get('weight')}, req={c.get('requirement_level')})")
+            print(f"    - {c['name']} (importance={c.get('importance')}, global_weight={c.get('weight')}%)")
 
     return result
 
@@ -69,29 +69,20 @@ async def test_rubric_has_sections(rubric):
     assert len(rubric["sections"]) > 0
 
 
-async def test_rubric_section_weights_sum_to_100(rubric):
-    total = sum(s.get("weight", 0) for s in rubric["sections"])
-    assert abs(total - 100) < 1.0, f"Section weights sum to {total:.1f}, expected ~100"
-
-
-async def test_rubric_criteria_weights_sum_to_100_per_section(rubric):
+async def test_rubric_sections_have_no_weight(rubric):
+    """Sections are UI grouping only — they must not carry a scoring weight."""
     for s in rubric["sections"]:
-        total = sum(c.get("weight", 0) for c in s["criteria"])
-        assert abs(total - 100) < 1.0, (
-            f"Section '{s['key']}' criteria weights sum to {total:.1f}, expected ~100"
+        assert s.get("weight") is None, (
+            f"Section '{s['key']}' has weight={s.get('weight')} but sections should be weightless"
         )
+
+
+async def test_rubric_global_criteria_weights_sum_to_100(rubric):
+    """Global criterion weights across ALL sections must sum to 100."""
+    total = sum(c.get("weight", 0) for s in rubric["sections"] for c in s.get("criteria", []))
+    assert abs(total - 100) < 1.0, f"Global criterion weights sum to {total:.1f}, expected ~100"
 
 
 async def test_rubric_passes_validation(rubric):
     ok, errors = validate_rubric_json(rubric)
     assert ok, "Rubric validation failed:\n" + "\n".join(f"  • {e}" for e in errors)
-
-
-async def test_rubric_requirement_levels_valid(rubric):
-    valid = {"must", "should", "nice"}
-    for s in rubric["sections"]:
-        for c in s["criteria"]:
-            level = c.get("requirement_level")
-            assert level in valid, (
-                f"Criterion '{c.get('name')}' has invalid requirement_level: {level!r}"
-            )

@@ -1,13 +1,13 @@
 """
-Phase 1 — Test 05: Resume Scoring
+Phase 1 — Test 05: Resume Scoring (Pipeline v2)
 ====================================
-Two LLM calls total per module (rubric generation + resume scoring),
-both cached via module-scoped fixtures.
+Tests the 0-10 anchored scale, quality gate, cross-encoder relevance,
+and full scoring pipeline.
 
 Saves:
   outputs/05a_scoring_rubric_used.json    — rubric the resume was scored against
-  outputs/05b_scoring_llm_raw_output.json — raw LLM output (sections, grounding, ai_analysis)
-  outputs/05c_scoring_final_result.json   — final weighted score + full breakdown
+  outputs/05b_scoring_llm_raw_output.json — raw LLM output (0-10 scale)
+  outputs/05c_scoring_final_result.json   — final weighted score (0-100 display)
 """
 
 import json
@@ -17,7 +17,8 @@ from pathlib import Path
 from src.utils.extract_pdf import extract_text_from_file_sync
 from src.pipelines.generate_rubric import generate_rubric_from_jd
 from src.pipelines.score_resumes import score_resume_sync, chain as scoring_chain
-from src.pipelines.score_post_processor import compute_weighted_score
+from src.pipelines.score_post_processor import compute_flat_score_v2
+from src.pipelines.quality_gate import run_quality_gate, GateResult
 from src.pipelines.extract_candidate_info import extract_candidate_info_sync
 from src.schemas.user_schemas import ResumeDataSchema
 
@@ -123,7 +124,7 @@ def final_score(rubric, resume_text):
     return score
 
 
-# ── Tests ─────────────────────────────────────────────────────────────────────
+# ── Tests: LLM Raw Output (0-10 scale) ───────────────────────────────────────
 
 def test_llm_raw_output_has_required_fields(llm_raw_output):
     assert hasattr(llm_raw_output, "sections")
@@ -141,6 +142,15 @@ def test_llm_sections_match_rubric_keys(llm_raw_output, rubric):
     assert not extra,   f"LLM returned unknown sections: {extra}"
 
 
+def test_llm_scores_are_0_to_10(llm_raw_output):
+    """Verify LLM returns integer scores in the 0-10 anchored scale."""
+    for section_key, section in llm_raw_output.sections.items():
+        for c_name, criterion in section.criteria.items():
+            assert 0 <= criterion.score <= 10, (
+                f"Score out of 0-10 range: {section_key}.{c_name} = {criterion.score}"
+            )
+
+
 def test_grounding_has_evidence(llm_raw_output):
     all_evidence = [
         ev
@@ -153,6 +163,8 @@ def test_grounding_has_evidence(llm_raw_output):
     for ev in all_evidence[:3]:
         print(f"    › {ev[:120]!r}")
 
+
+# ── Tests: Final Score (0-100 display scale) ──────────────────────────────────
 
 def test_final_score_in_range(final_score):
     assert 0 <= final_score.overall_score <= 100, \
@@ -171,3 +183,65 @@ def test_final_score_has_grounding(final_score):
 def test_ai_confidence_in_range(final_score):
     assert 0.0 <= final_score.ai_confidence <= 1.0, \
         f"ai_confidence out of range: {final_score.ai_confidence}"
+
+
+def test_breakdown_shows_raw_llm_scores(final_score):
+    """Verify breakdown includes both display (0-100) and raw (0-10) scores."""
+    for section_key, section in final_score.breakdown.items():
+        for c_name, criterion in section.get("criteria_scores", {}).items():
+            assert "raw_llm_score" in criterion, (
+                f"Missing raw_llm_score in {section_key}.{c_name}"
+            )
+            assert 0 <= criterion["raw_llm_score"] <= 10
+            assert 0 <= criterion["score"] <= 100
+
+
+def test_scoring_method_is_v2(final_score):
+    assert final_score.scoring_method == "flat_v2"
+
+
+# ── Tests: Quality Gate ──────────────────────────────────────────────────────
+
+def test_quality_gate_passes_valid_resume(resume_text):
+    resumes = [{"resume_id": "r1", "parsed_text": resume_text, "status": "parsed"}]
+    passed, rejected = run_quality_gate(resumes)
+    assert len(passed) == 1
+    assert len(rejected) == 0
+
+
+def test_quality_gate_rejects_empty_text():
+    resumes = [{"resume_id": "r1", "parsed_text": "", "status": "parsed"}]
+    passed, rejected = run_quality_gate(resumes)
+    assert len(passed) == 0
+    assert len(rejected) == 1
+    assert "no extractable text" in rejected[0].rejection_reason.lower()
+
+
+def test_quality_gate_rejects_too_short():
+    resumes = [{"resume_id": "r1", "parsed_text": "hello world foo", "status": "parsed"}]
+    passed, rejected = run_quality_gate(resumes)
+    assert len(passed) == 0
+    assert "too short" in rejected[0].rejection_reason.lower()
+
+
+def test_quality_gate_rejects_duplicates():
+    text = "A solid resume with more than fifty words of content " * 5
+    resumes = [
+        {"resume_id": "r1", "parsed_text": text, "status": "parsed"},
+        {"resume_id": "r2", "parsed_text": text, "status": "parsed"},
+    ]
+    passed, rejected = run_quality_gate(resumes)
+    assert len(passed) == 1
+    assert len(rejected) == 1
+    assert "duplicate" in rejected[0].rejection_reason.lower()
+
+
+def test_quality_gate_rejects_jd_template():
+    jd_text = (
+        "Job Description\nResponsibilities: Lead team development\n"
+        "Qualifications: 5+ years experience " + "more text " * 20
+    )
+    resumes = [{"resume_id": "r1", "parsed_text": jd_text, "status": "parsed"}]
+    passed, rejected = run_quality_gate(resumes)
+    assert len(passed) == 0
+    assert "jd or blank template" in rejected[0].rejection_reason.lower()

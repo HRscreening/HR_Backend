@@ -12,9 +12,12 @@ engine = create_async_engine(
     DATABASE_URL,
     echo=False,
     future=True,
-    connect_args={"statement_cache_size": 0},
+    connect_args={"statement_cache_size": 0, "timeout": 30},  # 30s allows for SSL handshake overhead
     pool_pre_ping=True,  # Required for pgbouncer to avoid stale connections
     pool_recycle=300,
+    pool_timeout=30,
+    pool_size=5,
+    max_overflow=10,
 )
 
 

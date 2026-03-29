@@ -120,7 +120,8 @@ async def generate_rubric_from_jd(
         use_cache: Kept for API compatibility; not used in single-call version.
 
     Returns:
-        ExtractedJDSchemaV2-compatible dict with sections + weights.
+        PipelineRubricOutput-compatible dict: domain, domain_confidence,
+        threshold_score, version, sections (with criteria + importance + weight).
     """
     # Keep signature arg for compatibility; not used in single-call version
     _ = use_cache

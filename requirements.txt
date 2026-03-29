@@ -28,3 +28,4 @@ pdf2image
 Pillow
 pymongo>=4.16.0
 arq
+sentence-transformers>=2.7.0

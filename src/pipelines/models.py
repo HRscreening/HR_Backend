@@ -26,6 +26,16 @@ scoring_model = ChatGoogleGenerativeAI(
 )
 
 
+# Fast model for simple binary checks (non-negotiable screening).
+# Uses flash-lite: the schema is flat (no nesting), so flash-lite handles it reliably.
+# ~3x cheaper and ~2x faster than flash for simple yes/no tasks.
+_fast_model_name = os.environ.get("FAST_SCREENING_MODEL", "gemini-2.0-flash-lite")
+fast_screening_model = ChatGoogleGenerativeAI(
+    model=_fast_model_name,
+    temperature=0,
+    timeout=30,
+    max_retries=2,
+)
 
 
 

@@ -563,7 +563,7 @@ class JobService:
                 "dashboard": {
                     "total_applications": total_applications,
                     "by_status": analytics,
-                    "avg_score": float(avg_score) if avg_score is not None else 0.0,
+                    "avg_score": round(float(avg_score)) if avg_score is not None else 0,
                 },
                 "criteria": criteria_overview,
                 "settings": {
@@ -806,6 +806,8 @@ class JobService:
                     "full_name": app.candidate.full_name,
                     "email": app.candidate.email,
                     "phone": app.candidate.phone,
+                    "current_title": app.candidate.current_title,
+                    "current_company": app.candidate.current_company,
                 }
             else:
                 candidate_info = None
@@ -827,6 +829,8 @@ class JobService:
                         "full_name": candidate_info.get("full_name"),
                         "email": candidate_info.get("email"),
                         "phone": candidate_info.get("phone"),
+                        "current_title": candidate_info.get("current_title"),
+                        "current_company": candidate_info.get("current_company"),
                     }
                 else:
                     app_data["candidate"] = None

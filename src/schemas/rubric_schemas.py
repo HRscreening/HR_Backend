@@ -7,11 +7,25 @@ Design decisions:
 - `schema_version` in the saved JSONB ensures backward compatibility with old rubrics.
 """
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List, Dict, Any, Literal
+from enum import Enum
 
 
 # ─── Enums ────────────────────────────────────────────────────────────
+
+class NonNegotiableCategory(str, Enum):
+    """Categories for non-negotiable criteria — binary dealbreakers."""
+    LOCATION = "location"
+    WORK_AUTHORIZATION = "work_authorization"
+    DEGREE = "degree"
+    CERTIFICATION = "certification"
+    EXPERIENCE_YEARS = "experience_years"
+    EMPLOYMENT_TYPE = "employment_type"
+    SECURITY_CLEARANCE = "security_clearance"
+    TRAVEL = "travel"
+    OTHER = "other"
+
 
 VALID_DOMAINS = [
     "technology", "finance", "sales", "marketing", "management",
@@ -26,10 +40,38 @@ VALID_DOMAINS = [
 class SubCriterionV2(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     display_name: str = Field(..., min_length=1, max_length=150)
+    # weight: display percentage within this criterion's sub-criteria group (sums to 100).
+    #   Computed by rubric_post_processor from importance. DISPLAY ONLY — never used in scoring.
     weight: int = Field(default=0, ge=0, le=100)
+    # importance: raw LLM signal (1-5) used only to derive sub-criterion display weight.
+    #   Sub-criteria are display-only; neither importance nor weight affects the criterion score.
     importance: int = Field(default=3, ge=1, le=5)
     value: Optional[str] = None
     value_type: Literal["none"] = "none"
+
+
+# ─── Non-Negotiable Criterion ────────────────────────────────────────
+
+MAX_NON_NEGOTIABLES = 5
+
+class NonNegotiableCriterion(BaseModel):
+    """
+    A binary dealbreaker criterion extracted from the JD.
+
+    Non-negotiables are NOT scored on a 0-10 scale — they are pass/fail.
+    If a resume fails ANY non-negotiable, it is auto-rejected before LLM scoring.
+    """
+    name: str = Field(..., min_length=1, max_length=100)
+    display_name: str = Field(..., min_length=1, max_length=150)
+    requirement: str = Field(
+        ..., min_length=1, max_length=300,
+        description="What is required, e.g. 'Onsite in Bangalore', 'Bachelor's degree minimum'"
+    )
+    category: NonNegotiableCategory = NonNegotiableCategory.OTHER
+    verification_question: str = Field(
+        ..., min_length=10, max_length=500,
+        description="Binary yes/no question for the LLM to verify against the resume"
+    )
 
 
 # ─── Criterion ───────────────────────────────────────────────────────
@@ -37,9 +79,16 @@ class SubCriterionV2(BaseModel):
 class CriterionV2(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     display_name: str = Field(..., min_length=1, max_length=150)
+    # weight: DISPLAY field — global percentage of overall score for this criterion (all criteria sum to 100).
+    #   Computed by rubric_post_processor._apply_global_criterion_weights() from importance.
+    #   Example: importance=10 on a rubric with 18 total criteria → weight≈7 (shown in UI as "7%").
+    #   NOT read by the scoring engine; use importance for scoring math.
     weight: int = Field(default=0, ge=0, le=100)
+    # importance: SCORING field — raw LLM-assigned signal (1-10, higher = more critical).
+    #   Used directly by score_post_processor.compute_flat_score():
+    #     overall = Σ(criterion_score × importance) / total_importance
+    #   Equivalent to weight but avoids an extra normalization step at score time.
     importance: int = Field(default=5, ge=1, le=10)
-    requirement_level: Optional[Literal["must", "should", "nice"]] = None
     priority: int = Field(..., ge=1)
     value: Optional[str] = None
     value_type: Literal["none"] = "none"
@@ -51,7 +100,11 @@ class CriterionV2(BaseModel):
 class RubricSectionV2(BaseModel):
     key: str = Field(..., min_length=1, max_length=80)
     label: str = Field(..., min_length=1, max_length=100)
-    weight: int = Field(default=0, ge=0, le=100)
+    # weight: DEPRECATED — accepted for backward compatibility but stripped by post-processor.
+    #   Sections have no scoring weight in the flat model; all weighting lives on criteria.
+    weight: Optional[int] = Field(default=None, ge=0, le=100)
+    # importance: DISPLAY ONLY — hint for UI section ordering. Default=5, never used in scoring.
+    #   The scoring engine does not read section importance at any point.
     importance: int = Field(default=5, ge=1, le=10)
     criteria: List[CriterionV2]
 
@@ -83,6 +136,7 @@ class ExtractedJDSchemaV2(BaseModel):
     threshold_score: int = Field(..., ge=0, le=100)
     version: Optional[int] = 1
     sections: List[RubricSectionV2]
+    non_negotiables: List[NonNegotiableCriterion] = Field(default_factory=list)
 
     @field_validator("domain")
     @classmethod
@@ -98,6 +152,13 @@ class ExtractedJDSchemaV2(BaseModel):
             raise ValueError("At least one section is required")
         return v
 
+    @field_validator("non_negotiables")
+    @classmethod
+    def validate_non_negotiables(cls, v):
+        if len(v) > MAX_NON_NEGOTIABLES:
+            return v[:MAX_NON_NEGOTIABLES]
+        return v
+
 
 class PipelineRubricOutput(BaseModel):
     """
@@ -110,6 +171,7 @@ class PipelineRubricOutput(BaseModel):
     threshold_score: int = Field(default=60, ge=0, le=100)
     version: Optional[int] = 1
     sections: List[RubricSectionV2]
+    non_negotiables: List[NonNegotiableCriterion] = Field(default_factory=list)
 
     @field_validator("domain")
     @classmethod
@@ -125,6 +187,13 @@ class PipelineRubricOutput(BaseModel):
             raise ValueError("At least one section is required")
         return v
 
+    @field_validator("non_negotiables")
+    @classmethod
+    def validate_non_negotiables(cls, v: List) -> List:
+        if len(v) > MAX_NON_NEGOTIABLES:
+            return v[:MAX_NON_NEGOTIABLES]
+        return v
+
 
 # ─── API Request Schemas ─────────────────────────────────────────────
 
@@ -138,6 +207,7 @@ class SetRubricRequest(BaseModel):
     domain: str = "other"
     raw_jd_text: Optional[str] = None
     sections: List[RubricSectionV2]
+    non_negotiables: List[NonNegotiableCriterion] = Field(default_factory=list)
 
     @field_validator("domain")
     @classmethod
@@ -153,6 +223,7 @@ class UpdateRubricRequest(BaseModel):
     """
     threshold_score: int = Field(..., ge=0, le=100)
     sections: List[RubricSectionV2]
+    non_negotiables: List[NonNegotiableCriterion] = Field(default_factory=list)
     raw_jd_text: Optional[str] = None
     # Optional audit hints (backend still enforces core invariants)
     source: Optional[str] = None          # "ai" | "manual" | "combined"
