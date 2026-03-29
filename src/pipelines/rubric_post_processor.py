@@ -5,12 +5,42 @@ The LLM is imperfect — this module normalizes, validates, and fixes
 common issues in the raw output before it reaches the frontend.
 
 Responsibilities:
-  1. Normalize criterion weights to sum exactly 100 per section
-  2. Normalize sub-criteria weights to sum exactly 100
+  1. Compute criterion 'weight' globally (all criteria across all sections sum to 100)
+  2. Compute sub-criteria 'weight' per criterion (sums to 100 within each criterion)
   3. Enforce priority uniqueness and sequential ordering
-  4. Sort criteria arrays by priority (ascending = most important first)
+  4. Sort criteria arrays by importance descending (most important first)
   5. Normalize empty value to null
   6. Ensure display_name is properly formatted
+  7. Strip section weight (sections are UI grouping only)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FIELD ROLES — read before editing
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  Field               Where          Purpose
+  ─────────────────── ────────────── ───────────────────────────────────────────
+  criterion.importance criteria       SCORING — raw LLM signal (1–10). Read by
+                                      compute_flat_score() to weight the overall.
+                                      Formula: Σ(score × importance) / total_imp
+  criterion.weight    criteria       DISPLAY — global % of overall score for this
+                                      criterion. Computed here from importance so
+                                      all criteria weights sum to 100. Shown in UI
+                                      ("this criterion is worth 7% of the score").
+                                      NOT read by the scoring engine.
+  sub_criterion.      sub_criteria   DISPLAY — raw LLM signal (1–5) used only to
+    importance                        derive sub_criterion.weight. Sub-criteria are
+                                      display-only; they never affect criterion score.
+  sub_criterion.      sub_criteria   DISPLAY — percentage within the criterion's
+    weight                            sub-criteria group (sums to 100 per criterion).
+  section.importance  sections       DISPLAY ONLY — UI ordering hint. Not used in
+                                      scoring. Always defaults to 5.
+  section.weight      sections       DEPRECATED — stripped in post_process_rubric().
+
+Both criterion.importance and criterion.weight encode identical ranking information
+(weight = importance / total_importance × 100). The scoring engine uses importance
+directly to avoid an extra normalization step. The UI uses weight for human-readable
+percentages without requiring recruiters to do mental division.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 """
 
 from configs.log_config import get_logger
@@ -18,7 +48,12 @@ import json
 import re
 from typing import Any, Tuple, List
 
-from src.schemas.rubric_schemas import PipelineRubricOutput
+from src.schemas.rubric_schemas import (
+    PipelineRubricOutput,
+    NonNegotiableCriterion,
+    NonNegotiableCategory,
+    MAX_NON_NEGOTIABLES,
+)
 
 logger = get_logger("rubric_post_processor")
 
@@ -52,10 +87,11 @@ def _dedupe_name(name: str, used: set[str]) -> str:
     return final
 
 
-def _compute_weights_from_importance(items: list[dict], importance_key: str = "importance", max_imp: int = 10) -> list[dict]:
+def _compute_weights_from_importance(items: list[dict], importance_key: str = "importance", max_imp: int = 5) -> list[dict]:
     """
-    Compute 'weight' dynamically from 'importance' (1-10 or 1-5).
-    Ensures the weights sum to 100.
+    Compute 'weight' from 'importance' so weights sum to 100.
+    Used only for sub-criteria (display purposes within a criterion).
+    For top-level criteria, use _apply_global_criterion_weights instead.
     """
     if not items:
         return items
@@ -88,6 +124,41 @@ def _compute_weights_from_importance(items: list[dict], importance_key: str = "i
     return items
 
 
+def _apply_global_criterion_weights(sections: list[dict]) -> None:
+    """
+    Compute each criterion's 'weight' as its global percentage of the overall score.
+    All criteria across ALL sections are normalised together so their weights sum to 100.
+    Mutates criteria in-place (sections list is already built by this point).
+    """
+    all_criteria: list[dict] = [
+        c
+        for section in sections
+        for c in section.get("criteria", [])
+        if isinstance(c, dict)
+    ]
+    if not all_criteria:
+        return
+
+    total_imp = sum(c.get("importance", 5) for c in all_criteria)
+    if total_imp == 0:
+        equal_weight = 100 // len(all_criteria)
+        remainder = 100 - equal_weight * len(all_criteria)
+        for i, c in enumerate(all_criteria):
+            c["weight"] = equal_weight + (1 if i < remainder else 0)
+        return
+
+    factor = 100.0 / total_imp
+    raw_weights = [round(c.get("importance", 5) * factor) for c in all_criteria]
+
+    diff = 100 - sum(raw_weights)
+    if diff != 0:
+        max_idx = raw_weights.index(max(raw_weights))
+        raw_weights[max_idx] += diff
+
+    for c, w in zip(all_criteria, raw_weights):
+        c["weight"] = max(0, w)
+
+
 def _fix_value_consistency(item: dict) -> dict:
     """Normalize value: empty string or missing → null; ensure value_type is none."""
     val = item.get("value")
@@ -102,6 +173,105 @@ def _fix_display_name(item: dict) -> dict:
     if not item.get("display_name"):
         item["display_name"] = _snake_to_display(item.get("name", "unknown"))
     return item
+
+
+def _post_process_non_negotiables(raw_output: dict) -> None:
+    """
+    Validate and clean non-negotiables, then remove duplicated items from sections.
+    Mutates raw_output in-place.
+    """
+    non_negs = raw_output.get("non_negotiables")
+    if not non_negs or not isinstance(non_negs, list):
+        raw_output["non_negotiables"] = []
+        return
+
+    # Validate each non-negotiable and cap at MAX_NON_NEGOTIABLES
+    valid_categories = {c.value for c in NonNegotiableCategory}
+    cleaned: list[dict] = []
+    used_names: set[str] = set()
+
+    for item in non_negs[:MAX_NON_NEGOTIABLES]:
+        if not isinstance(item, dict):
+            continue
+
+        # Ensure required fields exist
+        name = _to_snake(item.get("name") or item.get("display_name") or "")
+        if not name:
+            continue
+
+        name = _dedupe_name(name, used_names)
+
+        display_name = item.get("display_name") or _snake_to_display(name)
+        requirement = item.get("requirement", "")
+        if not requirement:
+            continue
+
+        category = item.get("category", "other")
+        if category not in valid_categories:
+            category = "other"
+
+        verification_question = item.get("verification_question", "")
+        if not verification_question or len(verification_question) < 10:
+            # Auto-generate a basic verification question
+            verification_question = f"Does the candidate's resume indicate they meet the requirement: {requirement}?"
+
+        cleaned.append({
+            "name": name,
+            "display_name": display_name,
+            "requirement": requirement[:300],
+            "category": category,
+            "verification_question": verification_question[:500],
+        })
+
+    raw_output["non_negotiables"] = cleaned
+
+    # Remove non-negotiable items from sections to avoid double-counting
+    if not cleaned:
+        return
+
+    nn_names = {item["name"] for item in cleaned}
+    nn_display_lower = {item["display_name"].lower() for item in cleaned}
+    nn_requirements_lower = {item["requirement"].lower() for item in cleaned}
+
+    for section in raw_output.get("sections", []):
+        criteria = section.get("criteria", [])
+        filtered = []
+        for criterion in criteria:
+            if not isinstance(criterion, dict):
+                filtered.append(criterion)
+                continue
+
+            c_name = criterion.get("name", "")
+            c_display = (criterion.get("display_name") or "").lower()
+            c_value = (criterion.get("value") or "").lower()
+
+            # Check if this criterion duplicates a non-negotiable
+            is_duplicate = (
+                c_name in nn_names
+                or c_display in nn_display_lower
+                or (c_value and c_value in nn_requirements_lower)
+            )
+
+            if not is_duplicate:
+                filtered.append(criterion)
+            else:
+                logger.info(
+                    "Removed criterion '%s' from section '%s' — duplicates non-negotiable",
+                    c_name, section.get("key", ""),
+                )
+
+        section["criteria"] = filtered
+
+    # Remove now-empty sections
+    raw_output["sections"] = [
+        s for s in raw_output.get("sections", [])
+        if s.get("criteria")
+    ]
+
+    logger.info(
+        "Non-negotiables post-processed: %d items, sections trimmed to %d",
+        len(cleaned), len(raw_output.get("sections", [])),
+    )
 
 
 def post_process_rubric(raw_output: dict) -> dict:
@@ -176,17 +346,18 @@ def post_process_rubric(raw_output: dict) -> dict:
                 elif subs is not None and (not isinstance(subs, list) or len(subs) == 0):
                     criterion["sub_criteria"] = None
 
-            # Normalize weights across criteria in this section based on importance
+            # Sort criteria by importance desc (then name for stability), assign sequential priority
             if criteria:
-                weighted_criteria = _compute_weights_from_importance(criteria, "importance", 10)
-                # Sort by computed weight desc (then importance) so weights are non-increasing by priority
-                weighted_criteria = sorted(
-                    weighted_criteria,
-                    key=lambda c: (-(c.get("weight") or 0), -(c.get("importance") or 0), str(c.get("name") or "")),
+                criteria_sorted = sorted(
+                    criteria,
+                    key=lambda c: (-(c.get("importance") or 0), str(c.get("name") or "")),
                 )
-                for i, criterion in enumerate(weighted_criteria):
+                for i, criterion in enumerate(criteria_sorted):
                     criterion["priority"] = i + 1
-                section["criteria"] = weighted_criteria
+                section["criteria"] = criteria_sorted
+
+            # Sections have no weight — they are UI grouping only
+            section.pop("weight", None)
 
             # Ensure section label exists (default from key: snake_case → Title Case)
             if not section.get("label") and section.get("key"):
@@ -196,12 +367,13 @@ def post_process_rubric(raw_output: dict) -> dict:
         if not sections:
             sections = [{"key": "requirements", "label": "Requirements", "criteria": []}]
 
-        # Compute section-level weights from section importance
-        if len(sections) > 1:
-            sections = _compute_weights_from_importance(sections, "importance", 10)
-        elif len(sections) == 1:
-            sections[0]["weight"] = 100
-            sections[0]["importance"] = sections[0].get("importance", 10)
+        # Process non-negotiables: validate, clean, and remove duplicates from sections
+        _post_process_non_negotiables(raw_output)
+        # Re-read sections after non-negotiable processing may have removed items
+        sections = raw_output.get("sections", [])
+
+        # Compute global criterion weights (across all sections, all criteria)
+        _apply_global_criterion_weights(sections)
 
         raw_output["sections"] = sections
 
@@ -313,10 +485,6 @@ def validate_rubric_json(payload: Any) -> Tuple[bool, List[str]]:
             errors.append(f"sections[{si}].criteria must be an array")
             continue
 
-        # criteria weights monotonicity is a heuristic for JD ordering.
-        # We validate non-increasing weights when there are 3+ items.
-        weights_seen: list[int] = []
-
         for ci, c in enumerate(criteria):
             if not isinstance(c, dict):
                 errors.append(f"sections[{si}].criteria[{ci}] must be an object")
@@ -328,8 +496,6 @@ def validate_rubric_json(payload: Any) -> Tuple[bool, List[str]]:
                 errors.append(f"sections[{si}].criteria[{ci}].weight must be an int")
             elif not (0 <= w <= 100):
                 errors.append(f"sections[{si}].criteria[{ci}].weight must be 0..100")
-            else:
-                weights_seen.append(w)
 
             if not _is_strict_int(p):
                 errors.append(f"sections[{si}].criteria[{ci}].priority must be an int")
@@ -347,7 +513,6 @@ def validate_rubric_json(payload: Any) -> Tuple[bool, List[str]]:
                 errors.append(f"sections[{si}].criteria[{ci}].sub_criteria must be an array or null")
                 continue
 
-            sub_weights: list[int] = []
             for sj, sc in enumerate(subs):
                 if not isinstance(sc, dict):
                     errors.append(f"sections[{si}].criteria[{ci}].sub_criteria[{sj}] must be an object")
@@ -357,8 +522,6 @@ def validate_rubric_json(payload: Any) -> Tuple[bool, List[str]]:
                     errors.append(f"sections[{si}].criteria[{ci}].sub_criteria[{sj}].weight must be an int")
                 elif not (0 <= sw <= 100):
                     errors.append(f"sections[{si}].criteria[{ci}].sub_criteria[{sj}].weight must be 0..100")
-                else:
-                    sub_weights.append(sw)
 
                 sval = sc.get("value")
                 if sval is not None and not isinstance(sval, str):
@@ -366,26 +529,34 @@ def validate_rubric_json(payload: Any) -> Tuple[bool, List[str]]:
                         f"sections[{si}].criteria[{ci}].sub_criteria[{sj}].value must be a string or null"
                     )
 
-            if len(sub_weights) >= 3:
-                for a, b in zip(sub_weights, sub_weights[1:]):
-                    if a < b:
-                        errors.append(
-                            f"sections[{si}].criteria[{ci}].sub_criteria weights should be non-increasing by JD order"
-                        )
-                        break
-
-        if len(weights_seen) >= 3:
-            for a, b in zip(weights_seen, weights_seen[1:]):
-                if a < b:
-                    errors.append(f"sections[{si}].criteria weights should be non-increasing by priority/JD order")
-                    break
-
-    # Validate section weights sum to 100 when ≥2 sections exist
-    section_weights = [s.get("weight", 0) for s in sections if isinstance(s, dict)]
-    if len(section_weights) >= 2:
-        total = sum(section_weights)
+    # Flat model: sections have no weight. Validate global criterion weights sum to ~100 instead.
+    all_criterion_weights = [
+        c.get("weight", 0)
+        for s in sections if isinstance(s, dict)
+        for c in s.get("criteria", []) if isinstance(c, dict)
+    ]
+    if all_criterion_weights:
+        total = sum(all_criterion_weights)
         if total != 100 and total != 0:
-            errors.append(f"Section weights should sum to 100, got {total}")
+            errors.append(f"Global criterion weights should sum to 100, got {total}")
+
+    # --- Validate non-negotiables ---
+    non_negs = payload.get("non_negotiables", [])
+    if not isinstance(non_negs, list):
+        errors.append("non_negotiables must be an array")
+    elif len(non_negs) > MAX_NON_NEGOTIABLES:
+        errors.append(f"non_negotiables has {len(non_negs)} items, max is {MAX_NON_NEGOTIABLES}")
+    else:
+        for ni, nn in enumerate(non_negs):
+            if not isinstance(nn, dict):
+                errors.append(f"non_negotiables[{ni}] must be an object")
+                continue
+            if not nn.get("name"):
+                errors.append(f"non_negotiables[{ni}].name is required")
+            if not nn.get("requirement"):
+                errors.append(f"non_negotiables[{ni}].requirement is required")
+            if not nn.get("verification_question"):
+                errors.append(f"non_negotiables[{ni}].verification_question is required")
 
     # --- Structural validation via pipeline schema (job_data not required) ---
     try:

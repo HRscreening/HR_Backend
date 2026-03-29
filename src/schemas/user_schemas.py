@@ -37,12 +37,12 @@ class CandidateInfoSchema(BaseModel):
 # ─── LLM Raw Output (what the LLM returns — NO overall_score) ───────
 
 class SubCriterionRawScore(BaseModel):
-    score: float = Field(ge=0, le=100)
+    score: int = Field(ge=0, le=10)
     reasoning: str = Field(default="", max_length=300)
 
 
 class CriterionRawScore(BaseModel):
-    score: float = Field(ge=0, le=100)
+    score: int = Field(ge=0, le=10)
     reasoning: str = Field(default="", max_length=300)
     sub_criteria: Optional[Dict[str, SubCriterionRawScore]] = Field(default_factory=dict)
 
@@ -100,7 +100,8 @@ class ScoreOutputSchema(BaseModel):
     breakdown: Dict[str, Any]
     grounding_data: Dict[str, Any]
     distinguishing_factors: Optional[List[str]] = None
-    scoring_method: str = "weighted_v2"
+    scoring_method: str = "flat_v2"
+    non_negotiable_status: str = "all_passed"  # "all_passed", "no_non_negotiables", or "not_checked"
 
 
 # ─── Resume Worker Schemas ───────────────────────────────────────────

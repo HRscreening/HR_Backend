@@ -22,7 +22,7 @@ from src.services.errors.base import DomainError
 from src.utils.extract_pdf import extract_text_from_file_sync
 from src.utils.candidate_name import extract_candidate_full_name
 from src.utils.manage_supabase_buckets import download_to_tempfile
-from workers.producer import enqueue_resumes_scoring, enqueue_candidate_extraction
+from workers.producer import enqueue_resumes_scoring, enqueue_candidate_extraction, enqueue_pre_screen_and_score
 from src.utils.pipeline_debug_log import pdlog
 
 logger = logging.getLogger(__name__)
@@ -234,14 +234,14 @@ def finalize_batch_parsed(batch_id: str):
             resume.status = ResumeStatus.QUEUED_FOR_SCORING
 
         if resume_ids:
-            enqueue_resumes_scoring(
+            enqueue_pre_screen_and_score(
                 job_id=str(job_id),
                 resume_ids=resume_ids,
                 upload_batch_id=str(batch.id),
             )
             batch.scoring_total = len(resume_ids)
             batch.scoring_status = BulkUploadStatus.PROCESSING
-            logger.info(f"[FINALIZE_DB] Enqueued scoring for {len(resume_ids)} resumes")
+            logger.info(f"[FINALIZE_DB] Enqueued pre-screen + scoring for {len(resume_ids)} resumes")
         else:
             logger.warning(f"[FINALIZE_DB] No resumes to score — all failed parsing?")
 
@@ -271,7 +271,7 @@ async def score_all_service(job_id: str, db: AsyncSession) -> dict:
         raise DomainError(f"No parsed resumes found for job {job_id}")
 
     rubric_result = await db.execute(
-        select(Rubric).where(Rubric.job_id == job_id, Rubric.is_active == True)
+        select(Rubric).where(Rubric.job_id == job_id, Rubric.is_active.is_(True))
     )
     rubric = rubric_result.scalar_one_or_none()
 
@@ -279,11 +279,11 @@ async def score_all_service(job_id: str, db: AsyncSession) -> dict:
         raise DomainError(f"No active rubric found for job {job_id}")
 
     resume_ids = [str(r.id) for r in resumes]
-    batch_ids = enqueue_resumes_scoring(job_id=job_id, resume_ids=resume_ids)
+    batch_id = enqueue_pre_screen_and_score(job_id=job_id, resume_ids=resume_ids)
 
     return {
         "enqueued_count": len(resume_ids),
-        "batch_ids": batch_ids,
+        "batch_ids": [batch_id],
         "message": f"Scoring enqueued for {len(resume_ids)} resume(s)",
     }
 
@@ -347,6 +347,437 @@ async def score_resumes_service(job_id: str, db: AsyncSession):
         raise DomainError(
             f"Error scoring resumes for job {job_id}"
         ) from e
+
+
+# ─── Pipeline v2: Pre-screen + Score (3-stage) ────────────────────────
+
+def pre_screen_and_score_service_sync(
+    *,
+    db_job_id: str,
+    resume_ids: list[str],
+    batch_id: str,
+    redis_job_id: str | None = None,
+):
+    """
+    Pipeline v2: Quality Gate → Cross-Encoder → LLM Scoring.
+
+    Runs all 3 stages in a single worker task. Updates each resume's
+    status in DB after each stage so the UI can show real-time progress.
+    """
+    from src.pipelines.quality_gate import run_quality_gate
+    from src.pipelines.relevance_scorer import score_relevance_batch
+    from src.pipelines.non_negotiable_screener import screen_non_negotiables_sync
+    from src.pipelines.score_resumes import score_resume_sync
+
+    if not resume_ids:
+        raise DomainError("Empty resume batch received")
+
+    with get_sync_db() as db:
+        logger.info(
+            "[PIPELINE_V2] ══════════════════════════════════════════════════"
+        )
+        logger.info(
+            "[PIPELINE_V2] START  job=%s  batch=%s  resumes=%d",
+            db_job_id, batch_id, len(resume_ids),
+        )
+        logger.info(
+            "[PIPELINE_V2] Stages: Quality Gate → Cross-Encoder (BERT) → Non-Negotiable Screen → LLM Scoring"
+        )
+        logger.info(
+            "[PIPELINE_V2] ══════════════════════════════════════════════════"
+        )
+
+        # ── Fetch job + rubric ──────────────────────────────────────
+        job = db.execute(
+            select(Job).where(Job.id == db_job_id)
+        ).scalar_one_or_none()
+        if not job:
+            raise DomainError(f"Job {db_job_id} not found")
+
+        rubric = db.execute(
+            select(Rubric).where(
+                Rubric.job_id == db_job_id,
+                Rubric.is_active.is_(True),
+            )
+        ).scalar_one_or_none()
+        if not rubric:
+            raise DomainError(f"No active rubric for job {db_job_id}")
+
+        # ── Fetch resumes ───────────────────────────────────────────
+        resumes = db.execute(
+            select(Resume)
+            .join(Application, Resume.application_id == Application.id)
+            .where(
+                Application.job_id == db_job_id,
+                Resume.id.in_(resume_ids),
+                Resume.status == ResumeStatus.QUEUED_FOR_SCORING,
+            )
+        ).scalars().all()
+
+        if not resumes:
+            raise DomainError(f"No resumes to process in batch {batch_id}")
+
+        # Map by both UUID and string key for flexible lookup
+        resume_map: dict = {}
+        for r in resumes:
+            resume_map[r.id] = r
+            resume_map[str(r.id)] = r
+
+        # ── Dedup: skip already-scored ──────────────────────────────
+        existing_scores = db.execute(
+            select(Score.application_id).where(
+                Score.rubric_id == rubric.id,
+                Score.application_id.in_({r.application_id for r in resumes}),
+                Score.is_active.is_(True),
+            )
+        ).scalars().all()
+        already_scored = set(existing_scores)
+        resumes_to_process = [
+            r for r in resumes if r.application_id not in already_scored
+        ]
+
+        if not resumes_to_process:
+            logger.info("All resumes already scored — skipping batch %s", batch_id)
+            return {
+                "status": "BATCH_SKIPPED",
+                "batch_id": batch_id,
+                "scored_count": 0,
+                "failed_count": 0,
+                "pre_screened_count": 0,
+                "quality_gate_failed_count": 0,
+                "non_negotiable_failed_count": 0,
+            }
+
+        # ── STAGE 1: Quality Gate ───────────────────────────────────
+        logger.info("[PIPELINE_V2] Stage 1: Quality Gate on %d resumes", len(resumes_to_process))
+        gate_input = [
+            {
+                "resume_id": str(r.id),
+                "parsed_text": r.parsed_text or "",
+                "status": r.status.value if r.status else "",
+            }
+            for r in resumes_to_process
+        ]
+
+        gate_passed, gate_rejected = run_quality_gate(gate_input)
+
+        # Update DB for rejected resumes
+        for result in gate_rejected:
+            resume = resume_map.get(result.resume_id)
+            if resume:
+                resume.status = ResumeStatus.QUALITY_GATE_FAILED
+                resume.rejection_reason = result.rejection_reason
+        db.flush()
+        logger.info(
+            "[PIPELINE_V2] Quality Gate: %d passed, %d rejected",
+            len(gate_passed), len(gate_rejected),
+        )
+
+        if not gate_passed:
+            db.commit()
+            return {
+                "status": "BATCH_COMPLETED",
+                "batch_id": batch_id,
+                "scored_count": 0,
+                "failed_count": 0,
+                "pre_screened_count": 0,
+                "quality_gate_failed_count": len(gate_rejected),
+                "non_negotiable_failed_count": 0,
+            }
+
+        # ── STAGE 2: Cross-Encoder Relevance Scoring ────────────────
+        jd_text = job.raw_jd_text or ""
+        if not jd_text:
+            # Fallback: build JD text from rubric criteria
+            sections = rubric.criteria.get("sections", [])
+            parts = []
+            for sec in sections:
+                for c in sec.get("criteria", []):
+                    display = c.get("display_name", c.get("name", ""))
+                    val = c.get("value", "")
+                    parts.append(f"{display}: {val}" if val else display)
+            jd_text = "\n".join(parts)
+
+        logger.info(
+            "[PIPELINE_V2] ── Stage 2: Cross-Encoder (BERT) on %d resumes ──",
+            len(gate_passed),
+        )
+        selected, pre_screened = score_relevance_batch(
+            resumes=gate_passed,
+            jd_text=jd_text,
+        )
+
+        # Update DB for pre-screened (rejected by cross-encoder) resumes
+        for result in pre_screened:
+            resume = resume_map.get(result.resume_id)
+            if resume:
+                resume.status = ResumeStatus.PRE_SCREENED
+                resume.pre_screen_rank = result.rank
+                resume.relevance_score = result.relevance_score
+                resume.rejection_reason = result.rejection_reason
+        db.flush()
+        logger.info(
+            "[PIPELINE_V2] Stage 2 DONE: %d → LLM scoring | %d → pre-screened",
+            len(selected), len(pre_screened),
+        )
+        # Log per-resume scores written to DB so results are visible
+        for s in selected:
+            logger.info(
+                "[PIPELINE_V2]   SELECTED  rank=%-2s score=%.4f resume=%s",
+                s.get("rank", "?"), s.get("relevance_score") or 0.0, s["resume_id"],
+            )
+        for r in pre_screened:
+            logger.info(
+                "[PIPELINE_V2]   SKIPPED   rank=%-2s score=%.4f resume=%s",
+                r.rank, r.relevance_score, r.resume_id,
+            )
+
+        if not selected:
+            db.commit()
+            return {
+                "status": "BATCH_COMPLETED",
+                "batch_id": batch_id,
+                "scored_count": 0,
+                "failed_count": 0,
+                "pre_screened_count": len(pre_screened),
+                "quality_gate_failed_count": len(gate_rejected),
+                "non_negotiable_failed_count": 0,
+            }
+
+        # Update selected resumes with rank + relevance score
+        for s in selected:
+            resume = resume_map.get(s["resume_id"])
+            if resume:
+                if s.get("rank"):
+                    resume.pre_screen_rank = s["rank"]
+                if s.get("relevance_score") is not None:
+                    resume.relevance_score = s["relevance_score"]
+        db.flush()
+
+        # ── STAGE 2.5: Non-Negotiable Screening ─────────────────────
+        non_negotiables = rubric.criteria.get("non_negotiables", [])
+        nn_failed_count = 0
+
+        if non_negotiables:
+            logger.info(
+                "[PIPELINE_V2] ── Stage 2.5: Non-Negotiable Screening (%d criteria) on %d resumes ──",
+                len(non_negotiables), len(selected),
+            )
+            nn_input = [
+                {
+                    "resume_id": s["resume_id"],
+                    "parsed_text": (resume_map.get(s["resume_id"]) or resume_map.get(str(s["resume_id"]), None)),
+                }
+                for s in selected
+            ]
+            # Build proper input with parsed_text from resume objects
+            nn_input = []
+            for s in selected:
+                r = resume_map.get(s["resume_id"])
+                if r:
+                    nn_input.append({
+                        "resume_id": str(r.id),
+                        "parsed_text": r.parsed_text or "",
+                    })
+
+            nn_passed, nn_rejected = screen_non_negotiables_sync(
+                resumes=nn_input,
+                non_negotiables=non_negotiables,
+            )
+
+            # Update DB for non-negotiable failures
+            for result in nn_rejected:
+                resume = resume_map.get(result.resume_id)
+                if resume:
+                    resume.status = ResumeStatus.NON_NEGOTIABLE_FAILED
+                    resume.rejection_reason = (
+                        f"Failed non-negotiable criteria: {', '.join(result.failed_criteria)}"
+                    )
+                    resume.non_negotiable_results = result.details
+            db.flush()
+
+            nn_failed_count = len(nn_rejected)
+            logger.info(
+                "[PIPELINE_V2] Stage 2.5 DONE: %d passed | %d failed non-negotiables",
+                len(nn_passed), nn_failed_count,
+            )
+
+            # Filter selected to only those that passed non-negotiables
+            nn_passed_ids = {r["resume_id"] for r in nn_passed}
+            selected = [s for s in selected if s["resume_id"] in nn_passed_ids]
+
+            if not selected:
+                db.commit()
+                return {
+                    "status": "BATCH_COMPLETED",
+                    "batch_id": batch_id,
+                    "scored_count": 0,
+                    "failed_count": 0,
+                    "pre_screened_count": len(pre_screened),
+                    "quality_gate_failed_count": len(gate_rejected),
+                    "non_negotiable_failed_count": nn_failed_count,
+                }
+        else:
+            logger.info("[PIPELINE_V2] No non-negotiables defined — skipping Stage 2.5")
+
+        # Mark remaining selected resumes as scoring in progress
+        for s in selected:
+            resume = resume_map.get(s["resume_id"])
+            if resume:
+                resume.status = ResumeStatus.SCORING_IN_PROGRESS
+        db.flush()
+
+        # ── STAGE 3: LLM Scoring ───────────────────────────────────
+        logger.info(
+            "[PIPELINE_V2] ── Stage 3: LLM Scoring on %d resumes ──", len(selected)
+        )
+
+        # Build resume objects for scoring
+        selected_resume_objs = []
+        for s in selected:
+            resume = resume_map.get(s["resume_id"])
+            if resume:
+                selected_resume_objs.append(resume)
+
+        # Extract candidate info
+        from src.pipelines.extract_candidate_info import extract_candidate_info_sync
+        candidate_infos: dict[str, CandidateInfoSchema] = {}
+        for r in selected_resume_objs:
+            try:
+                ci = extract_candidate_info_sync(r.parsed_text or "")
+                candidate_infos[str(r.id)] = ci
+                pdlog.candidate_info(str(r.id), ci.full_name, ci.email, ci.phone, source="llm+heuristic")
+            except Exception as e:
+                logger.warning("[CANDIDATE_EXTRACT] Failed for resume=%s: %s", r.id, e)
+                candidate_infos[str(r.id)] = CandidateInfoSchema()
+
+        # Build LLM input (coerce UUIDs to str, guard None text)
+        resume_payload = [
+            ResumeDataSchema(
+                application_id=str(r.application_id),
+                resume_id=str(r.id),
+                resume_text=r.parsed_text or "",
+            )
+            for r in selected_resume_objs
+        ]
+
+        score_results = score_resume_sync(
+            resumes=resume_payload,
+            criteria=rubric.criteria,
+            candidate_infos=candidate_infos,
+        )
+
+        # Fetch applications
+        applications = {
+            a.id: a
+            for a in db.execute(
+                select(Application).where(
+                    Application.id.in_({r.application_id for r in selected_resume_objs})
+                )
+            ).scalars()
+        }
+
+        # ── Persist scores ──────────────────────────────────────────
+        for item in score_results:
+            appl = applications.get(item.application_id)
+            if appl:
+                appl.ai_analysis = item.score.ai_analysis
+
+            resume = resume_map.get(item.resume_id)
+            if resume:
+                resume.status = ResumeStatus.SCORED
+
+            candidate_info = candidate_infos.get(str(item.resume_id), CandidateInfoSchema())
+
+            if not candidate_info.full_name:
+                inferred = extract_candidate_full_name((resume.parsed_text if resume else "") or "")
+                if inferred:
+                    candidate_info.full_name = inferred
+
+            if candidate_info and (candidate_info.full_name or candidate_info.email or candidate_info.phone):
+                enqueue_candidate_extraction(
+                    resume_id=item.resume_id,
+                    batch_id=batch_id,
+                    candidate=candidate_info,
+                )
+
+            breakdown_data = item.score.breakdown
+            if hasattr(breakdown_data, "model_dump"):
+                breakdown_data = breakdown_data.model_dump()
+
+            grounding_data = item.score.grounding_data
+            if hasattr(grounding_data, "model_dump"):
+                grounding_data = grounding_data.model_dump()
+            if not isinstance(grounding_data, dict):
+                grounding_data = {}
+
+            if hasattr(item.score, "distinguishing_factors") and item.score.distinguishing_factors:
+                grounding_data["distinguishing_factors"] = item.score.distinguishing_factors
+
+            if candidate_info:
+                grounding_data["candidate_info"] = {
+                    "full_name": getattr(candidate_info, "full_name", None),
+                    "email": getattr(candidate_info, "email", None),
+                    "phone": getattr(candidate_info, "phone", None),
+                }
+
+            db.add(
+                Score(
+                    application_id=item.application_id,
+                    rubric_id=rubric.id,
+                    overall_score=item.score.overall_score,
+                    raw_overall_score=item.score.raw_overall_score,
+                    ai_confidence=item.score.ai_confidence,
+                    breakdown=breakdown_data,
+                    grounding_data=grounding_data,
+                    scored_by="AI",
+                    threshold_score=rubric.threshold_score,
+                    criteria=rubric.criteria,
+                    ai_model=os.environ.get("SCORING_MODEL", "Gemini-2.5-Flash"),
+                    scoring_method=item.score.scoring_method,
+                )
+            )
+
+            pdlog.scoring_final(
+                resume_id=str(item.resume_id),
+                overall_score=item.score.overall_score,
+                section_scores=item.score.breakdown if isinstance(item.score.breakdown, dict) else {},
+            )
+
+        # Mark resumes that were selected but NOT scored (LLM failure) as ERROR
+        scored_resume_ids = {str(item.resume_id) for item in score_results}
+        for r in selected_resume_objs:
+            if str(r.id) not in scored_resume_ids:
+                r.status = ResumeStatus.ERROR
+                r.rejection_reason = "LLM scoring failed"
+
+        db.commit()
+
+        scored_count = len(score_results)
+        failed_count = len(selected_resume_objs) - scored_count
+
+        logger.info(
+            "[PIPELINE_V2] ══════════════════════════════════════════════════"
+        )
+        logger.info(
+            "[PIPELINE_V2] COMPLETE  batch=%s  scored=%d  failed=%d  "
+            "pre_screened=%d  gate_rejected=%d  nn_failed=%d",
+            batch_id, scored_count, failed_count,
+            len(pre_screened), len(gate_rejected), nn_failed_count,
+        )
+        logger.info(
+            "[PIPELINE_V2] ══════════════════════════════════════════════════"
+        )
+
+        return {
+            "status": "BATCH_COMPLETED",
+            "batch_id": batch_id,
+            "scored_count": scored_count,
+            "failed_count": failed_count,
+            "pre_screened_count": len(pre_screened),
+            "quality_gate_failed_count": len(gate_rejected),
+            "non_negotiable_failed_count": nn_failed_count,
+        }
 
 
 # WORKER TASKS BELOW - NOT API SERVICES
@@ -461,9 +892,9 @@ def score_resumes_service_sync(
         # 5️⃣ Prepare LLM input for scoring (Step 2 of 2-step pipeline)
         resume_payload = [
             ResumeDataSchema(
-                application_id=r.application_id,
-                resume_id=r.id,
-                resume_text=r.parsed_text
+                application_id=str(r.application_id),
+                resume_id=str(r.id),
+                resume_text=r.parsed_text or "",
             )
             for r in resumes_to_score
         ]

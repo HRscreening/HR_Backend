@@ -1,20 +1,14 @@
 """
-Score Post-Processor — computes overall_score from per-criterion LLM scores.
+Score Post-Processor v2 — flat weighted scoring with 0-10 → 0-100 mapping.
 
 Algorithm:
-1. For each criterion with sub_criteria:
-   criterion_score = weighted_avg(sub_criterion_scores, sub_criterion_weights)
-2. For each section:
-   section_score = weighted_avg(criterion_scores, effective_criterion_weights)
-   where effective_weight = criterion.weight × requirement_level_multiplier
-3. overall_score = weighted_avg(section_scores, section_weights)
+  LLM returns integer scores 0-10 (anchored scale).
+  Display score = raw × 10  (7 → 70).
+  overall_score = Σ(display_score × importance) / total_importance
 
-Requirement level multiplier adjusts the effective weight:
-  - must: weight × 1.5
-  - should: weight × 1.0
-  - nice: weight × 0.5
-
-After multiplying, weights are re-normalized within each section.
+Sections are UI grouping only — they do not contribute to weighting.
+Sub-criteria are display-only — they inform the LLM's judgment but are not
+averaged into the criterion score.
 """
 
 from typing import Any
@@ -22,39 +16,28 @@ from configs.log_config import get_logger
 
 logger = get_logger("score_post_processor")
 
-REQUIREMENT_MULTIPLIERS = {
-    "must": 1.5,
-    "should": 1.0,
-    "nice": 0.5,
-}
+# Multiplier: LLM returns 0-10, display is 0-100
+_SCALE_FACTOR = 10
 
 
-def _weighted_avg(values: list[float], weights: list[float]) -> float:
-    """Compute weighted average. Falls back to simple average if all weights are zero."""
-    if not values:
-        return 0.0
-    total_weight = sum(weights)
-    if total_weight == 0:
-        return sum(values) / len(values)
-    return sum(v * w for v, w in zip(values, weights)) / total_weight
-
-
-def compute_weighted_score(
+def compute_flat_score_v2(
     llm_sections: dict[str, Any],
     rubric_sections: list[dict],
 ) -> dict:
     """
-    Compute the weighted overall score from LLM per-criterion scores and rubric weights.
+    Flat scoring v2: 0-10 LLM scores mapped to 0-100 for display.
+
+    overall_score = Σ(criterion_score_0_100 × importance) / total_importance
 
     Args:
-        llm_sections: {section_key: {"criteria": {name: {"score", "reasoning", "sub_criteria"}}}}
-        rubric_sections: the rubric sections list with weights and criteria definitions
+        llm_sections: {section_key: {"criteria": {name: {"score": 0-10, ...}}}}
+        rubric_sections: rubric sections list with criteria and importance values
 
     Returns:
         {
-            "overall_score": float,
-            "raw_overall_score": float (before req_level adjustment),
-            "section_scores": {section_key: {"score", "raw_score", "criteria_scores": {...}}}
+            "overall_score": float (0-100),
+            "section_scores": { ... },
+            "scoring_method": "flat_v2",
         }
     """
     if not llm_sections:
@@ -62,31 +45,41 @@ def compute_weighted_score(
     if not rubric_sections:
         logger.error("Rubric has no sections — cannot compute scores")
 
-    section_scores = {}
-    section_weights = []
+    total_importance = sum(
+        criterion.get("importance", 5)
+        for section in rubric_sections
+        for criterion in section.get("criteria", [])
+        if criterion.get("name")
+    )
+    if total_importance == 0:
+        total_importance = max(
+            sum(len(s.get("criteria", [])) for s in rubric_sections), 1
+        )
+
+    section_scores: dict[str, Any] = {}
+    weighted_sum = 0.0
 
     for rubric_section in rubric_sections:
         section_key = rubric_section["key"]
-        section_weight = rubric_section.get("weight", 0)
-        section_weights.append(section_weight)
-
         llm_section = llm_sections.get(section_key, {})
         if not llm_section:
             logger.warning(
                 "Section %r missing from LLM output. Available LLM keys: %s",
                 section_key, list(llm_sections.keys()),
             )
-        llm_criteria = llm_section.get("criteria", {}) if isinstance(llm_section, dict) else {}
+        llm_criteria = (
+            llm_section.get("criteria", {})
+            if isinstance(llm_section, dict)
+            else {}
+        )
 
-        criteria_scores = {}
-        effective_weights = []
-        raw_weights = []
+        criteria_scores: dict[str, Any] = {}
+        section_importance_sum = 0
+        section_weighted_sum = 0.0
 
         for criterion in rubric_section.get("criteria", []):
             c_name = criterion["name"]
-            c_weight = criterion.get("weight", 0)
-            req_level = criterion.get("requirement_level", "should")
-            multiplier = REQUIREMENT_MULTIPLIERS.get(req_level, 1.0)
+            importance = criterion.get("importance", 5)
 
             llm_criterion = llm_criteria.get(c_name, {})
             if not isinstance(llm_criterion, dict):
@@ -96,81 +89,62 @@ def compute_weighted_score(
                     "Criterion %r missing from LLM section %r. LLM criteria keys: %s",
                     c_name, section_key, list(llm_criteria.keys()),
                 )
+
+            # LLM returns 0-10; map to 0-100 for display + scoring
             raw_score = llm_criterion.get("score", 0)
+            display_score = round(raw_score * _SCALE_FACTOR, 2)
             reasoning = llm_criterion.get("reasoning", "")
 
-            # Compute criterion score from sub-criteria if present
+            contribution = round(
+                display_score * importance / total_importance, 2
+            )
+
+            # Sub-criteria — display only, do NOT affect criterion score
             subs = criterion.get("sub_criteria")
             llm_subs = llm_criterion.get("sub_criteria", {})
             if not isinstance(llm_subs, dict):
                 llm_subs = {}
 
-            if subs and len(subs) > 0:
-                sub_scores = []
-                sub_weights_list = []
-                sub_details = {}
+            sub_display: dict[str, Any] = {}
+            if subs:
                 for sub in subs:
                     s_name = sub["name"]
-                    s_weight = sub.get("weight", 0)
                     llm_sub = llm_subs.get(s_name, {})
                     if not isinstance(llm_sub, dict):
                         llm_sub = {}
-                    s_score = llm_sub.get("score", 0)
-                    s_reasoning = llm_sub.get("reasoning", "")
-                    sub_scores.append(s_score)
-                    sub_weights_list.append(s_weight)
-                    sub_details[s_name] = {
-                        "score": round(s_score, 2),
-                        "reasoning": s_reasoning,
+                    sub_raw = llm_sub.get("score", 0)
+                    sub_display[s_name] = {
+                        "score": round(sub_raw * _SCALE_FACTOR, 2),
+                        "raw_llm_score": sub_raw,
+                        "reasoning": llm_sub.get("reasoning", ""),
                     }
 
-                criterion_score = _weighted_avg(sub_scores, sub_weights_list)
-            else:
-                criterion_score = raw_score
-                sub_details = {}
-
             criteria_scores[c_name] = {
-                "score": round(criterion_score, 2),
-                "raw_llm_score": round(raw_score, 2),
+                "score": display_score,
+                "raw_llm_score": raw_score,
                 "reasoning": reasoning,
-                "requirement_level": req_level,
-                "sub_criteria": sub_details,
+                "importance": importance,
+                "contribution": contribution,
+                "sub_criteria": sub_display,
             }
 
-            effective_weights.append(c_weight * multiplier)
-            raw_weights.append(c_weight)
+            weighted_sum += display_score * importance
+            section_importance_sum += importance
+            section_weighted_sum += display_score * importance
 
-        # Section score with requirement-level adjustment
-        c_scores_list = [
-            criteria_scores[c["name"]]["score"]
-            for c in rubric_section.get("criteria", [])
-            if c["name"] in criteria_scores
-        ]
-        section_score = _weighted_avg(c_scores_list, effective_weights)
-        raw_section_score = _weighted_avg(c_scores_list, raw_weights)
+        section_display_score = (
+            section_weighted_sum / section_importance_sum
+            if section_importance_sum > 0
+            else 0.0
+        )
 
         section_scores[section_key] = {
-            "score": round(section_score, 2),
-            "raw_score": round(raw_section_score, 2),
+            "score": round(section_display_score, 2),
             "criteria_scores": criteria_scores,
         }
 
-    # Overall score from section scores
-    s_scores = [
-        section_scores[s["key"]]["score"]
-        for s in rubric_sections
-        if s["key"] in section_scores
-    ]
-    s_raw = [
-        section_scores[s["key"]]["raw_score"]
-        for s in rubric_sections
-        if s["key"] in section_scores
-    ]
+    overall = weighted_sum / total_importance if total_importance > 0 else 0.0
 
-    overall = _weighted_avg(s_scores, section_weights)
-    raw_overall = _weighted_avg(s_raw, section_weights)
-
-    # Diagnostic: warn if overall is suspiciously low
     if overall == 0 and llm_sections:
         logger.error(
             "Overall score is 0 despite LLM returning data. "
@@ -180,12 +154,12 @@ def compute_weighted_score(
         )
 
     logger.info(
-        "Weighted score computed: overall=%.2f raw=%.2f sections=%d",
-        overall, raw_overall, len(section_scores),
+        "Flat score v2 computed: overall=%.2f sections=%d",
+        overall, len(section_scores),
     )
 
     return {
         "overall_score": round(overall, 2),
-        "raw_overall_score": round(raw_overall, 2),
         "section_scores": section_scores,
+        "scoring_method": "flat_v2",
     }

@@ -8,7 +8,7 @@
 
 from langchain_core.prompts import PromptTemplate
 from src.pipelines.models import scoring_model
-from src.pipelines.score_post_processor import compute_weighted_score
+from src.pipelines.score_post_processor import compute_flat_score_v2
 from src.schemas.user_schemas import (
     LLMScoringOnlyOutput,
     ScoreOutputSchema,
@@ -43,18 +43,24 @@ RESUME TEXT
 {resume_text}
 
 ====================
-SCORING TIERS (MANDATORY — use these bands for every criterion score)
+SCORING SCALE (MANDATORY — 0 to 10 integer, use these anchors for every criterion)
 ====================
-90-100: EXCEPTIONAL — Exceeds requirement with outstanding, clearly documented evidence. Multiple strong signals.
-70-89:  STRONG MATCH — Fully meets requirement with clear, specific evidence in the resume.
-50-69:  PARTIAL MATCH — Some evidence present, but incomplete or indirect. May lack specificity.
-25-49:  WEAK MATCH — Minimal or tangential evidence. Skill mentioned without depth or context.
-0-24:   NO EVIDENCE — No relevant information found in the resume for this criterion.
+10: World-class — top 1% evidence (patents, publications, major awards)
+ 9: Exceptional — exceeds requirement with multiple strong signals
+ 8: Strong+     — fully meets with specific, quantified evidence
+ 7: Strong      — meets with clear evidence, concrete but not quantified
+ 6: Adequate+   — meets with minor gaps
+ 5: Adequate    — basic requirement met, lacks depth
+ 4: Partial     — significant gaps or only adjacent skill
+ 3: Weak+       — tangential evidence only
+ 2: Weak        — keyword appears, no supporting context
+ 1: Trace       — barely mentioned
+ 0: None        — no evidence found
 
 ====================
 SCORING RULES (STRICT)
 ====================
-- Score each criterion and sub-criterion independently using the scoring tiers above.
+- Score each criterion and sub-criterion independently using the 0-10 scale above.
 - For each criterion and sub-criterion, provide a concise "reasoning" (1 sentence) explaining the score.
 - Use BOTH explicit evidence and strong implicit evidence from the resume.
 - Penalize criteria only when there is truly no supporting evidence.
@@ -103,7 +109,7 @@ AI ANALYSIS SUMMARY
 ====================
 FAILURE RULE
 ====================
-- If the resume is empty or irrelevant, return very low scores (0-10) for all criteria.
+- If the resume is empty or irrelevant, return 0 for all criteria.
 """,
     input_variables=["criteria", "resume_text", "section_keys"],
 )
@@ -172,7 +178,7 @@ def _post_process_score(
         section_criterion_scores=section_criterion_scores,
     )
 
-    computed = compute_weighted_score(
+    computed = compute_flat_score_v2(
         llm_sections=llm_sections,
         rubric_sections=rubric_sections,
     )
@@ -200,16 +206,20 @@ def _post_process_score(
         else:
             grounding_dict[section_key] = section_grounding
 
+    # Determine non-negotiable status based on rubric
+    has_non_negotiables = bool(rubric_criteria.get("non_negotiables"))
+    nn_status = "all_passed" if has_non_negotiables else "no_non_negotiables"
+
     return ScoreOutputSchema(
         candidate_info=candidate_info or CandidateInfoSchema(),
         ai_analysis=llm_result.ai_analysis,
         overall_score=computed["overall_score"],
-        raw_overall_score=computed["raw_overall_score"],
         ai_confidence=llm_result.ai_confidence,
         breakdown=computed["section_scores"],
         grounding_data=grounding_dict,
         distinguishing_factors=llm_result.distinguishing_factors,
-        scoring_method="weighted_v2",
+        scoring_method=computed.get("scoring_method", "flat_v1"),
+        non_negotiable_status=nn_status,
     )
 
 
@@ -238,7 +248,7 @@ async def score_resume_async(
         results = await chain.abatch(
             inputs,
             config={
-                "max_concurrency": 5,
+                "max_concurrency": 15,
                 "return_exceptions": True
             }
         )
@@ -293,7 +303,7 @@ def score_resume_sync(
         results = chain.batch(
             inputs,
             config={
-                "max_concurrency": 5,
+                "max_concurrency": 15,
                 "return_exceptions": True
             }
         )

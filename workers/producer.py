@@ -65,6 +65,72 @@ def enqueue_resumes_parsing(
 
 
 
+def enqueue_pre_screen_and_score(
+    job_id: str,
+    resume_ids: list[str],
+    upload_batch_id: str = "",
+    queue_name: str = "resume_scoring",
+) -> str:
+    """
+    Enqueue a single pre-screening + scoring pipeline task for ALL resumes.
+
+    Pipeline v2 flow:
+      Stage 1: Quality Gate (structural checks, <1s, free)
+      Stage 2: Cross-Encoder relevance scoring (~6s, free)
+      Stage 3: LLM scoring on selected top-N (~20s, ~$0.10)
+
+    Returns the batch_id for progress tracking.
+    """
+    if queue_name not in QUEUES:
+        raise ValueError(f"Invalid queue: {queue_name}")
+
+    queue = QUEUES[queue_name]
+    redis_job_id = str(uuid.uuid4())
+    batch_id = str(uuid.uuid4())
+
+    try:
+        redis_conn.hset(
+            f"batch:{batch_id}",
+            mapping={
+                "status": "queued",
+                "job_id": str(job_id),
+                "redis_job_id": redis_job_id,
+                "type": "pre_screen_and_score",
+                "total_resumes": len(resume_ids),
+                "completed": 0,
+                "failed": 0,
+                "upload_batch_id": upload_batch_id,
+            }
+        )
+
+        for resume_id in resume_ids:
+            redis_conn.rpush(f"batch:{batch_id}:resumes", str(resume_id))
+
+        queue.enqueue(
+            "workers.tasks.resume_scorer.pre_screen_and_score_batch",
+            {
+                "redis_job_id": redis_job_id,
+                "batch_id": batch_id,
+            },
+            retry=Retry(max=2, interval=[15, 60]),
+            job_timeout=900,  # 15 min — includes cross-encoder + LLM scoring
+        )
+
+        logger.info(
+            "[ENQUEUE] pre_screen_and_score batch=%s job=%s resumes=%d",
+            batch_id, job_id, len(resume_ids),
+        )
+        return batch_id
+
+    except Exception as e:
+        logger.error(f"Failed to enqueue pre_screen_and_score batch {batch_id}: {e}")
+        redis_conn.hset(
+            f"batch:{batch_id}",
+            mapping={"status": "failed_to_enqueue", "error": str(e)}
+        )
+        raise
+
+
 def enqueue_resumes_scoring(
     job_id: str,
     resume_ids: list[str],
@@ -72,7 +138,7 @@ def enqueue_resumes_scoring(
     queue_name: str = "resume_scoring",
     batch_size: int = SCORING_BATCH_SIZE,
 ) -> list[str]:
-
+    """Enqueue LLM scoring tasks in chunks (called internally after pre-screening)."""
     if queue_name not in QUEUES:
         raise ValueError(f"Invalid queue: {queue_name}")
 
@@ -84,7 +150,6 @@ def enqueue_resumes_scoring(
         batch_id = str(uuid.uuid4())
 
         try:
-            # Batch metadata
             redis_conn.hset(
                 f"batch:{batch_id}",
                 mapping={
@@ -99,12 +164,8 @@ def enqueue_resumes_scoring(
                 }
             )
 
-            # ✅ Store resume IDs in a LIST (THIS IS THE FIX)
             for resume_id in batch:
-                redis_conn.rpush(
-                    f"batch:{batch_id}:resumes",
-                    str(resume_id)
-                )
+                redis_conn.rpush(f"batch:{batch_id}:resumes", str(resume_id))
 
             queue.enqueue(
                 "workers.tasks.resume_scorer.score_resumes_batch",
@@ -113,7 +174,7 @@ def enqueue_resumes_scoring(
                     "batch_id": batch_id,
                 },
                 retry=Retry(max=3, interval=[10, 30, 60]),
-                job_timeout=600,  # 10 min — LLM calls can be slow; prevents one batch blocking others
+                job_timeout=600,
             )
 
             created_batches.append(batch_id)
@@ -122,10 +183,7 @@ def enqueue_resumes_scoring(
             logger.error(f"Failed to enqueue batch {batch_id}: {e}")
             redis_conn.hset(
                 f"batch:{batch_id}",
-                mapping={
-                    "status": "failed_to_enqueue",
-                    "error": str(e)
-                }
+                mapping={"status": "failed_to_enqueue", "error": str(e)}
             )
 
     return created_batches

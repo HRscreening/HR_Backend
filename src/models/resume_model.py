@@ -6,10 +6,11 @@ from sqlalchemy import (
     func,
     Boolean,
     ForeignKey,
+    Numeric,
 )
 from sqlalchemy.orm import relationship
 from configs.postgress_db import Base
-from sqlalchemy.dialects.postgresql import UUID, TEXT, VARCHAR
+from sqlalchemy.dialects.postgresql import UUID, TEXT, VARCHAR, JSONB
 from pgvector.sqlalchemy import Vector
 import uuid
 from sqlalchemy import Enum as SAEnum
@@ -59,13 +60,18 @@ class Resume(Base):
         server_default=ResumeStatus.UPLOADED.value,
     )
     
+    # Pipeline v2: pre-screening metadata
+    pre_screen_rank = Column(Integer, nullable=True)        # cross-encoder rank (1 = most relevant)
+    relevance_score = Column(Numeric(7, 4), nullable=True)  # raw cross-encoder score
+    rejection_reason = Column(TEXT, nullable=True)           # why not selected for full scoring
+    non_negotiable_results = Column(JSONB, nullable=True)   # per-criterion pass/fail + evidence from non-negotiable screening
+
     updated_at = Column(
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
     )
-    
 
     # relationships (singular, no cascade here)
     application = relationship(
