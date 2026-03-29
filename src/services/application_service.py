@@ -462,7 +462,6 @@ class ApplicationService:
                     
                     if reminders_payload:
                         reminders = await self.reminder_repository.create_reminders(reminders_payload)
-                        await self.db.commit()
                         
                         reminder_map = {str(r.id): r for r in reminders}
                         enqueue_payloads = [EnqueueReminderPayload(reminder_id=r.id,run_at=r.next_run_at)for r in reminders]

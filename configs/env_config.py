@@ -1,12 +1,11 @@
 import os
-from dotenv import load_dotenv
-
-load_dotenv()
 
 # Development or Production Environment
 ENVIRONMENT = os.environ.get("ENVIRONMENT", "Development")
 
-
+if ENVIRONMENT == "Development":
+    from dotenv import load_dotenv
+    load_dotenv()
 
 # postgress database url
 DATABASE_URL = os.environ.get("DATABASE_URL")  or "postgresql+asyncpg://postgres:keshav123@localhost:5432/CareerAI"

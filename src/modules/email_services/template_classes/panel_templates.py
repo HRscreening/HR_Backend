@@ -25,7 +25,7 @@ class PanelistBookingTemplate(EmailTemplate):
             self.data.scheduled_end
         )
 
-        return render_template("panel/booking.html", {
+        return render_template("email/panel/booking.html", {
             "panelist_name": self.data.panelist_name,
             "candidate_name": self.data.candidate_name,
             "interview_round_title": self.data.interview_round_title,
@@ -51,7 +51,7 @@ class PanelistAvailabilityTemplate(EmailTemplate):
         return f"Submit Availability: {self.data.interview_round_title}"
 
     def get_body(self):
-        return render_template("panel/available_slots.html", {
+        return render_template("email/panel/available_slots.html", {
             "panelist_name": self.data.panelist_name,
             "interview_round_title": self.data.interview_round_title,
             "form_link": self.data.form_link,
@@ -72,7 +72,7 @@ class PanelistThankYouAvailabilityTemplate(EmailTemplate):
         return f"Availability Submitted: {self.data.interview_round_title}"
 
     def get_body(self):
-        return render_template("panel/thank_you_availability.html", {
+        return render_template("email/panel/thank_you_availability.html", {
             "panelist_name": self.data.panelist_name,
             "interview_round_title": self.data.interview_round_title,
             "edit_slots_link": self.data.edit_slots_link,
@@ -97,7 +97,7 @@ class PanelistSlotReleasedTemplate(EmailTemplate):
             self.data.schedule_start,
             self.data.schedule_end
         )
-        return render_template("panel/slot_released.html", {
+        return render_template("email/panel/slot_released.html", {
             "panelist_name": self.data.panelist_name,
             "candidate_name": self.data.candidate_name,
             "interview_round_title": self.data.interview_round_title,
@@ -127,7 +127,7 @@ class PanelistMeetingRescheduledTemplate(EmailTemplate):
             self.data.new_scheduled_end
         )
         return render_template(
-            "panel/meeting_rescheduled.html",
+            "email/panel/meeting_rescheduled.html",
             {
             "panelist_name": self.data.panelist_name,
             "candidate_name": self.data.candidate_name,
@@ -154,7 +154,7 @@ class PanelistReminderAvailabilityTemplate(EmailTemplate):
 
     def get_body(self):
         return render_template(
-            "panel/reminder_availability.html",
+            "email/panel/reminder_availability.html",
             self.data.model_dump()
         )
         
@@ -188,6 +188,6 @@ class PanelistInterviewReminderTemplate(EmailTemplate):
         })
 
         return render_template(
-            "panel/interview_reminder.html",
+            "email/panel/interview_reminder.html",
             context
         )

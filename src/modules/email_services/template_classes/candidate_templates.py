@@ -20,7 +20,7 @@ class CandidateBookingLinkTemplate(EmailTemplate):
         return f"Your Interview Slots Are Ready — {self.data.interview_round_title}"
 
     def get_body(self):
-        return render_template("candidate/booking_link.html", self.data.model_dump())
+        return render_template("email/candidate/booking_link.html", self.data.model_dump())
 
 class CandidateBookingConfirmationTemplate(EmailTemplate):
     def __init__(self, data: CandidateBookingConfirmationData, time_helper: TimeHelper | None = None):
@@ -43,7 +43,7 @@ class CandidateBookingConfirmationTemplate(EmailTemplate):
             "interview_date": interview_date,
             "interview_time": interview_time,
         })
-        return render_template("candidate/booking_confirmation.html", context)
+        return render_template("email/candidate/booking_confirmation.html", context)
 
 class CandidateRescheduleNewSlotsTemplate(EmailTemplate):
     def __init__(self, data: CandidateRescheduleNewSlotsData, time_helper: TimeHelper | None = None):
@@ -66,7 +66,7 @@ class CandidateRescheduleNewSlotsTemplate(EmailTemplate):
             "interview_date": interview_date,
             "interview_time": interview_time,
         })
-        return render_template("candidate/reschedule_new_slots.html", context)
+        return render_template("email/candidate/reschedule_new_slots.html", context)
 
 class CandidateBookingLinkReminderTemplate(EmailTemplate):
     def __init__(self, data: CandidateBookingLinkReminderData):
@@ -79,7 +79,7 @@ class CandidateBookingLinkReminderTemplate(EmailTemplate):
         return f"Reminder: Book Your Interview Slot — {self.data.interview_round_title}"
 
     def get_body(self):
-        return render_template("candidate/booking_link_reminder.html", self.data.model_dump())
+        return render_template("email/candidate/booking_link_reminder.html", self.data.model_dump())
 
 class CandidateInterviewReminderTemplate(EmailTemplate):
     def __init__(self, data: CandidateInterviewReminderData, time_helper: TimeHelper | None = None):
@@ -102,4 +102,4 @@ class CandidateInterviewReminderTemplate(EmailTemplate):
             "interview_date": interview_date,
             "interview_time": interview_time,
         })
-        return render_template("candidate/interview_reminder.html", context)
+        return render_template("email/candidate/interview_reminder.html", context)

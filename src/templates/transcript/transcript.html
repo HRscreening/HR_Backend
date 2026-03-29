@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      font-family: Helvetica, Arial, sans-serif;
+      margin: 30px;
+      color: #333;
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 10px;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: gray;
+      font-size: 14px;
+      margin-bottom: 30px;
+    }
+
+    .chat-container {
+      max-width: 800px;
+      margin: auto;
+    }
+
+    .message {
+      display: flex;
+      margin: 12px 0;
+    }
+
+    .bubble {
+      padding: 12px 14px;
+      border-radius: 12px;
+      max-width: 70%;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    }
+
+    .candidate {
+      justify-content: flex-end;
+    }
+
+    .candidate .bubble {
+      background-color: #DCF8C6;
+    }
+
+    .interviewer .bubble {
+      background-color: #F1F0F0;
+    }
+
+    .speaker-name {
+      font-size: 12px;
+      font-weight: bold;
+      margin-bottom: 4px;
+    }
+
+    .text {
+      font-size: 14px;
+      line-height: 1.4;
+    }
+
+    .meta {
+      font-size: 10px;
+      color: gray;
+      margin-top: 6px;
+      text-align: right;
+    }
+
+    .page-break {
+      page-break-before: always;
+    }
+  </style>
+</head>
+
+      
+<body>
+  
+  <!-- Title -->
+  <h1>{{ transcript.title }}</h1>
+  <div class="subtitle">Interview Transcript</div>
+  
+  <!-- Chat Section -->
+  <div class="chat-container">
+    {% for sentence in transcript.sentences %}
+    
+<!--  
+  ! We need to find some better soln for msg box color as same speaker can make multiple msgs so there it will fail if we pass canddiate name from db but then may be user has joined from other email same applies for panelist  
+  -->
+      <div class="message {{ 'candidate' if loop.index % 2 == 0 else 'interviewer' }}">
+        <div class="bubble">
+          
+          <div class="speaker-name">
+            {{ sentence.speaker_name }}
+          </div>
+
+          <div class="text">
+            {{ sentence.text }}
+          </div>
+
+          <div class="meta">
+            {{ sentence.start_time }}s - {{ sentence.end_time }}s
+          </div>
+
+        </div>
+      </div>
+
+    {% endfor %}
+  </div>
+
+</body>
+</html>

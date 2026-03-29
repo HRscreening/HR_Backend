@@ -23,6 +23,7 @@ dependencies = [
     "langchain-google-genai>=4.2.0",
     "motor>=3.7.1",
     "passlib==1.7.4",
+    "pdfkit>=1.0.0",
     "pdfplumber>=0.11.9",
     "pgvector>=0.4.2",
     "psycopg2-binary>=2.9.11",

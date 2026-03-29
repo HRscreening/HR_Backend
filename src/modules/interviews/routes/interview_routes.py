@@ -1,5 +1,6 @@
 # FOR 
 from fastapi import APIRouter, Depends, Query, Body, status
+from fastapi.responses import FileResponse
 from src.dependency import get_interview_service
 from src.modules.interviews.services import InterviewService
 from src.modules.interviews.dtos.interviews_dto import BookSlotRequest, BookSequentialSlotsRequest,SequentialBookingItem
@@ -19,6 +20,17 @@ async def get_booking_form(
     """Return interview details for a given application ID."""
     return await interview_service.get_interview_details(application_id)
 
+
+
+@router.get("/get-transcript/{interview_id}",status_code=status.HTTP_200_OK)
+async def download_transcript(interview_id: str,interview_service: InterviewService = Depends(get_interview_service)):
+    pdf_path = await interview_service.download_interview_transcript(interview_id)
+
+    return FileResponse(
+        pdf_path,
+        media_type="application/pdf",
+        filename="interview_transcript.pdf"
+    )
 
 
 

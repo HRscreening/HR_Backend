@@ -4,7 +4,7 @@ import os
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 
 env = Environment(
-    loader=FileSystemLoader(os.path.join(BASE_DIR, "templates/email")),
+    loader=FileSystemLoader(os.path.join(BASE_DIR, "templates")),
     autoescape=select_autoescape(["html", "xml"]),
     cache_size=50   # optional but good
 )

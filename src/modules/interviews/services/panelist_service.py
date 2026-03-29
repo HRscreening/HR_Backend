@@ -391,7 +391,7 @@ class PanelistService:
 
         round_config = await self.interview_round_config_repository.get_interview_round_config_by_id(round_config_id)
         if not round_config:
-            raise DomainError("Interview round configuration not found for the provided token")
+            raise DomainError("Interview round configuration not found for the provided token", status_code=404)
 
         panelist = await self.panelist_repository.get_panelist_by_round_config_and_panelist_id(
             round_config_id=round_config.id,

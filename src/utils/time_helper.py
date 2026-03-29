@@ -116,5 +116,15 @@ class TimeHelper:
 
         return date, time
     
+    def format_time_for_transcript(self,seconds: int) -> str:
+        hrs = seconds // 3600
+        mins = (seconds % 3600) // 60
+        secs = seconds % 60
+        
+        if hrs > 0:
+            return f"{hrs:02}:{mins:02}:{secs:02}"
+        
+        return f"{mins:02}:{secs:02}"
+    
     
 time_helper = TimeHelper()

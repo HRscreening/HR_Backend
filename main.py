@@ -1,3 +1,4 @@
+import configs.env_config
 from fastapi import FastAPI,Depends
 # from configs.db import init_db
 from src.routes.auth_routes import router as auth_router
@@ -30,12 +31,15 @@ from fastapi.exceptions import RequestValidationError
 from src.services.errors.base import DomainError
 from configs.supabase_config import supabase
 import src.models
-from configs.env_config import LANGHAIN_TRACKING_ENABLED, LANGCHAIN_API_KEY
+from configs.env_config import LANGHAIN_TRACKING_ENABLED, LANGCHAIN_API_KEY,ENVIRONMENT,REDIS_HOST
 
 app = FastAPI()
 
 LANGHAIN_TRACKING_ENABLED 
 LANGCHAIN_API_KEY
+
+print("ENV:", ENVIRONMENT)
+print("REDIS_HOST:", REDIS_HOST)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

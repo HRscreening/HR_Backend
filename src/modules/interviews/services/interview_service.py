@@ -18,7 +18,7 @@ from email_workers_async.email_tasks_producer import EmailProducer,EnqueueRemind
 from src.modules.interviews.dtos.panel_dto import CreatePanelDTO
 from src.modules.interviews.dtos.interviews_dto import MeetingDetails, Reminders
 import asyncio
-from src.utils.time_helper import format_interview_time, format_interview_schedule,serialize_datetime
+from src.utils.time_helper import format_interview_time, format_interview_schedule,serialize_datetime,TimeHelper
 from src.utils.jwt import JWTService
 from src.modules.interviews.services.calendar_service import CalendarService
 from src.modules.reminders.reminder_dtos import CreateReminderDTO
@@ -29,6 +29,9 @@ from datetime import timedelta
 from src.dtos.job_settings_dto import ReminderSettingsDTO,ReschedulingSettingsDTO
 from src.modules.reminders.reminder_repository import ReminderRepository
 from email_workers_async.email_tasks_producer import EmailProducer,EnqueueReminderPayload
+    
+import pdfkit
+import tempfile
 
 
 # TODO:  most of the methods doing same things and can be optimized skipping for future refactor for now to focus on feature development, also need to add more logs for better observability and debugging
@@ -49,6 +52,7 @@ class InterviewService:
         reminder_repository: ReminderRepository,
         email_producer: EmailProducer,
         db: AsyncSession,
+        time_helper: TimeHelper | None = None,
     ):
         self.db = db
         self.interview_event_repository = interview_event_repository
@@ -67,6 +71,7 @@ class InterviewService:
         self.panel_email_service: PanelEmailService = panel_email_service
         self.timeline_formatter: TimelineFormatter = timeline_formatter
         self.frontend_url = FRONTEND_URL
+        self.time_helper = time_helper or TimeHelper()
 
         self.logger = get_logger("InterviewService")
 
@@ -350,7 +355,30 @@ class InterviewService:
                 ))
                 
         return reminders_payload
+    
+    
+    
         
+
+    def _generate_pdf_from_html(self, html_content: str):
+        config = pdfkit.configuration(
+            wkhtmltopdf=r"C:\Program Files\wkhtmltopdf\bin\wkhtmltopdf.exe"
+        )
+
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+        path = temp_file.name
+        temp_file.close()
+
+        pdfkit.from_string(html_content, path, configuration=config)
+
+        return path
+    
+    def _normalize_transcript(self, transcript):
+        for s in transcript["sentences"]:
+            # s["role"] = "candidate" if "Raj" in s["speaker_name"] else "interviewer"
+            s["time"] = f"{self.time_helper.format_time_for_transcript(s['start_time'])} – {self.time_helper.format_time_for_transcript(s['end_time'])}"
+        return transcript
+    
     
     # ─── GET booking form ─────────────────────────────────────────────────
 
@@ -1025,7 +1053,7 @@ class InterviewService:
                     "scheduled_at": format_interview_schedule(interview.scheduled_start, interview.scheduled_end, interview.round_config.timezone) if interview.scheduled_start and interview.scheduled_end else None,
                     "notes": None,
                     "summary": None,
-                    "transcript": None
+                    "is_transcript_available": True #! only for testing 
                     
                 },
                 "round_config": {
@@ -1049,3 +1077,36 @@ class InterviewService:
                 data["past_rounds"].append(interview_data)
 
         return data
+    
+
+    async def download_interview_transcript(self, interview_id: str):
+        """Allow authorized users to download the transcript of an interview."""
+
+        interview = await self.interview_repository.get_interview_by_id(interview_id)
+
+        if not interview:
+            raise DomainError("Interview not found for the given ID", status_code=404)
+
+        # TEMP transcript
+        from data.transcript import load_transcript
+        from src.utils.templte_engine import render_template
+
+        transcript_json = load_transcript()
+        transcript = transcript_json["data"]["transcript"]
+
+        if not transcript:
+            raise DomainError("Transcript not available for this interview", status_code=404)
+
+        transcript = self._normalize_transcript(transcript)
+        # ✅ Render HTML
+        html_content = render_template(
+            "transcript/transcript.html",
+            {
+                "transcript": transcript,
+            }
+        )
+
+        # ✅ Generate PDF using HTML (FIXED)
+        pdf_path = self._generate_pdf_from_html(html_content)
+
+        return pdf_path

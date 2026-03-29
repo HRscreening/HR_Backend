@@ -44,3 +44,20 @@ class CandidateEmailService(BaseEmailService):
         await self.send_email_template(template)
 
 
+#TODO: Implement this later
+# class CandidateEmailService(BaseEmailService):
+#     EMAIL_TEMPLATE_MAP = {
+#         "booking_link": CandidateBookingLinkTemplate,
+#         "booking_confirmation": CandidateBookingConfirmationTemplate,
+#         "interview_rescheduled": CandidateRescheduleNewSlotsTemplate,
+#         "booking_link_reminder": CandidateBookingLinkReminderTemplate,
+#         "interview_reminder": CandidateInterviewReminderTemplate
+        
+#     }
+
+#     async def send_email(self, email_type: str, data):
+#         template_class = self.EMAIL_TEMPLATE_MAP.get(email_type)
+#         if not template_class:
+#             raise ValueError(f"Unknown email type: {email_type}")
+#         template = template_class(data)
+#         await self.send_email_template(template)

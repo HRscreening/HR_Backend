@@ -1,0 +1,41 @@
+services:
+  api:
+    image: keshavraj098/deskzero:latest
+    container_name: api
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --workers 2
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env.production
+
+  resume_parsing_worker:
+    image: keshavraj098/deskzero:latest
+    command: python -m workers.worker
+    env_file:
+      - .env.production
+    environment:
+      - QUEUES=resume_parsing
+
+  resume_scoring_worker:
+    image: keshavraj098/deskzero:latest
+    command: python -m workers.worker
+    env_file:
+      - .env.production
+    environment:
+      - QUEUES=resume_scoring
+
+  general_worker:
+    image: keshavraj098/deskzero:latest
+    command: python -m workers.worker
+    env_file:
+      - .env.production
+    environment:
+      - QUEUES=jd_extraction,candidate_extraction
+
+  email_worker:
+    image: keshavraj098/deskzero:latest
+    command: python -m arq email_workers_async.worker.WorkerSettings
+    env_file:
+      - .env.production
+    environment:
+      - QUEUES=email_jobs
