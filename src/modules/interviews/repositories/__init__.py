@@ -4,7 +4,7 @@ from src.modules.interviews.repositories.interview_round_configs_repository impo
 from src.modules.interviews.repositories.interview_slots_repository import InterviewSlotsRepository
 from src.modules.interviews.repositories.interview_event_repository import InterviewEventRepository
 from src.modules.interviews.repositories.calendar_repository import CalendarRepository
-
+from src.modules.interviews.repositories.interview_assessment_repository import InterviewAssessmentRepository
 
 __all__ = [
     "InterviewRepository",
@@ -12,5 +12,6 @@ __all__ = [
     "InterviewRoundConfigsRepository",
     "InterviewSlotsRepository",
     "InterviewEventRepository",
-    "CalendarRepository"   
+    "CalendarRepository" ,
+    "InterviewAssessmentRepository"  
 ]

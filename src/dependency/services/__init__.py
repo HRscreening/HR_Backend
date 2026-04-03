@@ -16,6 +16,7 @@ from .api_services import (
     get_form_config_service,
     get_jd_builder_service,
     get_public_apply_service,
+    get_interview_assessment_service
 
 )
 

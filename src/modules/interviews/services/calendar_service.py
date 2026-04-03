@@ -235,7 +235,7 @@ class CalendarService(ICSGenerator):
         return res.json()["access_token"]
 
 
-    async def create_google_calendar_event_owner_deskzero(self,meeting_details: MeetingDetails) -> str:
+    async def create_google_calendar_event_owner_deskzero(self,meeting_details: MeetingDetails) -> tuple[str,str | UUID]:
         try:
             
             access_token  = await self._get_google_access_token(refresh_token=self.calendar_refresh_token)
@@ -271,15 +271,24 @@ class CalendarService(ICSGenerator):
             self.logger.info(
                 f"Google Calendar event created successfully"
             )
-
-            return data.get("hangoutLink")
+            
+            meet_link = data.get("hangoutLink",None)
+            event_id = data.get("id",None)
+            
+            if not meet_link or not event_id:
+                self.logger.error(
+                    f"Google Calendar event created but missing meet link or event ID: {data}"
+                )
+                raise Exception("Calendar event created but failed to retrieve Meet link or event ID")
+            
+            return meet_link,event_id
 
         except Exception as e:
             self.logger.error(f"Error creating Google Calendar event: {str(e)}")
             raise Exception("Failed to create calendar event")
         
-    # ! currenlty using refresj token as for dev apps google provide short lived   
-    async def create_google_calendar_event_owner_panelist(self,meeting_details: MeetingDetails,refresh_token:str) -> str:
+    # ! currenlty using refresh token as for dev apps google provide short lived   
+    async def create_google_calendar_event_owner_panelist(self,meeting_details: MeetingDetails,refresh_token:str) -> tuple[str,str | UUID]:
         try:
             
             access_token  = await self._get_google_access_token(refresh_token)
@@ -315,9 +324,54 @@ class CalendarService(ICSGenerator):
             self.logger.info(
                 f"Google Calendar event created successfully"
             )
-
-            return data.get("hangoutLink")
+            meet_link = data.get("hangoutLink",None)
+            event_id = data.get("id",None)
+            
+            if not meet_link or not event_id:
+                self.logger.error(
+                    f"Google Calendar event created but missing meet link or event ID: {data}"
+                )
+                raise Exception("Calendar event created but failed to retrieve Meet link or event ID")
+            
+            return meet_link,event_id
 
         except Exception as e:
             self.logger.error(f"Error creating Google Calendar event: {str(e)}")
             raise Exception("Failed to create calendar event")
+        
+    async def delete_google_calendar_event(self, event_id: str, refresh_token: str) -> None:
+        try:
+            access_token = await self._get_google_access_token(refresh_token)
+
+            headers = {
+                "Authorization": f"Bearer {access_token}",
+            }
+
+            url = f"{self.google_calendar_meet_creation_link}/{event_id}"
+
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                res = await client.delete(url, headers=headers)
+                
+
+            if res.status_code in (200, 204):
+                self.logger.info(f"Event deleted: {event_id}")
+                return
+
+            if res.status_code == 404:
+                self.logger.warning(f"Event already deleted: {event_id}")
+                return
+
+            self.logger.error(
+                f"Delete failed: {res.status_code} - {res.text}"
+            )
+            raise RuntimeError(
+                f"Failed to delete event {event_id}: {res.text}"
+            )
+
+        except httpx.RequestError as e:
+            self.logger.error(f"HTTP error while deleting event: {str(e)}")
+            raise RuntimeError("Network error while deleting calendar event") from e
+
+        except Exception as e:
+            self.logger.error(f"Unexpected error: {str(e)}")
+            raise

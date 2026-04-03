@@ -27,10 +27,13 @@ from src.modules.reminders.model.reminder_enum import ReminderType, RecipientTyp
 from datetime import timedelta
 from src.dtos.job_settings_dto import ReminderSettingsDTO,ReschedulingSettingsDTO
 from src.modules.reminders.reminder_repository import ReminderRepository
-from email_workers_async.email_tasks_producer import EmailProducer,EnqueueReminderPayload
+from workers_async.email_tasks_producer import EmailProducer,EnqueueReminderPayload
 from src.utils.jwt import JWTService
 import asyncio
 
+
+
+        
 class ApplicationService:
     def __init__(self, 
         application_repository:ApplicationRepository,
@@ -133,6 +136,32 @@ class ApplicationService:
                 ))
             return reminders_payload
     
+    async def attach_new_candidate_to_application(self,application_id:str,candidate_info: CandidateCreateSchema,org_id: str | None = None):
+        """ This method is used when we want to attach a new candidate to an existing application, it will create a new candidate and attach it to the application, this is used in the flow when user want to edit candidate info through application flow and candidate with given email or phone number is not found, so we create a new candidate and attach it to the application, this is different from create_candidate method in candidate service which is used to create candidate without attaching it to any application and is called from candidate routes directly."""
+        try:
+            application = await self.application_repository.get_application_by_id(application_id) 
+            
+            if not application:
+                raise DomainError(message="Application not found", status_code=404)
+            
+            candidate = await self.candidate_repository.create_candidate(
+                candidate_info, org_id
+            )   
+            
+            application.candidate_id = candidate.id
+
+            await self.db.commit()
+
+            return candidate.id
+
+        except DomainError:
+            await self.candidate_repository.rollback()
+            raise
+
+        except Exception as e:
+            await self.candidate_repository.rollback()
+            self.logger.error(f"Failed to create candidate: {str(e)}")
+            raise DomainError(message="Failed to create candidate", status_code=500)
     
     async def get_applications_of_job(
         self,
@@ -389,6 +418,12 @@ class ApplicationService:
             if not round_config:
                 raise DomainError(message="There is no round config for this round,Add config first", status_code=425)  # status code 425 Too Early can be used when prerequisite information is missing and needs to be provided before the request can be processed.
             
+                        
+            panelists = await self.panelist_repository.get_all_panelists_by_round_config_id(round_config.id)
+            
+            if not panelists:
+                raise DomainError(message="No panelists assigned for this round, please assign panelists to the round first", status_code=400)
+            
             # ! not using  applicaion current_round field directly to validate if the move is valid or not, as sometimes application current_round can be out of sync with actual interview rounds created for the application, so validating based on actual interview rounds created and application current round both to make it more robust.
             
             # total_possible_round = await self.job_repository.get_total_rounds_for_job(job_id=job_id)
@@ -412,7 +447,6 @@ class ApplicationService:
                 raise DomainError(message="Application must be in shortlisted status to move to round 1", status_code=400)
             
             self._check_application_movable_to_new_round(application,round_config,round_number)
-            
 
             
             new_interview = await self.interview_repository.create_interview(
@@ -456,26 +490,28 @@ class ApplicationService:
                 token_expiry_in_min = max(1, int(remaining_seconds // 60))
                 
                 requested_panelist = await self.panelist_repository.request_panelist_for_availability(round_config.id, token_expiry_in_min)
-
-                if panelist_reminder_settings and panelist_reminder_settings.enabled and panelist_reminder_settings.form_reminder_hours:
-                    reminders_payload =  self._create_form_reminder_payload_for_panelist(requested_panelist, round_config, panelist_reminder_settings) if panelist_reminder_settings and panelist_reminder_settings.enabled else []
-                    
-                    if reminders_payload:
-                        reminders = await self.reminder_repository.create_reminders(reminders_payload)
-                        
-                        reminder_map = {str(r.id): r for r in reminders}
-                        enqueue_payloads = [EnqueueReminderPayload(reminder_id=r.id,run_at=r.next_run_at)for r in reminders]
-                        enqueue_results = await self.email_producer.enqueue_reminder_email_task(enqueue_payloads)
-
-                        for res in enqueue_results:
-                            if res.status == "success":
-                                reminder_map[str(res.reminder_id)].worker_job_id = res.job_id 
                 
+                new_interview.status = InterviewStatus.COLLECTING_AVAILABILITY
+  
+                                    
                     
                     
+                if requested_panelist:
+                    if panelist_reminder_settings and panelist_reminder_settings.enabled and panelist_reminder_settings.form_reminder_hours:
+                        reminders_payload =  self._create_form_reminder_payload_for_panelist(requested_panelist, round_config, panelist_reminder_settings) if panelist_reminder_settings and panelist_reminder_settings.enabled else []
+                        
+                        if reminders_payload:
+                            reminders = await self.reminder_repository.create_reminders(reminders_payload)
+                            
+                            reminder_map = {str(r.id): r for r in reminders}
+                            enqueue_payloads = [EnqueueReminderPayload(reminder_id=r.id,run_at=r.next_run_at)for r in reminders]
+                            enqueue_results = await self.email_producer.enqueue_reminder_email_task(enqueue_payloads)
+
+                            for res in enqueue_results:
+                                if res.status == "success":
+                                    reminder_map[str(res.reminder_id)].worker_job_id = res.job_id 
                     
-                await self.db.commit()
-                if len(requested_panelist) != 0:
+
                     await asyncio.gather(*[
                             self.panel_email_service.send_slot_availability_email(
                                 AvailableSlotsData(
@@ -487,7 +523,8 @@ class ApplicationService:
                             for panelist in requested_panelist
                         ])
                     self.logger.info(f"Sent slot availability email to panelists for round_config_id={round_config.id} and application_id={application_id}")
-              
+                await self.db.commit()
+                
                 return {
                     "new_round": round_number,
                     "message":"Application moved to round successfully.Panelists have been requested for availability and booking link will be sent to candidate once slot will be available."
@@ -519,7 +556,6 @@ class ApplicationService:
             
                 if reminders_payload:
                     reminders = await self.reminder_repository.create_reminders(reminders_payload)
-                    await self.db.commit()
                     
                     reminder_map = {str(r.id): r for r in reminders}
                     enqueue_payloads = [EnqueueReminderPayload(reminder_id=r.id,run_at=r.next_run_at)for r in reminders]
@@ -558,3 +594,5 @@ class ApplicationService:
             self.logger.error(f"Failed to move application to round for application_id={application_id} to round_number={round_number}: {str(e)}")
             await self.db.rollback()
             raise 
+        
+        

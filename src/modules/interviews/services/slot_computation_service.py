@@ -218,10 +218,7 @@ class SlotComputationService:
             f"written for round_config {round_config.id}"
         )
 
-        # Notify waiting candidates so they can start booking
-        # ! notify candidates in ready to book status that slots are available 
-        if notify_waiting_candidates:  
-            await self._send_booking_links_to_waiting_candidates(round_config)
+        
             
         return True
 

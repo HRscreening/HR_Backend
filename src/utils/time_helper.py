@@ -126,5 +126,9 @@ class TimeHelper:
         
         return f"{mins:02}:{secs:02}"
     
+    def convert_date_to_str(self, dt: datetime, timezone: str = "Asia/Kolkata") -> str:
+        local_dt = self.to_timezone(dt, timezone)
+        return local_dt.strftime("%d %B %Y")
+    
     
 time_helper = TimeHelper()

@@ -140,5 +140,5 @@ def get_logger(name="MyApp"):
     if not logger.handlers:
         logger.addHandler(handler)
 
-    logger.propagate = False
+    logger.propagate = True
     return logger

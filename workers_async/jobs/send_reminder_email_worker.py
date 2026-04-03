@@ -1,7 +1,7 @@
 import os
 from logging import Logger
 from arq import Retry
-from email_workers_async.context_manager import job_context
+from workers_async.context_manager import job_context
 from src.modules.reminders.reminder_service import ReminderWorkerService
 
 async def send_reminder_email_worker(ctx, reminder_id: str):

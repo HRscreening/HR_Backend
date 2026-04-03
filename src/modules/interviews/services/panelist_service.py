@@ -19,13 +19,13 @@ from collections import defaultdict
 from src.modules.interviews.dtos.interviews_dto import MeetingDetails, Reminders
 from src.modules.interviews.dtos.panel_dto import AvailableSlot,EditSlotsPayload,RescheduleSlotsPayload
 from src.repositories.job_repository import JobRepository
-from email_workers_async.email_tasks_producer import EmailProducer,EnqueueReminderPayload
+from workers_async.email_tasks_producer import EmailProducer,EnqueueReminderPayload
 from src.modules.reminders.reminder_repository import ReminderRepository
 
 from datetime import datetime, timezone, date
 from uuid import UUID
 from typing import Optional
-from src.utils.time_helper import format_interview_time, format_interview_schedule,serialize_datetime
+from src.utils.time_helper import format_interview_time, format_interview_schedule,serialize_datetime, time_helper
 from src.utils.jwt import JWTService
 import asyncio
 from src.dtos.job_settings_dto import ReminderSettingsDTO,ReschedulingSettingsDTO
@@ -34,8 +34,7 @@ from src.dtos.emails.panel_dto import PanelistReminderAvailabilityData,PanelistI
 from src.dtos.emails.candidate_dto import CandidateBookingLinkReminderData,CandidateInterviewReminderData,CandidateBookingLinkData,CandidateBookingConfirmationData,CandidateRescheduleNewSlotsData
 from src.modules.reminders.model.reminder_enum import ReminderType, RecipientType, EntityType,ReminderStatus
 from datetime import timedelta
-
-
+from zoneinfo import ZoneInfo
 # Most of the methods needs optimization,but basic functionality is ready. Will iterate and optimize in next passes. 
 
 
@@ -59,6 +58,7 @@ class PanelistService:
         job_repository: JobRepository,
         email_producer: EmailProducer,
         reminder_repository: ReminderRepository,
+
         db: AsyncSession):
         
         
@@ -187,24 +187,24 @@ class PanelistService:
             for date_key, day_slots in sorted(groups.items())
         ]
             
-    async def _get_meet_link_for_interview(self, meeting_details: MeetingDetails, meeting_host_type:MeetingHostType,refresh_token:str) -> Optional[str]:
+    async def _get_meet_link_for_interview(self, meeting_details: MeetingDetails, meeting_host_type:MeetingHostType,refresh_token:str) -> Optional[tuple[str,str | UUID]]:
         """Generate a calendar event and return the meet link."""
         
         # TODO: move redundant parts from other methods to here 
             
         if meeting_host_type == MeetingHostType.HR:
                 # TODO: update to create calendar event with hr calendar credential
-            meet_link = await self.calendar_service.create_google_calendar_event_owner_deskzero(meeting_details)
+            meet_link,calendar_event_id = await self.calendar_service.create_google_calendar_event_owner_deskzero(meeting_details)
             
             
         elif meeting_host_type == MeetingHostType.PANELIST:
             self.logger.info(f"Creating calendar event with panelist credentials for meeting hosted by panelist.")
-            meet_link = await self.calendar_service.create_google_calendar_event_owner_panelist(meeting_details,refresh_token)
+            meet_link,calendar_event_id = await self.calendar_service.create_google_calendar_event_owner_panelist(meeting_details,refresh_token)
             
         else:
-            meet_link = await self.calendar_service.create_google_calendar_event_owner_deskzero(meeting_details)
+            meet_link,calendar_event_id = await self.calendar_service.create_google_calendar_event_owner_deskzero(meeting_details)
         
-        return meet_link
+        return meet_link,calendar_event_id
 
     def _create_booking_reminder_payload_candidate(self, cand_interview_data, round_config, candidate_reminder_settings) -> list[CreateReminderDTO]:
         reminders_payload = []
@@ -225,6 +225,17 @@ class PanelistService:
                     next_run_at= datetime.now(timezone.utc) + timedelta(minutes=reminder_sec)  #! for now doing in minutes, change to hours later       
                 ))
         return reminders_payload
+
+        
+    async def _delete_calendar_event(self, calendar_event_id:str,host_email:str,refresh_token:str,provider:CalendarProvider=CalendarProvider.GOOGLE):
+        try:
+           
+            if provider == CalendarProvider.GOOGLE:
+                await self.calendar_service.delete_google_calendar_event(calendar_event_id,refresh_token)    
+            
+        except Exception as e:
+            self.logger.error(f"Failed to delete calendar event with id {calendar_event_id} for host {host_email} and provider {provider}: {e}")
+
 
        
     async def _enque_panelist_interview_reminders(self, panelist, panelist_reminder_settings: ReminderSettingsDTO, interview, config, meet_link, candidate_display,slot,panelist_reschedule_link):
@@ -289,7 +300,7 @@ class PanelistService:
             
             self.logger.info(f"Enqueued {len(enqueue_payloads)} reminder emails for candidate {candidate_display} ")
     
-          
+    
             
     # TODO: Mark Panels Token Expired while checking JWT
     async def get_panelist_form_details(self, availability_token: str):
@@ -786,7 +797,20 @@ class PanelistService:
             
             if str(panelist.round_config_id) != str(round_config_id):
                 raise DomainError("Panelist does not belong to the interview round configuration in the token")
-                        
+            
+            same_new_slot = await self.slots_repository.get_slot_by_round_config_id_and_panelist_id_and_time(
+                round_config_id=round_config_id,
+                panelist_id=panelist_id,
+                slot_start=payload.reschedule_slot.slot_start,
+                slot_end=payload.reschedule_slot.slot_end
+            )  
+            
+            if same_new_slot and same_new_slot.is_booked:
+                raise DomainError("The new slot provided is already booked. Please choose a different slot for rescheduling.")
+            
+            if same_new_slot :
+                await self.slots_repository.delete_slots_by_ids(panelist.id,round_config.id,[same_new_slot.id])
+                    
 
             current_slot = await self.slots_repository.get_slot_by_interview_id_with_round_config_id_with_panelist_id(interview_id,round_config.id,panelist.id)
             
@@ -872,20 +896,21 @@ class PanelistService:
 
             
            
-
             
             
             
             #! currently creating new meeting but ideally should update will apply it later need to make db fields to store meeting id from calendar provider to update the same meeting instead of creating new one.
             attendees_emails = [COMPANY_EMAIL,FireFlies_Bot, candidate.email ]+ [panelist.email]  
-                
+            tz = ZoneInfo(round_config.timezone or "Asia/Kolkata")
+
+            print("TIMEZONE",round_config.timezone)
             meeting_details = MeetingDetails(
                 summary=round_config.title,
                 description=f"Interview for {round_config.title}",
                 location=round_config.interview_type.value if round_config.interview_type else "Online",
-                start_time=current_slot.slot_start.isoformat(),
-                end_time=current_slot.slot_end.isoformat(),
-                timezone=round_config.timezone or "UTC",
+                start_time = current_slot.slot_start.isoformat(),
+                end_time = current_slot.slot_end.isoformat(),
+                timezone=round_config.timezone or "Asia/Kolkata",
                 attendees_emails= attendees_emails,
                 application_id=str(interview.application_id) if interview.application_id else None,
                 reminders=[
@@ -897,6 +922,8 @@ class PanelistService:
                 visibility="public",
             )
             
+            print(f"Meeting details for calendar event: {meeting_details}\n\n")
+            old_calendar_event_id = interview.calendar_event_id
              #! Currently bt default using Google calendar will need to make dynamic if required in future based on provider in calendar connection table for panelist and hr calendar credential
             calendar_refresh_token = await self.calendar_repository.get_calendar_access_token(panelist.email,CalendarProvider.GOOGLE)
             
@@ -905,7 +932,7 @@ class PanelistService:
                 raise DomainError("Calendar credentials not found for the panelist, cannot create calendar event", status_code=404)
             
             # ! currently using deskzero's calendar will need to update later on to hr or panel we calendar connection table to store those credential
-            meet_link = await self._get_meet_link_for_interview(meeting_details, round_config.meeting_host_type,refresh_token=calendar_refresh_token)
+            meet_link,calendar_event_id = await self._get_meet_link_for_interview(meeting_details, round_config.meeting_host_type,refresh_token=calendar_refresh_token)
 
 
             
@@ -913,6 +940,7 @@ class PanelistService:
             interview.scheduled_start = payload.reschedule_slot.slot_start
             interview.scheduled_end = payload.reschedule_slot.slot_end
             interview.meet_link = meet_link
+            interview.calendar_event_id = calendar_event_id
             interview.times_rescheduled_by_panelist += 1
             # interview.status = InterviewStatus.READY_TO_BOOK
 
@@ -989,6 +1017,12 @@ class PanelistService:
                 )
                 
             await self.db.commit()
+            
+            await self._delete_calendar_event(
+                calendar_event_id=old_calendar_event_id,
+                host_email=panelist.email,
+                refresh_token=calendar_refresh_token
+            )
             
             # TODO: stop candidate receiving reminders for old slot
 

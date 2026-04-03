@@ -3,11 +3,13 @@ from src.modules.interviews.services.interview_service import InterviewService
 from src.modules.interviews.services.panelist_service import PanelistService
 from src.modules.interviews.services.calendar_service import CalendarService
 from src.modules.interviews.services.slot_computation_service import SlotComputationService
+from src.modules.interviews.services.Interview_assessment_service import InterviewAssessmentService
 
 __all__ = [
     "InterviewRoundConfigService",
     "InterviewService",
     "PanelistService",
     "CalendarService",
-    "SlotComputationService"
+    "SlotComputationService",
+    "InterviewAssessmentService"
 ]

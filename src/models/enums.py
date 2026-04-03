@@ -78,6 +78,12 @@ class InterviewType(enum.Enum):
     PHONE = "Phone"
     VIDEO_CALL = "Video Call"
     
+class InterviewAssessmentStatus(enum.Enum):
+    NOT_REQUESTED = "Not Requested"
+    REQUESTED = "Requested"
+    SUBMITTED = "Submitted"
+    
+    
 class InterviewStatus(enum.Enum):
     COLLECTING_AVAILABILITY = "Collecting Availability"
     READY_TO_BOOK = "Ready to Book"

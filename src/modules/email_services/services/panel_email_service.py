@@ -1,7 +1,7 @@
 from configs.log_config import get_logger
 from src.modules.email_services.base import BaseEmailService
 from src.dtos.emails.panel_dto import PanelistBookingData,AvailableSlotsData,ThankYouPanelistData,PanelistSlotReleasedData,PanelistMeetingRescheduledData,PanelistReminderAvailabilityData,PanelistInterviewReminderData
-from src.modules.email_services.template_classes.panel_templates import PanelistBookingTemplate,PanelistAvailabilityTemplate,PanelistThankYouAvailabilityTemplate,PanelistSlotReleasedTemplate,PanelistMeetingRescheduledTemplate,PanelistReminderAvailabilityTemplate,PanelistInterviewReminderTemplate
+from src.modules.email_services.template_classes.panel_templates import (PanelistBookingTemplate,PanelistAvailabilityTemplate,PanelistThankYouAvailabilityTemplate,PanelistSlotReleasedTemplate,PanelistMeetingRescheduledTemplate,PanelistReminderAvailabilityTemplate,PanelistInterviewReminderTemplate,PanelistInterviewFeedbackTemplate,PanelistInterviewFeedbackReminderTemplate)
 
 
 
@@ -35,4 +35,12 @@ class PanelEmailService(BaseEmailService):
                     
     async def send_panelist_interview_reminder_email(self,data: PanelistInterviewReminderData):
         template = PanelistInterviewReminderTemplate(data)
+        await self.send_email_template(template)
+        
+    async def send_panelist_feedback_request_email(self,data):
+        template = PanelistInterviewFeedbackTemplate(data)
+        await self.send_email_template(template)
+        
+    async def send_panelist_feedback_reminder_email(self,data):
+        template = PanelistInterviewFeedbackReminderTemplate(data)
         await self.send_email_template(template)

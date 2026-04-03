@@ -13,8 +13,9 @@ from src.modules.reminders.reminder_dtos import CreateReminderDTO
 from src.modules.notifications.notification_service import NotificationService
 from src.modules.reminders.model.reminder_enum import RecipientType,EntityType,ReminderStatus,ReminderType
 from src.modules.interviews.repositories.interview_event_repository import InterviewEventRepository
-from src.dtos.emails.panel_dto import PanelistReminderAvailabilityData,PanelistInterviewReminderData
+from src.dtos.emails.panel_dto import PanelistReminderAvailabilityData,PanelistInterviewReminderData,PanelistFeedbackData
 from src.dtos.emails.candidate_dto import CandidateBookingLinkReminderData,CandidateInterviewReminderData
+
 
 class BaseReminderService:
     def __init__(self,reminder_repository: ReminderRepository,interview_event_repository:InterviewEventRepository,db: AsyncSession):
@@ -99,6 +100,12 @@ class ReminderWorkerService(BaseReminderService):
             elif reminder.recipient_type == RecipientType.CANDIDATE and reminder.reminder_type == ReminderType.INTERVIEW_UPCOMING:   
                 await self.notification_service.send_interview_reminder_notification_to_candidate(
                     payload=CandidateInterviewReminderData(**payload_dict),
+                    channel="EMAIL"
+                )
+                
+            elif reminder.reminder_type == ReminderType.FEEDBACK_PENDING:
+                await self.notification_service.send_feedback_reminder_notification_to_panelist(
+                    payload=PanelistFeedbackData(**payload_dict),
                     channel="EMAIL"
                 )
 

@@ -1,7 +1,7 @@
 from src.modules.email_services.base import EmailTemplate
 from src.utils.time_helper import TimeHelper
 from src.utils.templte_engine import render_template
-from src.dtos.emails.panel_dto import PanelistBookingData,AvailableSlotsData,ThankYouPanelistData,PanelistSlotReleasedData,PanelistMeetingRescheduledData,PanelistReminderAvailabilityData,PanelistInterviewReminderData
+from src.dtos.emails.panel_dto import *
 
 
 class PanelistBookingTemplate(EmailTemplate):
@@ -191,3 +191,63 @@ class PanelistInterviewReminderTemplate(EmailTemplate):
             "email/panel/interview_reminder.html",
             context
         )
+        
+        
+        
+class PanelistInterviewFeedbackTemplate(EmailTemplate):
+    def __init__(
+        self,
+        data: PanelistFeedbackData,
+        time_helper: TimeHelper | None = None
+    ):
+        self.data = data
+        self.time_helper = time_helper or TimeHelper()
+
+    def get_recipient(self):
+        return self.data.panelist_email
+
+    def get_subject(self):
+        return f"Feedback Request: {self.data.interview_round_title}"
+
+    def get_body(self):
+        valid_before = self.time_helper.convert_date_to_str(self.data.form_valid_till) if self.data.form_valid_till else None
+
+        context = self.data.model_dump()
+        
+        if valid_before:
+            context.update({"form_valid_till": valid_before})
+
+        return render_template(
+            "email/panel/request_feedback.html",
+            context
+        )
+    
+        
+class PanelistInterviewFeedbackReminderTemplate(EmailTemplate):
+    def __init__(
+        self,
+        data: PanelistFeedbackData,
+        time_helper: TimeHelper | None = None
+    ):
+        self.data = data
+        self.time_helper = time_helper or TimeHelper()
+
+    def get_recipient(self):
+        return self.data.panelist_email
+
+    def get_subject(self):
+        return f"Reminder: Feedback Request for {self.data.interview_round_title}"
+
+    def get_body(self):
+        valid_before = self.time_helper.convert_date_to_str(self.data.form_valid_till) if self.data.form_valid_till else None
+
+        context = self.data.model_dump()
+        
+        if valid_before:
+            context.update({"form_valid_till": valid_before})
+
+        return render_template(
+            "email/panel/feedback_reminder.html",
+            context
+        )
+    

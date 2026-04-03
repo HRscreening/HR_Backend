@@ -31,7 +31,7 @@ class CreateInterviewRoundConfigDTO(BaseModel):
     instructions: Optional[str] = Field(None, example="Please be prepared to discuss your previous projects and answer technical questions.")
     duration_minutes: int = Field(..., example=60)
     panelists: list[PanelistDTO] = Field(default_factory=list)
-    meet_link:  Optional[HttpUrl] = Field(None)
+    assessment_criterias: Optional[List[str]] = Field(default_factory=list, example=["Problem Solving", "Communication Skills"])
     start_date: datetime
     end_date: datetime
     timezone: str = Field(default="UTC", example="Asia/Kolkata")
@@ -102,7 +102,7 @@ class UpdateInterviewRoundConfigDTO(BaseModel):
     instructions: Optional[str] = Field(None)
     duration_minutes: Optional[int] = Field(None)
     panelists: Optional[PanelistDiffDTO] = None
-    meet_link: Optional[str] = None
+    assessment_criterias: Optional[List[str]] = Field(default_factory=list)
     start_date: Optional[datetime] = None   # ← datetime, not str
     end_date: Optional[datetime] = None     # ← datetime, not str
     timezone: Optional[str] = Field(None)

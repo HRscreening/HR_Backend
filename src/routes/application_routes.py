@@ -43,15 +43,15 @@ async def attach_candidate_to_application(application_id: UUID, candidate_info: 
     ctx_type = request.state.context.type
 
     if ctx_type == "org":
-        await application_service.attach_candidate_to_application(
+        await application_service.attach_new_candidate_to_application(
             application_id=application_id,
-            candidate_data=candidate_info,
+            candidate_info=candidate_info,
             org_id=request.state.context.org_id,
         )
     elif ctx_type == "personal":
-        await application_service.attach_candidate_to_application(
+        await application_service.attach_new_candidate_to_application(
             application_id=application_id,
-            candidate_data=candidate_info,
+            candidate_info=candidate_info,
             org_id=None,
         )
     else:

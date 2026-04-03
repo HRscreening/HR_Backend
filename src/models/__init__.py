@@ -34,6 +34,7 @@ __all__ = [
     "Interview",
     "Interview_Round_Configs",
     "Interview_TimeLine_Events",
+    "InterviewAssessment",
     "Panelist",
     "Interview_Slot",
     "CalendarConnection",

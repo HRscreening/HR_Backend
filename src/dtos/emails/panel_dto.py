@@ -67,3 +67,13 @@ class PanelistInterviewReminderData(BaseModel):
 
     meet_link: str | None = None
     reschedule_link: str | None = None
+
+# Same for feedback reminder 
+class PanelistFeedbackData(BaseModel):
+    panelist_email: str
+    panelist_name: str | None
+    candidate_name: str
+    interview_round_title: str
+    form_link: str
+    form_valid_till: datetime | None = None
+    

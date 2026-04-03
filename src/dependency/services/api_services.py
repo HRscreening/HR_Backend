@@ -18,6 +18,8 @@ from src.modules.oauth.providers.Calendar_provider_service import GoogleCalendar
 from src.modules.reminders.reminder_service import ReminderAPIService, ReminderWorkerService
 from src.dependency.repositories.repositories import *
 from src.dependency.services.helpers.helper_services import *
+from src.modules.interviews.services.helpers.token_manager.Interview_token_manger import InterviewTokenManagerFactory
+from src.dependency.services.helpers.interviews import get_interview_token_manager_factory
 from src.modules.interviews.repositories import *
 
 
@@ -237,6 +239,40 @@ def get_interview_service(
         email_producer,
         db,
     )
+
+
+def get_interview_assessment_service(
+    interview_round_config_repository: InterviewRoundConfigsRepository = Depends(get_interview_round_configs_repository),
+    interview_event_repository: InterviewEventRepository = Depends(get_interview_event_repository),
+    panelist_repository: PanelistRepository = Depends(get_panelist_repository),
+    panel_email_service: PanelEmailService = Depends(get_panel_email_service),
+    interview_assessment_repository = Depends(get_interview_assessment_repository),
+    job_repository: JobRepository = Depends(get_job_repository),
+    email_producer: EmailProducer = Depends(get_email_producer),
+    assessment_task_producer: AssessmentTaskProducer = Depends(get_assessment_task_producer),
+    reminder_repository: ReminderRepository = Depends(get_reminder_repository),
+    intrview_repository: InterviewRepository = Depends(get_interview_repository),
+    interview_slots_repository: InterviewSlotsRepository = Depends(get_interview_slots_repository),
+    interview_token_manager_factory: InterviewTokenManagerFactory = Depends(get_interview_token_manager_factory),
+    db: AsyncSession = Depends(get_db),
+):
+    return InterviewAssessmentService(
+        interview_round_config_repository,
+        interview_event_repository,
+        panelist_repository,
+        panel_email_service,
+        interview_assessment_repository,
+        job_repository,
+        email_producer,
+        assessment_task_producer,
+        reminder_repository,
+        intrview_repository,
+        interview_slots_repository,
+        interview_token_manager_factory,
+        db,
+    )
+
+
 
 
 def get_panelist_service(

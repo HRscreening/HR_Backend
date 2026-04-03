@@ -3,7 +3,7 @@ from src.modules.email_services.services import EmailService
 from typing import Literal
 from configs.log_config import get_logger
 
-from src.dtos.emails.panel_dto import PanelistReminderAvailabilityData,PanelistInterviewReminderData
+from src.dtos.emails.panel_dto import PanelistReminderAvailabilityData,PanelistInterviewReminderData,PanelistFeedbackData
 from src.dtos.emails.candidate_dto import CandidateBookingLinkReminderData,CandidateInterviewReminderData
 from src.utils.time_helper import deserialize_datetime
 channel = Literal["ALL","SMS","EMAIL","IN_APP"]
@@ -66,3 +66,12 @@ class NotificationService:
         except Exception as e:
             self.logger.exception(f"Error sending form reminder notification to candidate with email: {payload.candidate_email}")
             raise Exception("Failed to send form reminder notification to candidate")
+        
+    async def send_feedback_reminder_notification_to_panelist(self, payload: PanelistFeedbackData,channel: channel = "EMAIL"):
+        try:
+            if channel == "EMAIL":
+                await self.email_service.panel.send_panelist_feedback_reminder_email(payload)
+      
+        except Exception as e:
+            self.logger.exception(f"Error sending feedback reminder notification to panelist with email: {payload.panelist_email}")
+            raise Exception("Failed to send feedback reminder notification to panelist")

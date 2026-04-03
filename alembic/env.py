@@ -9,16 +9,7 @@ import os
 
 
 # IMPORTANT: import all models so Alembic can detect them
-<<<<<<< HEAD
 from src.models import *
-=======
-from src.models import (
-    User, Application, Organization, Candidate, Job, Resume, Rubric, Score,
-    AIProcessingLogs, BulkUploadBatches, Document,
-    JobDescription, ApplicationFormConfig,
-)
->>>>>>> c32a2edc25a6f1ce7cf6009a0e706a9fb8c2e190
-
 from dotenv import load_dotenv
 
 load_dotenv()

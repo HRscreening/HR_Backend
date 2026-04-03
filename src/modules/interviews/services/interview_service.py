@@ -12,9 +12,8 @@ from src.models.enums import InterviewStatus, PanelMode,MeetingHostType, Calenda
 from src.utils.timeline_formatter import TimelineFormatter, timeline_formatter
 from datetime import datetime, timezone, timedelta
 from typing import Optional
-from src.models.enums import PanelistResponseStatus
 from src.repositories.job_repository import JobRepository
-from email_workers_async.email_tasks_producer import EmailProducer,EnqueueReminderPayload
+from workers_async.email_tasks_producer import EmailProducer,EnqueueReminderPayload
 from src.modules.interviews.dtos.panel_dto import CreatePanelDTO
 from src.modules.interviews.dtos.interviews_dto import MeetingDetails, Reminders
 import asyncio
@@ -28,11 +27,10 @@ from src.modules.reminders.model.reminder_enum import ReminderType, RecipientTyp
 from datetime import timedelta
 from src.dtos.job_settings_dto import ReminderSettingsDTO,ReschedulingSettingsDTO
 from src.modules.reminders.reminder_repository import ReminderRepository
-from email_workers_async.email_tasks_producer import EmailProducer,EnqueueReminderPayload
-    
+from uuid import UUID
 import pdfkit
 import tempfile
-
+from zoneinfo import ZoneInfo
 
 # TODO:  most of the methods doing same things and can be optimized skipping for future refactor for now to focus on feature development, also need to add more logs for better observability and debugging
 class InterviewService:
@@ -159,13 +157,14 @@ class InterviewService:
         attendees_emails: list[str],
         interview,
     ) -> MeetingDetails:
+        print("TIMEZONE",round_config.timezone)
         return MeetingDetails(
             summary=round_config.title,
             description=f"Interview for {round_config.title}",
             location=round_config.interview_type.value if round_config.interview_type else "Online",
-            start_time=slot.slot_start.isoformat(),
-            end_time=slot.slot_end.isoformat(),
-            timezone=round_config.timezone or "UTC",
+            start_time = slot.slot_start.isoformat(),
+            end_time = slot.slot_end.isoformat(),
+            timezone=round_config.timezone or "Asia/Kolkata",
             attendees_emails=attendees_emails,
             application_id=str(interview.application_id) if interview.application_id else None,
             reminders=[
@@ -179,7 +178,7 @@ class InterviewService:
     
         #! Currently bt default using Google calendar will need to make dynamic if required in future based on provider in calendar connection table for panelist and hr calendar credential
     
-    async def _get_meet_link_for_interview(self, meeting_details: MeetingDetails, meeting_host_type:MeetingHostType,provider:CalendarProvider=CalendarProvider.GOOGLE,host_email:str=COMPANY_EMAIL) -> Optional[str]:
+    async def _get_meet_link_for_interview(self, meeting_details: MeetingDetails, meeting_host_type:MeetingHostType,provider:CalendarProvider=CalendarProvider.GOOGLE,host_email:str=COMPANY_EMAIL) -> Optional[tuple[str,str | UUID]]:
         """Generate a calendar event and return the meet link."""
         
         # TODO: move redundant parts from other methods to here 
@@ -193,17 +192,34 @@ class InterviewService:
         
         if meeting_host_type == MeetingHostType.HR:
                 # TODO: update to create calendar event with hr calendar credential
-            meet_link = await self.calendar_service.create_google_calendar_event_owner_deskzero(meeting_details)
+            meet_link,event_id = await self.calendar_service.create_google_calendar_event_owner_deskzero(meeting_details)
             
             
         elif meeting_host_type == MeetingHostType.PANELIST:
             self.logger.info(f"Creating calendar event with panelist credentials for meeting hosted by panelist.")
-            meet_link = await self.calendar_service.create_google_calendar_event_owner_panelist(meeting_details,refresh_token)
+            meet_link,event_id = await self.calendar_service.create_google_calendar_event_owner_panelist(meeting_details,refresh_token)
             
         else:
-            meet_link = await self.calendar_service.create_google_calendar_event_owner_deskzero(meeting_details)
+            meet_link,event_id = await self.calendar_service.create_google_calendar_event_owner_deskzero(meeting_details)
         
-        return meet_link
+        return meet_link,event_id
+    
+    async def _delete_calendar_event(self, calendar_event_id:str,host_email:str,provider:CalendarProvider=CalendarProvider.GOOGLE):
+        try:
+            refresh_token = await self.calendar_repostiory.get_calendar_access_token(host_email,CalendarProvider.GOOGLE)
+        
+            if not refresh_token:
+                self.logger.error(f"Calendar refresh token not found for panelist {host_email}, provider {CalendarProvider.GOOGLE}")
+                raise DomainError("Calendar credentials not found for the panelist, cannot create calendar event", status_code=404)
+            
+            if provider == CalendarProvider.GOOGLE:
+                await self.calendar_service.delete_google_calendar_event(calendar_event_id,refresh_token)    
+            
+
+        except Exception as e:
+            self.logger.error(f"Failed to delete calendar event with id {calendar_event_id} for host {host_email} and provider {provider}: {e}")
+
+
 
     async def _create_meet_link_and_reschedule_token(
         self,
@@ -213,7 +229,7 @@ class InterviewService:
         panelist,
         candidate_email: str,
         Provider: CalendarProvider = CalendarProvider.GOOGLE,
-    ) -> tuple[str, str, datetime]:
+    ) -> tuple[str, str | UUID ,str , datetime]:
         """
         Fetches calendar creds, creates meet link, mints a candidate reschedule token.
         Returns (meet_link, reschedule_token, expiry_time).
@@ -221,7 +237,7 @@ class InterviewService:
        
         attendees = [COMPANY_EMAIL, FireFlies_Bot, candidate_email, panelist.email]
         meeting_details = self._build_meeting_details(round_config, slot, attendees, interview)
-        meet_link = await self._get_meet_link_for_interview(
+        meet_link,calendar_event_id = await self._get_meet_link_for_interview(
             meeting_details, round_config.meeting_host_type, host_email=panelist.email,provider=Provider
         )
 
@@ -232,7 +248,7 @@ class InterviewService:
             expiration_minutes=remaining_minutes,
             interview_id=str(interview.id),
         )
-        return meet_link, reschedule_token, expiry_time
+        return meet_link,calendar_event_id,reschedule_token, expiry_time
     
     async def _resolve_candidate_display(self, interview) -> tuple[Optional[object], str]:
         """Returns (candidate_obj, display_name). Safe — never raises."""
@@ -404,6 +420,8 @@ class InterviewService:
         
         booked_slot = await self.slots_repository.get_booked_slot_by_interview_id(interview_id=interview_id)
         
+        if is_reschedule and interview.rescheduling_token != token:
+            raise DomainError("Invalid or outdated rescheduling link", status_code=400)
 
         # Already booked?
         if not is_reschedule and interview.status == InterviewStatus.SCHEDULED:
@@ -537,7 +555,7 @@ class InterviewService:
                 round_config.slots_available = False
             
 
-            meet_link, cand_reschedule_token, expiry_time = await self._create_meet_link_and_reschedule_token(
+            meet_link,calendar_event_id,cand_reschedule_token, expiry_time = await self._create_meet_link_and_reschedule_token(
                 round_config, slot, interview, panelist, payload.get("candidate_email", "")
             )
             # Timeline event
@@ -578,6 +596,7 @@ class InterviewService:
 
             interview.rescheduling_token_expires_at = expiry_time
             interview.meet_link = meet_link
+            interview.calendar_event_id = calendar_event_id
             interview.rescheduling_token = cand_reschedule_token
             
             job_settings = await self.job_repository.get_job_settings(config.job_id)
@@ -696,12 +715,12 @@ class InterviewService:
             if interview.times_rescheduled_by_candidate >= reschedule_settings.max_reschedule_allowed_by_candidate:
                 raise DomainError(f"You have reached the maximum number of reschedules allowed ({reschedule_settings.max_reschedule_allowed_by_candidate}).", status_code=403)
 
+            old_calendar_event_id = interview.calendar_event_id
             
             new_panelist =  await self.panelist_repository.get_panelist_by_round_config_and_panelist_id(round_config.id,new_slot.panelist_id) 
             
             if not new_panelist:
                 raise DomainError(f"Panelist with id {new_slot.panelist_id} not found", status_code=404)
-            
             
             
             # Attempt to book the new slot atomically
@@ -755,13 +774,16 @@ class InterviewService:
             if reschedule_settings.same_panel_on_reschedule and old_panelist.email != new_panelist.email:
                 raise DomainError("Rescheduling to a different panelist is not allowed for this interview round.", status_code=403)
             
+            # TODO: need to either delete old calendar evnet or update the calendar event with new details, currently creating a new calendar event and leaving the old one as is, need to clean up old calendar events later
+            
             # new slot panelist is different from old slot panelist then send email to new panelist and old panelist about the reschedule
             attendees_emails = [COMPANY_EMAIL,FireFlies_Bot,payload.get("candidate_email", "")] + [new_panelist.email]  
             meeting_details = self._build_meeting_details(round_config, new_slot, attendees_emails, interview)
-            meet_link = await self._get_meet_link_for_interview(meeting_details, round_config.meeting_host_type, host_email=new_panelist.email,provider=CalendarProvider.GOOGLE)
+            meet_link,calendar_event_id = await self._get_meet_link_for_interview(meeting_details, round_config.meeting_host_type, host_email=new_panelist.email,provider=CalendarProvider.GOOGLE)
             
             
             interview.meet_link = meet_link
+            interview.calendar_event_id = calendar_event_id
             interview.times_rescheduled_by_candidate += 1
             candidate, candidate_display = await self._resolve_candidate_display(interview)
             
@@ -895,6 +917,13 @@ class InterviewService:
             if panelist_reminder_settings and panelist_reminder_settings.enabled:
                     await self._enque_panelist_interview_reminders(new_panelist, panelist_reminder_settings, interview, round_config, meet_link, candidate_display,new_slot,panelist_reschedule_link)
 
+            if old_calendar_event_id:
+            # Always delete the old calendar event to prevent confusion
+                try:
+                    await self._delete_calendar_event(old_calendar_event_id,old_panelist.email if old_panelist else None, provider=round_config.meeting_host_type)
+                except Exception as e:
+                    self.logger.error(f"Failed to delete old calendar event with id {old_calendar_event_id}: {e}")
+            
             await self.db.commit()
             
             if tasks:
@@ -982,7 +1011,6 @@ class InterviewService:
                 
                 if reminders_payload:
                     reminders = await self.reminder_repository.create_reminders(reminders_payload)
-                    await self.db.commit()
                     
                     reminder_map = {str(r.id): r for r in reminders}
                     enqueue_payloads = [EnqueueReminderPayload(reminder_id=r.id,run_at=r.next_run_at)for r in reminders]
@@ -1052,7 +1080,7 @@ class InterviewService:
                     "meet_link": interview.meet_link if interview.status == InterviewStatus.SCHEDULED else None,
                     "scheduled_at": format_interview_schedule(interview.scheduled_start, interview.scheduled_end, interview.round_config.timezone) if interview.scheduled_start and interview.scheduled_end else None,
                     "notes": None,
-                    "summary": None,
+                    "summary": interview.ai_summary if interview.ai_summary else None,
                     "is_transcript_available": True #! only for testing 
                     
                 },
