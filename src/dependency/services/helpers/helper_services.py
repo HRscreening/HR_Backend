@@ -7,7 +7,7 @@ from src.modules.notifications.notification_service import NotificationService
 from workers_async.connection import get_redis_pool
 from src.utils.file_manager import FileManagerService
 from src.dependency.services.helpers.email_services import get_email_service, get_candidate_email_service, get_panel_email_service
-
+from src.utils.supabase_file_handler import SupabaseFileHandler
 
 # ! to be removed 
 def get_email_service___():
@@ -39,3 +39,8 @@ async def get_assessment_task_producer():
 
 def get_file_manager_service():
     return FileManagerService()
+
+
+
+def get_supabase_file_handler():
+    return SupabaseFileHandler()

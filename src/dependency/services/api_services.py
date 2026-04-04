@@ -21,7 +21,7 @@ from src.dependency.services.helpers.helper_services import *
 from src.modules.interviews.services.helpers.token_manager.Interview_token_manger import InterviewTokenManagerFactory
 from src.dependency.services.helpers.interviews import get_interview_token_manager_factory
 from src.modules.interviews.repositories import *
-
+from src.utils.supabase_file_handler import SupabaseFileHandler
 
 from src.modules.email_services.services import EmailService, CandidateEmailService, PanelEmailService
 
@@ -221,6 +221,7 @@ def get_interview_service(
     job_repository: JobRepository = Depends(get_job_repository),
     email_producer: EmailProducer = Depends(get_email_producer),
     reminder_repository: ReminderRepository = Depends(get_reminder_repository),
+    supabase_file_handler: SupabaseFileHandler = Depends(get_supabase_file_handler),
     db: AsyncSession = Depends(get_db),
 ):
     return InterviewService(
@@ -237,6 +238,7 @@ def get_interview_service(
         job_repository,
         reminder_repository,
         email_producer,
+        supabase_file_handler,
         db,
     )
 

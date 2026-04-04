@@ -119,3 +119,10 @@ class InterviewRepository:
 
         await self.db.flush()
         return res_data
+    
+    
+    async def get_interview_by_calendar_id(self, calendar_id: str) -> Optional[Interview]:
+        result = await self.db.execute(
+            select(Interview).where(Interview.calendar_event_id == calendar_id)
+        )
+        return result.scalar_one_or_none()

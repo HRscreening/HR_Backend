@@ -40,6 +40,8 @@ from src.dtos.emails.panel_dto import AvailableSlotsData,PanelistReminderAvailab
 from src.dtos.emails.candidate_dto import CandidateBookingLinkReminderData,CandidateBookingLinkData
 from src.utils.jwt import JWTService
 from src.modules.email_services.services import EmailService, PanelEmailService
+from src.modules.interviews.services.helpers.fireflies import FirefliesHelper
+from src.utils.supabase_file_handler import SupabaseFileHandler
 
 class BaseInterviewAssessmentService:
     def __init__(self, 
@@ -126,7 +128,6 @@ class InterviewAssessmentService:
         
         self.transcript_enqueing_max_retries = 3
         self.request_panelist_enqueing_max_retries = 3
-        
         self.logger = get_logger("Inetrview_Assessment_Service") 
         
     
@@ -518,7 +519,29 @@ class InterviewAssessmentService:
             self.logger.error(f"Error in interview post processing for interview_id {interview_id}: {str(e)}")
             raise DomainError(f"Failed in interview post processing: {str(e)}")
             
+    async def process_received_transcript(self,payload:dict):
+        try:
+            meeting_id = payload.get("meeting_id")
+            event = payload.get("event")
+            
+            
+            if event != "meeting.transcribed":
+                self.logger.warning(f"Received unsupported event type in transcript webhook: {event}")
+                return {"message": f"Ignored unsupported event type: {event}"}
+                
+            if not meeting_id:
+                self.logger.error(f"Invalid payload received in transcript webhook: {payload}")
+                raise DomainError("Invalid payload: interview_id and transcript are required.")
+            
+            await self.assessment_task_producer.enqueue_interview_extraction_and_post_processsing(meeting_id)
+            
+            return {"message": "Transcript received successfully"}
         
+        
+        except Exception as e:
+                self.logger.error(f"Error processing received transcript webhook: {str(e)}")
+                raise DomainError(f"Failed to process received transcript: {str(e)}")
+                
         
         
 # TODO: TO be implemented
@@ -537,6 +560,9 @@ class InterviewAssessmentWorkerService(BaseInterviewAssessmentService):
         application_repository : ApplicationRepository,
         jwt_service: JWTService,
         interview_token_manager_factory: InterviewTokenManagerFactory,
+        fireflies_helper: FirefliesHelper,
+        assessment_task_producer: AssessmentTaskProducer,
+        supabase_file_handler: SupabaseFileHandler,
         db: AsyncSession):
         
         super().__init__(
@@ -554,7 +580,10 @@ class InterviewAssessmentWorkerService(BaseInterviewAssessmentService):
             db
         )
         self.application_repository = application_repository
+        self.fireflies_helper = fireflies_helper
         self.jwt_service = jwt_service
+        self.assessment_task_producer = assessment_task_producer
+        self.supabase_file_handler = supabase_file_handler
         self.logger = get_logger("Interview_Assessment_Worker_Service")
         
         # TODO: Optimize and make it cleaner
@@ -729,7 +758,7 @@ class InterviewAssessmentWorkerService(BaseInterviewAssessmentService):
 
         except Exception as e:
             self.logger.error(f"Error requesting interview assessment for interview_id {interview_id}: {str(e)}")
-            raise DomainError(f"Failed to request interview assessment: {str(e)}")
+            raise 
 
         
     async def analyze_interview_transcript(self,interview_id:str):
@@ -751,18 +780,19 @@ class InterviewAssessmentWorkerService(BaseInterviewAssessmentService):
                 raise DomainError(f"No active rubric found for job with id {round_config.job_id}.")
             
             
+            if not interview.transcript_url:
+                raise DomainError(f"No transcript URL found for interview with id {interview_id}.")
             
             # ! currently hardcoded transcript loading for testing, need to integrate with actual transcript storage later
-            transcript = load_transcript()
-            actual_transcript = transcript["data"]["transcript"]
+            transcript = await self.supabase_file_handler.get_json_data_from_file_on_supabase(interview.transcript_url)
             
-            result = await run_transcript_analysis_pipeline(actual_transcript, round_config.assessment_criterias, job_criterias.criteria)
+            result = await run_transcript_analysis_pipeline(transcript, round_config.assessment_criterias, job_criterias.criteria)
             result = FinalFeedbackOutput(**result)
             print("RESULT",result,"\n\n\n")
             interview.ai_summary = result.interview_summary if result.interview_summary else None
             interview_ai_assessment = result.model_dump(exclude_none=True,exclude={"interview_summary"}) if result else None
             interview.ai_assessment = interview_ai_assessment 
-            interview.status = InterviewStatus.AWAITING_FEEDBACK
+            
             
             
             await self.interview_event_repository.create_interview_event(
@@ -779,7 +809,7 @@ class InterviewAssessmentWorkerService(BaseInterviewAssessmentService):
 
         except Exception as e:
             self.logger.error(f"Error analyzing interview transcript for interview_id {interview_id}: {str(e)}")
-            raise DomainError(f"Failed to analyze interview transcript: {str(e)}")
+            raise 
 
     
     async def _move_to_round(self,application_id:str,job_id:str,round_number:int,job_settings,round_config):
@@ -981,4 +1011,42 @@ class InterviewAssessmentWorkerService(BaseInterviewAssessmentService):
             self.logger.error(f"Failed to move interview ahead: {str(e)}")
             raise
     
+    async def processs_interview_extraction_and_post_processsing(self, meeting_id:str):
+        """This method will be called after receiving the transcript from fireflies, it will run the analysis pipeline and store the AI generated summary and assessment in the interview record, and then request assessment from panelists."""
+        try:
+            
+            cal_id,transcript = await self.fireflies_helper.fetch_transcript(meeting_id)
+            
+            if not cal_id or not transcript:
+                raise DomainError(f"Failed to fetch transcript for meeting_id {meeting_id}")
+            
+            interview = await self.interview_repository.get_interview_by_calendar_id(cal_id)
+            
+            if not interview:
+                raise DomainError(f"Interview with calendar id {cal_id} not found.")
+            
+            if interview.status != InterviewStatus.SCHEDULED:
+                raise DomainError(f"Only interviews in SCHEDULED status can be processed for transcript analysis and assessment request, interview with calendar id {cal_id} is in {interview.status} status.")
+            
+            
+            transcrip_url = await  self.supabase_file_handler.save_json_file_from_data(
+                data=transcript,
+                destination_path=f"{interview.round_config_id}",
+                filename=f"{interview.id}_transcript"
+                ) 
+            
+            interview.transcript_url = transcrip_url
+            interview.status = InterviewStatus.AWAITING_FEEDBACK
+            
+            await self.assessment_task_producer.enqueue_transcript_analysis_job(AnalyzeTranscriptPayload(
+                interview_id=str(interview.id)))
+            await self.assessment_task_producer.enqueue_request_panelist_job(interview_id=str(interview.id))
+            
+            
+            self.logger.info(f"Enqueued transcript analysis and panelist assessment request for interview_id {interview.id} with calendar_id {cal_id}")
+            await self.db.commit()
+            
+        except Exception as e:
+            self.logger.error(f"Error in interview extraction and post processing for meeting_id {meeting_id}: {str(e)}")
+            raise 
     

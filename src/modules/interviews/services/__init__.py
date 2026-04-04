@@ -5,11 +5,14 @@ from src.modules.interviews.services.calendar_service import CalendarService
 from src.modules.interviews.services.slot_computation_service import SlotComputationService
 from src.modules.interviews.services.Interview_assessment_service import InterviewAssessmentService
 
+from src.modules.interviews.services.helpers.fireflies import FirefliesHelper
+
 __all__ = [
     "InterviewRoundConfigService",
     "InterviewService",
     "PanelistService",
     "CalendarService",
     "SlotComputationService",
-    "InterviewAssessmentService"
+    "InterviewAssessmentService",
+    "FirefliesHelper"
 ]

@@ -31,6 +31,10 @@ from uuid import UUID
 import pdfkit
 import tempfile
 from zoneinfo import ZoneInfo
+from src.utils.supabase_file_handler import SupabaseFileHandler
+
+
+
 
 # TODO:  most of the methods doing same things and can be optimized skipping for future refactor for now to focus on feature development, also need to add more logs for better observability and debugging
 class InterviewService:
@@ -49,6 +53,7 @@ class InterviewService:
         job_repository: JobRepository,
         reminder_repository: ReminderRepository,
         email_producer: EmailProducer,
+        supabase_file_handler: SupabaseFileHandler,
         db: AsyncSession,
         time_helper: TimeHelper | None = None,
     ):
@@ -70,6 +75,7 @@ class InterviewService:
         self.timeline_formatter: TimelineFormatter = timeline_formatter
         self.frontend_url = FRONTEND_URL
         self.time_helper = time_helper or TimeHelper()
+        self.supabase_file_handler = supabase_file_handler
 
         self.logger = get_logger("InterviewService")
 
@@ -1081,7 +1087,7 @@ class InterviewService:
                     "scheduled_at": format_interview_schedule(interview.scheduled_start, interview.scheduled_end, interview.round_config.timezone) if interview.scheduled_start and interview.scheduled_end else None,
                     "notes": None,
                     "summary": interview.ai_summary if interview.ai_summary else None,
-                    "is_transcript_available": True #! only for testing 
+                    "is_transcript_available": bool(interview.transcript_url)
                     
                 },
                 "round_config": {
@@ -1115,17 +1121,21 @@ class InterviewService:
         if not interview:
             raise DomainError("Interview not found for the given ID", status_code=404)
 
+        if not interview.transcript_url:
+            raise DomainError("Transcript not available for this interview", status_code=404)
+        round_config = await self.interview_round_config_repository.get_interview_round_config_by_id(str(interview.round_config_id))
         # TEMP transcript
         from data.transcript import load_transcript
         from src.utils.templte_engine import render_template
 
-        transcript_json = load_transcript()
-        transcript = transcript_json["data"]["transcript"]
+
+        transcript = await self.supabase_file_handler.get_json_data_from_file_on_supabase(interview.transcript_url) 
 
         if not transcript:
             raise DomainError("Transcript not available for this interview", status_code=404)
 
         transcript = self._normalize_transcript(transcript)
+        transcript["title"] = f"{round_config.title if round_config and round_config.title else "Interview"}-{interview.id}-Transcript"
         # ✅ Render HTML
         html_content = render_template(
             "transcript/transcript.html",

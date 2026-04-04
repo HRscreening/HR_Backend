@@ -72,3 +72,17 @@ async def interview_post_processing(
 async def get_interview_assessment(interview_id: str,interview_service: InterviewAssessmentService = Depends(get_interview_assessment_service)):
     """Get the AI generated assessment and panelist assessments for a given interview ID."""
     return await interview_service.get_interview_assessment(interview_id)
+
+
+# ! webhook can be secured with signing secret will be implemented later
+@unprotected_router.post("/webhook/receive-transcript", status_code=status.HTTP_200_OK)
+async def receive_transcript_webhook(
+    payload: dict = Body(..., description="Payload containing interview transcript and metadata"),
+    interview_assessment_service: InterviewAssessmentService = Depends(get_interview_assessment_service)
+    
+):
+    """Endpoint to receive interview transcript and metadata from the video conferencing platform via webhook."""
+    
+    return await interview_assessment_service.process_received_transcript(payload)
+   
+  

@@ -17,7 +17,10 @@ from src.repositories.application_repository import ApplicationRepository
 from src.repositories.job_repository import JobRepository
 from src.modules.interviews.services.helpers.token_manager.Interview_token_manger import InterviewTokenManagerFactory
 from workers_async.email_tasks_producer import EmailProducer
+from workers_async.assessment_task_producer import AssessmentTaskProducer
 
+from src.modules.interviews.services.helpers.fireflies import FirefliesHelper
+from src.utils.supabase_file_handler import SupabaseFileHandler
 
 @asynccontextmanager
 async def job_context(ctx):
@@ -43,6 +46,8 @@ async def job_context(ctx):
         interview_round_config_repository = InterviewRoundConfigsRepository(db)
         candidate_email_service = CandidateEmailService()
         panel_email_service = PanelEmailService()
+        fireflies_helper = FirefliesHelper()
+        supabase_file_handler = SupabaseFileHandler()
         
         email_service = EmailService(
             candidate_service=candidate_email_service,
@@ -76,7 +81,9 @@ async def job_context(ctx):
             job_repository=job_repository,
             panelist_repository=panelist_repository,
             reminder_repository=reminder_repository,
-            
+            assessment_task_producer=AssessmentTaskProducer(redis),
+            supabase_file_handler=supabase_file_handler,
+            fireflies_helper=fireflies_helper
         )
        
 

@@ -95,11 +95,48 @@ async def interview_post_processing_worker(ctx, interview_id: str):
         except Exception as e:
             
             if isinstance(e, DomainError):
-                logger.warning(f"Domain error occurred for {interview_id}: {str(e)}")
+                logger.warning(f"Domain error occurred for {interview_id}: {str(e.message)}")
                 return  # do not retry on domain errors as it is a conflict or invalid state
             
                 
             logger.exception(f"Post processing failed {interview_id}")
+
+            if job_try < max_tries:
+                raise Retry(defer=job_try * 10)  # backoff
+            
+        
+
+            
+           
+            
+           
+
+async def interview_extraction_and_post_processsing_worker(ctx, meeting_id: str):
+
+    logger: Logger = ctx["logger"]
+
+    job_try = ctx.get("job_try", 1)
+    max_tries = 5
+
+
+    logger.info(f"Interview Extraction and Post Processing  of Meeting {meeting_id} | try={job_try}/{max_tries}")
+
+    logger.info(f"Starting interview_post_processing_worker for interview_id: {meeting_id}")
+    async with job_context(ctx) as deps:
+        assessment_worker_service : InterviewAssessmentWorkerService = deps["interview_assessment_worker_service"]
+
+        try:
+            await assessment_worker_service.processs_interview_extraction_and_post_processsing(meeting_id)
+            logger.info(f"Successfully processed interview_extraction_and_post_processing for meeting_id: {meeting_id}")
+
+        except Exception as e:
+            
+            if isinstance(e, DomainError):
+                logger.warning(f"Domain error occurred for {meeting_id}: {str(e.message)}")
+                return  # do not retry on domain errors as it is a conflict or invalid state
+            
+                
+            logger.exception(f"Interview extraction and post processing failed for meeting_id {meeting_id}")
 
             if job_try < max_tries:
                 raise Retry(defer=job_try * 10)  # backoff

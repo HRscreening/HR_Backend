@@ -55,6 +55,12 @@ class AssessmentTaskProducer:
             queue_name=self.default_queue,
             worker_func="interview_post_processing_worker",
         )
+        
+        
+        self.interview_extraction_and_post_processsing = JobConfig(
+            queue_name=self.default_queue,
+            worker_func="interview_extraction_and_post_processsing_worker",
+        )
 
         self.logger = get_logger("AssessmentTaskProducer")
 
@@ -79,7 +85,7 @@ class AssessmentTaskProducer:
                 payload.to_dict(),
                 _job_id=f"{payload.interview_id}:transcript:analyze",  # idempotent
                 _queue_name=config.queue_name,
-                # _defer_by=timedelta(seconds=60),
+                _defer_by=timedelta(seconds=5),
             )
 
             self.logger.info(
@@ -107,7 +113,7 @@ class AssessmentTaskProducer:
                 str(interview_id),
                 _job_id=f"{interview_id}:panelist:request_assessment",  # idempotent
                 _queue_name=config.queue_name,
-                # _defer_by=timedelta(seconds=90),
+                _defer_by=timedelta(seconds=10),
             )
 
             self.logger.info(
@@ -136,7 +142,7 @@ class AssessmentTaskProducer:
                 str(interview_id),
                 _job_id=f"{interview_id}:post_processing",  # idempotent
                 _queue_name=config.queue_name,
-                # _defer_by=timedelta(seconds=90),
+                _defer_by=timedelta(seconds=5),
             )
 
             self.logger.info(
@@ -148,5 +154,35 @@ class AssessmentTaskProducer:
         except Exception:
             self.logger.exception(
                 f"[InterviewPostProcessing] Failed for interview_id={interview_id}"
+            )
+            return None
+        
+        
+        
+    async def enqueue_interview_extraction_and_post_processsing(
+        self,
+        meeting_id: str | UUID,
+    ) -> Optional[Job]:
+
+        config = self.interview_extraction_and_post_processsing
+
+        try:
+            job = await self.redis.enqueue_job(
+                config.worker_func,
+                str(meeting_id),
+                _job_id=f"{meeting_id}:Metting",  # idempotent
+                _queue_name=config.queue_name,
+                _defer_by=timedelta(seconds=3),
+            )
+
+            self.logger.info(
+                f"[InterviewPostProcessing] Enqueued for meeting_id={meeting_id}, job_id={job.job_id}"
+            )
+
+            return job
+
+        except Exception:
+            self.logger.exception(
+                f"[InterviewPostProcessing] Failed for meeting_id={meeting_id}"
             )
             return None
