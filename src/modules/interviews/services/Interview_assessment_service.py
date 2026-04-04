@@ -32,7 +32,7 @@ from typing import Optional, Tuple
 from src.models.enums import InterviewStatus, InterviewAssessmentStatus
 from src.modules.interviews.dtos.interview_assessment_dtos import InterviewAssessmentCreate
 from src.pipelines.interview_assessments.analyze_and_feedback import run_transcript_analysis_pipeline,FinalFeedbackOutput
-from data.transcript import load_transcript
+# from data.transcript import load_transcript
 from src.repositories.application_repository import ApplicationRepository
 from src.models.enums import ApplicationStatus, InterviewStatus,InterviewEventActor,InterviewEventType
 from src.dtos.job_settings_dto import ReminderSettingsDTO,ReschedulingSettingsDTO
@@ -441,50 +441,50 @@ class InterviewAssessmentService:
             self.logger.error(f"Error requesting interview assessment for interview_id {interview_id}: {str(e)}")
             raise DomainError(f"Failed to request interview assessment: {str(e)}")
         
-    async def analyze_interview_transcript(self,interview_id:str):
-        """This method will be called after the interview is completed and transcript is available, it will run the analysis pipeline and store the AI generated summary and assessment in the interview record, and then request assessment from panelists."""
-        try:
-            interview = await self.interview_repository.get_interview_by_id(interview_id)
-            if not interview:
-                raise DomainError(f"Interview with id {interview_id} not found.")   
+    # async def analyze_interview_transcript(self,interview_id:str):
+    #     """This method will be called after the interview is completed and transcript is available, it will run the analysis pipeline and store the AI generated summary and assessment in the interview record, and then request assessment from panelists."""
+    #     try:
+    #         interview = await self.interview_repository.get_interview_by_id(interview_id)
+    #         if not interview:
+    #             raise DomainError(f"Interview with id {interview_id} not found.")   
             
-            round_config = await self.interview_round_config_repository.get_interview_round_config_by_id(interview.round_config_id)
-            if not round_config:
-                raise DomainError(f"Round configuration with id {interview.round_config_id} not found.")
+    #         round_config = await self.interview_round_config_repository.get_interview_round_config_by_id(interview.round_config_id)
+    #         if not round_config:
+    #             raise DomainError(f"Round configuration with id {interview.round_config_id} not found.")
             
-            job_criterias = await self.job_repository.get_active_rubric(round_config.job_id)
+    #         job_criterias = await self.job_repository.get_active_rubric(round_config.job_id)
             
-            if not job_criterias:
-                raise DomainError(f"No active rubric found for job with id {round_config.job_id}.")
+    #         if not job_criterias:
+    #             raise DomainError(f"No active rubric found for job with id {round_config.job_id}.")
             
-            # ! currently hardcoded transcript loading for testing, need to integrate with actual transcript storage later you either need to either save the transcript in db or fetch it real time for now just loading from a json file for testing the pipeline
-            transcript = load_transcript()
-            actual_transcript = transcript["data"]["transcript"]
+    #         # ! currently hardcoded transcript loading for testing, need to integrate with actual transcript storage later you either need to either save the transcript in db or fetch it real time for now just loading from a json file for testing the pipeline
+    #         transcript = load_transcript()
+    #         actual_transcript = transcript["data"]["transcript"]
             
-            result = await run_transcript_analysis_pipeline(actual_transcript, round_config.assessment_criterias, job_criterias.criteria)
-            result = FinalFeedbackOutput(**result)
-            print("RESULT",result,"\n\n\n")
-            interview.ai_summary = result.interview_summary if result.interview_summary else None
-            interview_ai_assessment = result.model_dump(exclude_none=True,exclude={"interview_summary"}) if result else None
-            interview.ai_assessment = interview_ai_assessment 
-            interview.status = InterviewStatus.AWAITING_FEEDBACK
+    #         result = await run_transcript_analysis_pipeline(actual_transcript, round_config.assessment_criterias, job_criterias.criteria)
+    #         result = FinalFeedbackOutput(**result)
+    #         print("RESULT",result,"\n\n\n")
+    #         interview.ai_summary = result.interview_summary if result.interview_summary else None
+    #         interview_ai_assessment = result.model_dump(exclude_none=True,exclude={"interview_summary"}) if result else None
+    #         interview.ai_assessment = interview_ai_assessment 
+    #         interview.status = InterviewStatus.AWAITING_FEEDBACK
             
             
-            await self.interview_event_repository.create_interview_event(
-                interview_id=UUID(interview_id),
-                event_type="interview_analyzed",
-                summary=f"Interview transcript analyzed and AI assessment generated.",
-                actor=f"system"
-            )
-            await self.db.commit()
-            
-
-            return {"message": "Interview transcript analyzed and assessment requested successfully."}
+    #         await self.interview_event_repository.create_interview_event(
+    #             interview_id=UUID(interview_id),
+    #             event_type="interview_analyzed",
+    #             summary=f"Interview transcript analyzed and AI assessment generated.",
+    #             actor=f"system"
+    #         )
+    #         await self.db.commit()
             
 
-        except Exception as e:
-            self.logger.error(f"Error analyzing interview transcript for interview_id {interview_id}: {str(e)}")
-            raise DomainError(f"Failed to analyze interview transcript: {str(e)}")
+    #         return {"message": "Interview transcript analyzed and assessment requested successfully."}
+            
+
+    #     except Exception as e:
+    #         self.logger.error(f"Error analyzing interview transcript for interview_id {interview_id}: {str(e)}")
+    #         raise DomainError(f"Failed to analyze interview transcript: {str(e)}")
 
     async def get_interview_assessment(self,interview_id:str):
         """method to fetch the interview assessment for a given interview id, mainly for testing and verification of the analysis pipeline output, will be used in the future to show the AI generated assessment and feedback in the frontend."""

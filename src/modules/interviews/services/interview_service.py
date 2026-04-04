@@ -1125,7 +1125,6 @@ class InterviewService:
             raise DomainError("Transcript not available for this interview", status_code=404)
         round_config = await self.interview_round_config_repository.get_interview_round_config_by_id(str(interview.round_config_id))
         # TEMP transcript
-        from data.transcript import load_transcript
         from src.utils.templte_engine import render_template
 
 

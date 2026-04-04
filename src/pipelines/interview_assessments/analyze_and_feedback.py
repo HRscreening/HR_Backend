@@ -131,14 +131,3 @@ async def run_transcript_analysis_pipeline(transcript: dict, assessment_criteria
     
     
 
-# Run
-
-
-
-# if __name__ == "__main__":
-    
-#     trnascript = load_transcript()
-#     result = app.invoke({
-#         "transcript": trnascript["data"]["transcript"]  # pass here
-#     })
-#     print(result["chunks"])    
