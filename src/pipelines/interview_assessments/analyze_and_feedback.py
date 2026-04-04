@@ -111,7 +111,7 @@ graph.add_edge("final_analysis_node", END)
 analyze_pipeline = graph.compile()
 
 
-from data.transcript import load_test_analysis
+# from data.transcript import load_test_analysis
 
 async def run_transcript_analysis_pipeline(transcript: dict, assessment_criterias, job_criterias)-> Optional[FinalFeedbackOutput]:
     """Helper function to run the entire analysis pipeline with the given transcript and parameters."""
