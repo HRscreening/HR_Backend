@@ -425,9 +425,6 @@ class InterviewService:
             raise DomainError("Invalid or outdated rescheduling link", status_code=400)
         
         booked_slot = await self.slots_repository.get_booked_slot_by_interview_id(interview_id=interview_id)
-        
-        if is_reschedule and interview.rescheduling_token != token:
-            raise DomainError("Invalid or outdated rescheduling link", status_code=400)
 
         # Already booked?
         if not is_reschedule and interview.status == InterviewStatus.SCHEDULED:
@@ -756,7 +753,7 @@ class InterviewService:
             
             interview.scheduled_start = new_slot.slot_start
             interview.scheduled_end = new_slot.slot_end
-            
+            interview.rescheduling_token = cand_reschedule_token
             interview.rescheduling_token_expires_at = expiry_time
             
             

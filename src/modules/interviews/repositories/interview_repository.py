@@ -112,6 +112,7 @@ class InterviewRepository:
             interview.status = InterviewStatus.READY_TO_BOOK
 
             res_data.append({
+                "id": str(interview.id),
                 "candidate_full_name": candidate.full_name,
                 "candidate_email": candidate.email,
                 "booking_token": booking_token

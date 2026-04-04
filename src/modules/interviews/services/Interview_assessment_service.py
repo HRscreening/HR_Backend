@@ -962,6 +962,7 @@ class InterviewAssessmentWorkerService(BaseInterviewAssessmentService):
             raise 
     
     async def _move_to_offer(self,interview, round_config, job_settings):
+        self.logger.info(f"Moving interview {interview.id} to offer stage")
         pass
 
     async def move_interview_ahead(self,interview_id:str):

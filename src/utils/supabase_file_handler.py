@@ -232,6 +232,8 @@ class SupabaseFileHandler:
             
             bucket_name, file_path = parts
             
+            print(f"Fetching file from bucket '{bucket_name}' at path '{file_path}'")
+            
             response = supabase.storage.from_(bucket_name).download(file_path)
 
             data = json.loads(response.decode("utf-8"))

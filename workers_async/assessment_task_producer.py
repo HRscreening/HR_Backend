@@ -1,13 +1,12 @@
 from dataclasses import dataclass
 from datetime import timedelta, datetime, timezone
 from typing import Optional
-from uuid import UUID
+from uuid import UUID, uuid4 as uuid
 
 from arq.connections import ArqRedis
 from arq.jobs import Job
 
 from configs.log_config import get_logger
-
 
 # -------------------- CONFIGS --------------------
 
@@ -80,10 +79,11 @@ class AssessmentTaskProducer:
         config = self.transcript_analyzer_worker_config
 
         try:
+            job_id = uuid()
             job = await self.redis.enqueue_job(
                 config.worker_func,
                 payload.to_dict(),
-                _job_id=f"{payload.interview_id}:transcript:analyze",  # idempotent
+                _job_id=f"{payload.interview_id}_{str(job_id)}:transcript:analyze",  # idempotent
                 _queue_name=config.queue_name,
                 _defer_by=timedelta(seconds=5),
             )
@@ -108,10 +108,11 @@ class AssessmentTaskProducer:
         config = self.request_panelist_worker_config
 
         try:
+            job_id = uuid()
             job = await self.redis.enqueue_job(
                 config.worker_func,
                 str(interview_id),
-                _job_id=f"{interview_id}:panelist:request_assessment",  # idempotent
+                _job_id=f"{interview_id}_{job_id}:panelist:request_assessment",  # idempotent
                 _queue_name=config.queue_name,
                 _defer_by=timedelta(seconds=10),
             )
@@ -137,10 +138,11 @@ class AssessmentTaskProducer:
         config = self.interview_post_processing_worker_config
 
         try:
+            job_id = uuid()
             job = await self.redis.enqueue_job(
                 config.worker_func,
                 str(interview_id),
-                _job_id=f"{interview_id}:post_processing",  # idempotent
+                _job_id=f"{interview_id}_{str(job_id)}:post_processing",  # idempotent
                 _queue_name=config.queue_name,
                 _defer_by=timedelta(seconds=5),
             )
@@ -167,10 +169,11 @@ class AssessmentTaskProducer:
         config = self.interview_extraction_and_post_processsing
 
         try:
+            job_id = uuid()
             job = await self.redis.enqueue_job(
                 config.worker_func,
                 str(meeting_id),
-                _job_id=f"{meeting_id}:Metting",  # idempotent
+                _job_id=f"{meeting_id}_{str(job_id)}:Metting",  # idempotent
                 _queue_name=config.queue_name,
                 _defer_by=timedelta(seconds=3),
             )

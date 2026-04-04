@@ -215,9 +215,9 @@ class PanelistService:
                     entity_type=EntityType.INTERVIEW,
                     payload=CandidateBookingLinkReminderData(
                         candidate_email=cand["candidate_email"],
-                        candidate_full_name=cand["candidate_full_name"],
+                        candidate_name=cand["candidate_full_name"],
                         interview_round_title=round_config.title,
-                        form_link=f"{self.frontend_url}/interview/book?token={cand["booking_token"]}"
+                        booking_link=f"{self.frontend_url}/interview/book?token={cand["booking_token"]}"
                     ).model_dump(mode="json"),
                     recipient_id=str(cand["id"]),
                     recipient_type=RecipientType.CANDIDATE,
@@ -581,6 +581,7 @@ class PanelistService:
             cand_interview_data = await self.interview_repository.send_booking_link_to_waiting_candidates(
                 round_config_id=round_config_id,token_expiry_in_min=expiry_minutes
             )
+            print(f"Booking link data for waiting candidates: {cand_interview_data}")
             job_settings = await self.job_repository.get_job_settings(round_config.job_id) 
             candidate_reminder_settings = ReminderSettingsDTO.model_validate(job_settings.candidate_reminders) if job_settings and job_settings.candidate_reminders else None    
             reminders_payload =  self._create_booking_reminder_payload_candidate(cand_interview_data,round_config,candidate_reminder_settings) if candidate_reminder_settings and candidate_reminder_settings.enabled else []
