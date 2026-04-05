@@ -9,6 +9,7 @@ because LLM clients, DB configs etc. read env vars at import time.
 import os
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+os.environ.setdefault("GOOGLE_API_KEY", "dummy-key-for-testing")
 
 # ── Std imports ────────────────────────────────────────────────────────────────
 import json

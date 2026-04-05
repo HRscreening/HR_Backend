@@ -1,14 +1,27 @@
 from dotenv import load_dotenv
 import os
+import uvicorn
 
 load_dotenv()
 
-print("PYTHONPYCACHEPREFIX =", os.environ.get("PYTHONPYCACHEPREFIX"))
-port = int(os.environ.get("PORT", 8000))
-host = "127.0.1" if os.environ.get("ENVIRONMENT") == "Development" else os.environ.get("HOST", "127.0.0.1")
+env = os.getenv("ENVIRONMENT", "Development")
 
+port = int(os.getenv("PORT", 8000))
 
-import uvicorn
-# uvicorn.run("app_main:app", reload=True)
+if env == "Development":
+    host = "127.0.0.1"
+    reload = True
+else:
+    host = "0.0.0.0"   
+    reload = False
+
+print(f"ENV: {env}")
+print(f"Starting server on {host}:{port} (reload={reload})")
+
 if __name__ == "__main__":
-    uvicorn.run("main:app", port=port, reload=True)
+    uvicorn.run(
+        "main:app",
+        host=host,
+        port=port,
+        reload=reload
+    )

@@ -7,45 +7,37 @@
     {
       "key": "required_qualifications",
       "label": "Required Qualifications",
-      "weight": 32,
-      "importance": 10,
       "criteria": [
         {
-          "name": "ml_ai_data_science_experience",
-          "display_name": "ML/AI and Data Science Experience",
-          "weight": 50,
-          "importance": 10,
-          "requirement_level": "must",
+          "name": "spoken_english_proficiency",
+          "display_name": "Spoken English Proficiency",
+          "importance": 9,
           "priority": 1,
-          "value": "7+ years",
+          "value": "Proficient",
           "value_type": "none",
-          "sub_criteria": null
+          "sub_criteria": null,
+          "weight": 18
         },
         {
-          "name": "us_working_hours_availability",
-          "display_name": "US Working Hours Availability",
-          "weight": 50,
-          "importance": 10,
-          "requirement_level": "must",
+          "name": "remote_work_location",
+          "display_name": "Remote Work Location",
+          "importance": 8,
           "priority": 2,
-          "value": "8am to 5pm EST",
+          "value": "Remote",
           "value_type": "none",
-          "sub_criteria": null
+          "sub_criteria": null,
+          "weight": 16
         }
       ]
     },
     {
       "key": "technical_skills",
       "label": "Technical Skills",
-      "weight": 29,
-      "importance": 9,
       "criteria": [
         {
-          "name": "ml_ai_data_science_tools",
-          "display_name": "ML/AI & Data Science Tools",
-          "weight": 100,
+          "name": "ml_ai_frameworks",
+          "display_name": "ML/AI Frameworks",
           "importance": 9,
-          "requirement_level": "must",
           "priority": 1,
           "value": null,
           "value_type": "none",
@@ -53,101 +45,115 @@
             {
               "name": "pytorch_experience",
               "display_name": "PyTorch Experience",
-              "weight": 34,
               "importance": 5,
-              "value": null,
-              "value_type": "none"
-            },
-            {
-              "name": "sagemaker_experience",
-              "display_name": "SageMaker Experience",
-              "weight": 33,
-              "importance": 5,
-              "value": null,
-              "value_type": "none"
+              "value": "Extensive hands-on",
+              "value_type": "none",
+              "weight": 50
             },
             {
               "name": "tensorflow_experience",
               "display_name": "TensorFlow Experience",
-              "weight": 33,
               "importance": 5,
-              "value": null,
-              "value_type": "none"
+              "value": "Extensive hands-on",
+              "value_type": "none",
+              "weight": 50
             }
-          ]
+          ],
+          "weight": 18
+        },
+        {
+          "name": "aws_ml_services",
+          "display_name": "AWS ML Services",
+          "importance": 8,
+          "priority": 2,
+          "value": null,
+          "value_type": "none",
+          "sub_criteria": [
+            {
+              "name": "sagemaker_experience",
+              "display_name": "SageMaker Experience",
+              "importance": 5,
+              "value": "Extensive hands-on",
+              "value_type": "none",
+              "weight": 100
+            }
+          ],
+          "weight": 16
         }
       ]
     },
     {
-      "key": "client_engagement_skills",
-      "label": "Client Engagement Skills",
-      "weight": 23,
-      "importance": 7,
+      "key": "client_engagement_experience",
+      "label": "Client Engagement Experience",
       "criteria": [
         {
-          "name": "client_engagement_project_securing",
-          "display_name": "Client Engagement & Project Securing",
-          "weight": 100,
-          "importance": 8,
-          "requirement_level": "must",
+          "name": "client_engagement_project_acquisition",
+          "display_name": "Client Engagement & Project Acquisition",
+          "importance": 9,
           "priority": 1,
           "value": null,
           "value_type": "none",
           "sub_criteria": [
             {
-              "name": "conduct_meetings_to_secure_projects",
-              "display_name": "Conduct Meetings to Secure Projects",
-              "weight": 25,
+              "name": "conduct_meetings_secure_projects",
+              "display_name": "Conducting Meetings to Secure Projects",
               "importance": 5,
               "value": null,
-              "value_type": "none"
+              "value_type": "none",
+              "weight": 36
             },
             {
-              "name": "engage_clients_to_win_jobs",
-              "display_name": "Engage Clients to Win Jobs",
-              "weight": 25,
+              "name": "engage_clients_win_us_jobs",
+              "display_name": "Engaging Clients to Win US Jobs",
               "importance": 5,
               "value": null,
-              "value_type": "none"
+              "value_type": "none",
+              "weight": 35
             },
             {
-              "name": "participate_introductory_meetings",
-              "display_name": "Participate in Introductory Meetings",
-              "weight": 25,
-              "importance": 5,
+              "name": "participate_intro_tech_meetings",
+              "display_name": "Participation in Introductory & Technical Meetings",
+              "importance": 4,
               "value": null,
-              "value_type": "none"
-            },
-            {
-              "name": "participate_technical_meetings",
-              "display_name": "Participate in Technical Meetings",
-              "weight": 25,
-              "importance": 5,
-              "value": null,
-              "value_type": "none"
+              "value_type": "none",
+              "weight": 29
             }
-          ]
+          ],
+          "weight": 18
         }
       ]
     },
     {
-      "key": "communication_skills",
-      "label": "Communication Skills",
-      "weight": 16,
-      "importance": 5,
+      "key": "professional_attributes",
+      "label": "Professional Attributes",
       "criteria": [
         {
-          "name": "spoken_english_proficiency",
-          "display_name": "Spoken English Proficiency",
-          "weight": 100,
-          "importance": 9,
-          "requirement_level": "must",
+          "name": "problem_solving_innovation",
+          "display_name": "Problem Solving & Innovation",
+          "importance": 7,
           "priority": 1,
-          "value": "Proficient",
+          "value": null,
           "value_type": "none",
-          "sub_criteria": null
+          "sub_criteria": null,
+          "weight": 14
         }
       ]
+    }
+  ],
+  "non_negotiables": [
+    {
+      "name": "ml_ai_data_science_experience",
+      "display_name": "ML/AI and Data Science Experience",
+      "requirement": "7+ years of experience in ML/AI and Data Science",
+      "category": "experience_years",
+      "verification_question": "Does the candidate have 7 or more years of experience in ML/AI and Data Science?"
+    },
+    {
+      "name": "us_working_hours_availability",
+      "display_name": "US Working Hours Availability",
+      "requirement": "Fully available during US working hours (8am to 5pm EST)",
+      "category": "other",
+      "verification_question": "Does the candidate's resume or cover letter indicate full availability during US working hours (8am to 5pm EST)?"
     }
   ]
 }

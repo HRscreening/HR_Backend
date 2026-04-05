@@ -6,93 +6,96 @@
     "rubric_sections": [
       "required_qualifications",
       "technical_skills",
-      "client_engagement_skills",
-      "communication_skills"
+      "client_engagement_experience",
+      "professional_attributes"
     ]
   },
   "raw_llm_output": {
     "ai_analysis": {
       "good_points": [
-        "The candidate has professional experience as a Junior Software Engineer and Associate Engineer.",
-        "They possess a strong technical skill set in modern web development and DevOps tools including ReactJS, NodeJS, MongoDB, AWS, Kubernetes, and Jenkins.",
-        "The candidate demonstrates initiative through the completion of multiple personal projects, showcasing practical application of their skills."
+        "The candidate possesses a strong foundation in full-stack web development, including ReactJS, NodeJS, MongoDB, and Express.",
+        "They have practical experience in implementing various features, fixing bugs, and working on server-side applications in professional settings.",
+        "The resume highlights initiative through several personal projects, showcasing hands-on development skills.",
+        "The candidate has experience with modern DevOps tools like Jenkins and Kubernetes, and cloud platforms like AWS."
       ],
       "bad_points": [
-        "The resume contains several grammatical errors and awkward phrasing, which may indicate a lack of proficiency in written English.",
-        "There is no explicit evidence of ML/AI or Data Science experience, which appears to be a critical requirement.",
-        "The resume lacks specific details or quantifiable achievements in work experience, making it difficult to assess impact.",
-        "There is no indication of client engagement or project securing skills."
+        "The resume lacks specific evidence of extensive ML/AI or Data Science experience, which appears to be a key requirement.",
+        "There is no explicit information regarding availability during US working hours or the ability to work remotely.",
+        "The candidate's experience in client engagement, project acquisition, or participation in client-facing meetings is not evident.",
+        "Most work experience descriptions lack quantifiable achievements or specific details about project scale and impact."
       ]
     },
-    "ai_confidence": 0.9,
+    "ai_confidence": 0.8,
     "sections": {
       "required_qualifications": {
         "criteria": {
-          "ml_ai_data_science_experience": {
-            "score": 0.0,
-            "reasoning": "The resume does not mention any ML/AI or Data Science experience, nor does it indicate 7+ years of relevant experience.",
+          "spoken_english_proficiency": {
+            "score": 5,
+            "reasoning": "The resume is written in English, implying basic proficiency, but there is no explicit statement or certification regarding spoken English.",
             "sub_criteria": {}
           },
-          "us_working_hours_availability": {
-            "score": 0.0,
-            "reasoning": "The resume indicates the candidate is based in India and provides no information regarding availability for US working hours.",
+          "remote_work_location": {
+            "score": 0,
+            "reasoning": "The resume provides a physical address in India and does not mention any remote work capabilities or preferences.",
             "sub_criteria": {}
           }
         }
       },
       "technical_skills": {
         "criteria": {
-          "ml_ai_data_science_tools": {
-            "score": 0.0,
-            "reasoning": "The candidate does not list any of the specified ML/AI and Data Science tools in their skills or project descriptions.",
+          "ml_ai_frameworks": {
+            "score": 0,
+            "reasoning": "",
             "sub_criteria": {
               "pytorch_experience": {
-                "score": 0.0,
-                "reasoning": "There is no mention of PyTorch experience in the resume."
-              },
-              "sagemaker_experience": {
-                "score": 0.0,
-                "reasoning": "While AWS is listed, there is no specific mention of SageMaker experience."
+                "score": 0,
+                "reasoning": "The resume does not contain any mention of PyTorch experience."
               },
               "tensorflow_experience": {
-                "score": 0.0,
-                "reasoning": "There is no mention of TensorFlow experience in the resume."
+                "score": 0,
+                "reasoning": "The resume does not contain any mention of TensorFlow experience."
               }
             }
-          }
-        }
-      },
-      "client_engagement_skills": {
-        "criteria": {
-          "client_engagement_project_securing": {
-            "score": 0.0,
-            "reasoning": "The resume provides no evidence of client engagement or project securing activities.",
+          },
+          "aws_ml_services": {
+            "score": 2,
+            "reasoning": "",
             "sub_criteria": {
-              "conduct_meetings_to_secure_projects": {
-                "score": 0.0,
-                "reasoning": "The resume does not contain any evidence of conducting meetings to secure projects."
-              },
-              "engage_clients_to_win_jobs": {
-                "score": 0.0,
-                "reasoning": "There is no evidence in the resume of engaging clients to win jobs."
-              },
-              "participate_introductory_meetings": {
-                "score": 0.0,
-                "reasoning": "The resume does not mention participation in any introductory client meetings."
-              },
-              "participate_technical_meetings": {
-                "score": 0.0,
-                "reasoning": "The resume describes internal technical tasks but no participation in client-facing technical meetings."
+              "sagemaker_experience": {
+                "score": 2,
+                "reasoning": "The candidate lists 'AWS' as a skill, but there is no specific mention or context of SageMaker experience."
               }
             }
           }
         }
       },
-      "communication_skills": {
+      "client_engagement_experience": {
         "criteria": {
-          "spoken_english_proficiency": {
-            "score": 60.0,
-            "reasoning": "The resume is written in English, indicating some proficiency, but contains grammatical errors and awkward phrasing, suggesting it is not fully proficient.",
+          "client_engagement_project_acquisition": {
+            "score": 0,
+            "reasoning": "",
+            "sub_criteria": {
+              "conduct_meetings_secure_projects": {
+                "score": 0,
+                "reasoning": "The resume does not provide any evidence of the candidate conducting meetings specifically to secure projects."
+              },
+              "engage_clients_win_us_jobs": {
+                "score": 0,
+                "reasoning": "There is no evidence in the resume indicating the candidate engaged clients to win US jobs."
+              },
+              "participate_intro_tech_meetings": {
+                "score": 0,
+                "reasoning": "The resume does not provide any specific evidence of the candidate participating in introductory or technical client meetings."
+              }
+            }
+          }
+        }
+      },
+      "professional_attributes": {
+        "criteria": {
+          "problem_solving_innovation": {
+            "score": 7,
+            "reasoning": "The candidate demonstrates problem-solving through bug fixes, feature implementation, and work on a server to catch malicious programs.",
             "sub_criteria": {}
           }
         }
@@ -100,86 +103,90 @@
     },
     "grounding_data": {
       "required_qualifications": {
-        "ml_ai_data_science_experience": {
-          "jd_requirement": "The job requires 7+ years of ML/AI and Data Science experience.",
+        "spoken_english_proficiency": {
+          "jd_requirement": "The candidate must be proficient in spoken English.",
           "evidence": [],
           "match_assessment": "none"
         },
-        "us_working_hours_availability": {
-          "jd_requirement": "The job requires availability during US working hours (8am to 5pm EST).",
+        "remote_work_location": {
+          "jd_requirement": "The role requires remote work capability.",
           "evidence": [
-            "Gurgaon,India"
+            "387/o,azad nagar,rustampur, gorakhpur, india",
+            "09/2022 - Present, Gurgaon,India"
           ],
           "match_assessment": "none"
         }
       },
       "technical_skills": {
-        "ml_ai_data_science_tools": {
-          "jd_requirement": "The job requires experience with ML/AI & Data Science Tools.",
+        "ml_ai_frameworks": {
+          "jd_requirement": "Extensive hands-on experience with ML/AI frameworks is required.",
           "evidence": [],
           "match_assessment": "none"
         },
         "pytorch_experience": {
-          "jd_requirement": "The job requires PyTorch experience.",
+          "jd_requirement": "Extensive hands-on experience with PyTorch is required.",
           "evidence": [],
           "match_assessment": "none"
         },
-        "sagemaker_experience": {
-          "jd_requirement": "The job requires SageMaker experience.",
+        "tensorflow_experience": {
+          "jd_requirement": "Extensive hands-on experience with TensorFlow is required.",
+          "evidence": [],
+          "match_assessment": "none"
+        },
+        "aws_ml_services": {
+          "jd_requirement": "Extensive hands-on experience with AWS ML Services is required.",
           "evidence": [
             "AWS"
           ],
           "match_assessment": "weak"
         },
-        "tensorflow_experience": {
-          "jd_requirement": "The job requires TensorFlow experience.",
-          "evidence": [],
-          "match_assessment": "none"
-        }
-      },
-      "client_engagement_skills": {
-        "client_engagement_project_securing": {
-          "jd_requirement": "The job requires client engagement and project securing skills.",
-          "evidence": [],
-          "match_assessment": "none"
-        },
-        "conduct_meetings_to_secure_projects": {
-          "jd_requirement": "The job requires the ability to conduct meetings to secure projects.",
-          "evidence": [],
-          "match_assessment": "none"
-        },
-        "engage_clients_to_win_jobs": {
-          "jd_requirement": "The job requires the ability to engage clients to win jobs.",
-          "evidence": [],
-          "match_assessment": "none"
-        },
-        "participate_introductory_meetings": {
-          "jd_requirement": "The job requires participation in introductory meetings.",
-          "evidence": [],
-          "match_assessment": "none"
-        },
-        "participate_technical_meetings": {
-          "jd_requirement": "The job requires participation in technical meetings.",
-          "evidence": [],
-          "match_assessment": "none"
-        }
-      },
-      "communication_skills": {
-        "spoken_english_proficiency": {
-          "jd_requirement": "The job requires proficient spoken English.",
+        "sagemaker_experience": {
+          "jd_requirement": "Extensive hands-on experience with SageMaker is required.",
           "evidence": [
-            "A technology and software enthusiast,always ready to enhance my skills and work with at most dedication.A person who can easily blend with the members, aiming for the quality of work.",
-            "A product based company with some famous products as adda52poker,addagames,adda52rummy etc ."
+            "AWS"
           ],
-          "match_assessment": "partial"
+          "match_assessment": "weak"
+        }
+      },
+      "client_engagement_experience": {
+        "client_engagement_project_acquisition": {
+          "jd_requirement": "The candidate should have experience in client engagement and project acquisition.",
+          "evidence": [],
+          "match_assessment": "none"
+        },
+        "conduct_meetings_secure_projects": {
+          "jd_requirement": "The candidate should have experience conducting meetings to secure projects.",
+          "evidence": [],
+          "match_assessment": "none"
+        },
+        "engage_clients_win_us_jobs": {
+          "jd_requirement": "The candidate should have experience engaging clients to win US jobs.",
+          "evidence": [],
+          "match_assessment": "none"
+        },
+        "participate_intro_tech_meetings": {
+          "jd_requirement": "The candidate should have participated in introductory and technical meetings.",
+          "evidence": [],
+          "match_assessment": "none"
+        }
+      },
+      "professional_attributes": {
+        "problem_solving_innovation": {
+          "jd_requirement": "The candidate should demonstrate strong problem-solving and innovation skills.",
+          "evidence": [
+            "fixed various bugs proper display of error in relevant situations, etc",
+            "Working on AISAAC Server to catch the malicious programs and pump those events on the server as defined cloud or on premise",
+            "worked on development tasks like adding some features to the existing site added the locale(language) option to change the users language for the apti and puzzles dashboard."
+          ],
+          "match_assessment": "strong"
         }
       }
     },
     "distinguishing_factors": [
-      "The candidate has experience with a diverse and modern tech stack including ReactJS, NodeJS, MongoDB, AWS, Kubernetes, and Jenkins.",
-      "They have proactively developed multiple personal projects, demonstrating practical application of their skills beyond professional roles.",
-      "The resume indicates a lack of any explicit ML/AI or Data Science experience, which is a significant gap given the likely focus of the role.",
-      "The presence of grammatical errors and awkward phrasing throughout the resume suggests a need for improvement in written communication."
+      "The candidate has experience working on an 'AISAAC Server to catch the malicious programs', indicating specialized backend security-related work.",
+      "They demonstrate a broad technical skill set across the MERN stack, DevOps tools like Jenkins and Kubernetes, and cloud platforms like AWS.",
+      "The candidate has actively pursued and completed multiple personal projects, showcasing strong initiative and practical application of skills.",
+      "Experience includes working for both a product-based company (Deltatech Gaming Ltd) and a global leader in digital services (Atos)."
     ]
   }
 }

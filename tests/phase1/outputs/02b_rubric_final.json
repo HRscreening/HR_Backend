@@ -9,34 +9,24 @@
       "label": "Required Qualifications",
       "criteria": [
         {
-          "name": "ml_ai_ds_experience_years",
-          "display_name": "ML/AI and Data Science Experience",
+          "name": "english_proficiency",
+          "display_name": "English Proficiency",
           "importance": 10,
           "priority": 1,
-          "value": "7+ years",
-          "value_type": "none",
-          "sub_criteria": null,
-          "weight": 20
-        },
-        {
-          "name": "spoken_english_proficiency",
-          "display_name": "Spoken English Proficiency",
-          "importance": 10,
-          "priority": 2,
           "value": null,
           "value_type": "none",
           "sub_criteria": null,
-          "weight": 21
+          "weight": 23
         },
         {
-          "name": "us_working_hours_availability",
-          "display_name": "US Working Hours Availability",
-          "importance": 10,
-          "priority": 3,
-          "value": "8am to 5pm EST",
+          "name": "remote_work_location",
+          "display_name": "Remote Work Location",
+          "importance": 8,
+          "priority": 2,
+          "value": "Remote",
           "value_type": "none",
           "sub_criteria": null,
-          "weight": 21
+          "weight": 19
         }
       ]
     },
@@ -45,7 +35,7 @@
       "label": "Technical Skills",
       "criteria": [
         {
-          "name": "ml_frameworks_aws",
+          "name": "ml_frameworks_and_aws",
           "display_name": "ML Frameworks and AWS Services",
           "importance": 9,
           "priority": 1,
@@ -77,7 +67,7 @@
               "weight": 33
             }
           ],
-          "weight": 19
+          "weight": 21
         }
       ]
     },
@@ -86,41 +76,73 @@
       "label": "Client Engagement Experience",
       "criteria": [
         {
-          "name": "client_engagement_project_acquisition",
-          "display_name": "Client Engagement and Project Acquisition",
+          "name": "client_facing_technical_representation",
+          "display_name": "Client-Facing Technical Representation",
           "importance": 9,
           "priority": 1,
           "value": null,
           "value_type": "none",
           "sub_criteria": [
             {
-              "name": "introductory_technical_meetings",
-              "display_name": "Participation in Introductory and Technical Meetings",
+              "name": "project_securing_meeting_conduct",
+              "display_name": "Project Securing Meeting Conduct",
               "importance": 5,
               "value": null,
               "value_type": "none",
-              "weight": 34
+              "weight": 36
             },
             {
-              "name": "client_engagement_for_job_acquisition",
-              "display_name": "Engaging with Clients to Win US Jobs",
+              "name": "client_engagement_for_job_winning",
+              "display_name": "Client Engagement for Job Winning",
               "importance": 5,
               "value": null,
               "value_type": "none",
-              "weight": 33
+              "weight": 35
             },
             {
-              "name": "project_securing_meetings",
-              "display_name": "Conducting Meetings to Secure Projects",
-              "importance": 5,
+              "name": "introductory_technical_meeting_participation",
+              "display_name": "Introductory and Technical Meeting Participation",
+              "importance": 4,
               "value": null,
               "value_type": "none",
-              "weight": 33
+              "weight": 29
             }
           ],
-          "weight": 19
+          "weight": 21
         }
       ]
+    },
+    {
+      "key": "professional_attributes",
+      "label": "Professional Attributes",
+      "criteria": [
+        {
+          "name": "problem_solving_and_innovation",
+          "display_name": "Problem Solving and Innovation",
+          "importance": 7,
+          "priority": 1,
+          "value": null,
+          "value_type": "none",
+          "sub_criteria": null,
+          "weight": 16
+        }
+      ]
+    }
+  ],
+  "non_negotiables": [
+    {
+      "name": "ml_ai_ds_experience_years",
+      "display_name": "ML/AI and Data Science Experience",
+      "requirement": "7+ years of experience in ML/AI and Data Science",
+      "category": "experience_years",
+      "verification_question": "Does the candidate have 7 or more years of experience in ML/AI and Data Science?"
+    },
+    {
+      "name": "us_working_hours_availability",
+      "display_name": "US Working Hours Availability",
+      "requirement": "Fully available during US working hours (8am to 5pm EST)",
+      "category": "other",
+      "verification_question": "Does the candidate's resume or cover letter indicate full availability during US working hours (8am to 5pm EST)?"
     }
   ]
 }
