@@ -9,13 +9,6 @@ because LLM clients, DB configs etc. read env vars at import time.
 import os
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
-os.environ.setdefault("GOOGLE_API_KEY", "dummy-key-for-testing")
-
-# Mock Supabase URL/KEY for CI collection if not set
-if not os.environ.get("SUPABASE_URL"):
-    os.environ["SUPABASE_URL"] = "https://mock.supabase.co"
-if not os.environ.get("SUPABASE_API_KEY"):
-    os.environ["SUPABASE_API_KEY"] = "mock-key"
 
 # ── Std imports ────────────────────────────────────────────────────────────────
 import json
