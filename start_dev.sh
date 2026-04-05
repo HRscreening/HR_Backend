@@ -49,6 +49,12 @@ echo "Starting general worker..."
 QUEUES=jd_extraction,candidate_extraction python -m workers.worker &
 WORKER_PIDS+=($!)
 
+
+# Async Woker for reminders and assessments
+echo "Starting Assessment Worker..."
+QUEUES=default python -m arq workers_async.worker.WorkerSettings &
+WORKER_PIDS+=($!)
+
 echo "API pid=$API_PID | Worker pids=${WORKER_PIDS[*]}"
 echo "Press Ctrl+C to stop all."
 
