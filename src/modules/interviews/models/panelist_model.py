@@ -73,3 +73,4 @@ class Panelist(Base):
     slots = relationship("Interview_Slot",back_populates="panelist",cascade="all, delete-orphan")
     updated_at = Column(DateTime(timezone=True),server_default=func.now(),onupdate=func.now(),nullable=False)
     round_config = relationship("Interview_Round_Configs",back_populates="panelists")
+    assessments = relationship("InterviewAssessment", back_populates="panelist")

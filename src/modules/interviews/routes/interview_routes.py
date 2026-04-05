@@ -31,6 +31,3 @@ async def download_transcript(interview_id: str,interview_service: InterviewServ
         media_type="application/pdf",
         filename="interview_transcript.pdf"
     )
-
-
-

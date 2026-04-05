@@ -8,7 +8,7 @@ from src.modules.interviews.repositories.interview_event_repository import Inter
 from src.modules.interviews.repositories.panelist_repository import PanelistRepository
 from src.modules.interviews.repositories.interview_round_configs_repository import InterviewRoundConfigsRepository
 from src.repositories.job_repository import JobRepository
-from email_workers_async.email_tasks_producer import EmailProducer,EnqueueReminderPayload
+from workers_async.email_tasks_producer import EmailProducer,EnqueueReminderPayload
 from src.modules.reminders.reminder_repository import ReminderRepository
 from datetime import datetime, timezone
 from src.modules.email_services.services import PanelEmailService

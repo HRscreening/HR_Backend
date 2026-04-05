@@ -278,7 +278,7 @@ class PanelistRepository:
         panelists = await self.get_all_panelists_by_round_config_id_and_not_status(round_config_id, PanelistResponseStatus.PENDING)
 
         if not panelists or len(panelists) == 0:
-            raise DomainError("Panelist not found", status_code=404)
+            return []
         
         now = datetime.now(timezone.utc)
 

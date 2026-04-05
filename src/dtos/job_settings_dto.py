@@ -43,6 +43,22 @@ class ReminderSettingsDTO(BaseModel):
         return self
     
     
+class FeedbackReminderSettingsDTO(BaseModel):
+    enabled: bool = Field(default=True)
+
+    form_reminder_count: int = Field(..., example=3)
+    form_reminder_sec: List[int] = Field(
+        ..., example=[24, 12, 1],
+        description="Hours AFTER form link is shared"
+    )
+
+    @model_validator(mode="after")
+    def validate_reminders(self):
+        if self.form_reminder_count != len(self.form_reminder_sec):
+            raise ValueError("Form count must match number of timings")
+        return self
+    
+    
 
 class PanelEscalationSettingsDTO(BaseModel):
     enabled: bool = Field(default=True)
@@ -100,7 +116,7 @@ class CreateJobSettingsDTO(BaseModel):
 
     panel_reminders: ReminderSettingsDTO = Field(default_factory=ReminderSettingsDTO)
     candidate_reminders: ReminderSettingsDTO = Field(default_factory=ReminderSettingsDTO)
-    feedback_reminders: ReminderSettingsDTO = Field(default_factory=ReminderSettingsDTO)
+    feedback_reminders: FeedbackReminderSettingsDTO = Field(default_factory=FeedbackReminderSettingsDTO)
 
     escalation: PanelEscalationSettingsDTO = Field(default_factory=PanelEscalationSettingsDTO)
     rescheduling: ReschedulingSettingsDTO = Field(default_factory=ReschedulingSettingsDTO)

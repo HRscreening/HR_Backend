@@ -14,6 +14,8 @@ from src.modules.interviews.routes.interview_round_config_route import router as
 from src.modules.interviews.routes.interview_routes import router as interview_router
 from src.modules.interviews.routes.panlist_route import unproducted_router as panelist_unprotected_router
 from src.modules.interviews.routes.candidate_booking_route import unprotected_router as candidate_booking_router
+from src.modules.interviews.routes.interview_assessment_routes import router as interview_assessment_router
+from src.modules.interviews.routes.interview_assessment_routes import unprotected_router as unprotected_interview_assessment_router
 
 from src.modules.oauth.oauth_routes import router as oauth_router
 from src.routes.jd_routes import router as jd_router
@@ -73,6 +75,8 @@ app.include_router(org_router,dependencies=[Depends(auth_required)])
 # Interview routes
 app.include_router(interview_round_config_router,dependencies=[Depends(auth_required)])
 app.include_router(interview_router,dependencies=[Depends(auth_required)])
+app.include_router(interview_assessment_router,dependencies=[Depends(auth_required)])
+app.include_router(unprotected_interview_assessment_router)  # unprotected routes for interview assessment, which will be used by panelists to submit their assessments and also to trigger the analysis of interview transcript and generation of AI assessment.
 
 app.include_router(panelist_unprotected_router)
 app.include_router(candidate_booking_router)

@@ -34,7 +34,7 @@ services:
 
   email_worker:
     image: keshavraj098/deskzero:latest
-    command: python -m arq email_workers_async.worker.WorkerSettings
+    command: python -m arq workers_async.worker.WorkerSettings
     env_file:
       - .env.production
     environment:

@@ -9,6 +9,19 @@ llm = ChatGoogleGenerativeAI(
     max_retries=2,      # Retry up to 2 times on transient errors
 )
 
+_tag_generator_model = ChatGoogleGenerativeAI(
+    model="gemini-2.5-flash-lite",
+    temperature=0,
+    timeout=120,
+    max_retries=2,
+)
+
+chunk_analyzer_model = ChatGoogleGenerativeAI(
+    model="gemini-2.5-flash-lite",
+    temperature=0,
+    timeout=120,
+    max_retries=2,
+)
 
 # Scoring model — uses gemini-2.5-flash (configurable via SCORING_MODEL env var).
 # flash-lite is NOT recommended: the scoring schema is deeply nested

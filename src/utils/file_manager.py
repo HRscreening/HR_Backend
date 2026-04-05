@@ -1,5 +1,3 @@
-
-
 import io
 import os
 import re
@@ -12,12 +10,13 @@ from typing import List
 from src.services.errors.base import DomainError
 from configs.env_config import BASE_UPLOAD_DIR, SUPABASE_PUBLIC_URL
 from src.utils.manage_supabase_buckets import save_file_from_path
-
+import json
 
 
 
 
 class FileManagerService:
+    BASE_TEMP_DIR = os.path.abspath(os.path.join(os.getcwd(), "data", "temp"))
     ALLOWED_EXTENSIONS = {".pdf", ".doc", ".docx"}
 
     ZIP_MIME_TYPES = {
@@ -280,5 +279,39 @@ class FileManagerService:
                 status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
             )
 
+    def create_json_file(self, data: dict, filename: str) -> str:
+        safe_filename = self.sanitize_filename(filename)
 
+        base_dir = os.path.join(os.getcwd(), "data", "temp")
+        os.makedirs(base_dir, exist_ok=True)
+
+        path = os.path.join(base_dir, f"{safe_filename}.json")
+
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+        return path
+    
+    
+    def cleanup_files(self, file_paths: List[str]) -> None:
+        """Delete files only inside data/temp directory."""
+
+        for path in file_paths:
+            if not path:
+                continue
+
+            try:
+                abs_path = os.path.abspath(path)
+
+                # 🔒 Security check: ensure file is inside allowed directory
+                if not abs_path.startswith(self.BASE_TEMP_DIR):
+                    print(f"⚠️ Skipping deletion (outside allowed dir): {abs_path}")
+                    continue
+
+                if os.path.exists(abs_path):
+                    os.remove(abs_path)
+
+            except Exception as e:
+                print(f"⚠️ Failed to delete file: {path}, error: {e}")
+            
 fileManager = FileManagerService()

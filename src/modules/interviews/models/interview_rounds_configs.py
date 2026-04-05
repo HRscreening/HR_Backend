@@ -10,7 +10,7 @@ from sqlalchemy import (
 from sqlalchemy import Enum as SAEnum,UniqueConstraint
 import uuid
 from sqlalchemy.orm import relationship
-from sqlalchemy.dialects.postgresql import JSONB,UUID,VARCHAR,TEXT
+from sqlalchemy.dialects.postgresql import JSONB,UUID,VARCHAR,TEXT,ARRAY
 
 from configs.postgress_db import Base
 from src.models.enums import InterviewType, PanelMode,MeetingHostType
@@ -54,7 +54,10 @@ class Interview_Round_Configs(Base):
     candidate_slot_booking_link = Column(String, nullable=True)  # Optional: link to the slot booking system (e.g., Calendly) for this round
     
     timezone = Column(String, nullable=True, default="UTC")  # IANA timezone (e.g. "Asia/Kolkata") for display purposes; all storage is UTC
-
+    
+    #! must be nullanle = False , but for now to avoid migration issues we are keeping it nullable, will add a data migration script to populate this field for existing records and then make it non-nullable in the future.
+    assessment_criterias = Column(ARRAY(String), nullable=True)  # To store the list of assessment tags associated with this interview round, if any. This can be used to link specific assessments or tests to this round.
+    
     panel_mode = Column(
         SAEnum(PanelMode, name="panel_mode_enum", native_enum=True),
         nullable=False,

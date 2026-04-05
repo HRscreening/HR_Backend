@@ -65,7 +65,9 @@ class Interview(Base):
     
     cancelled_at = Column(DateTime(timezone=True), nullable=True)  # Timestamp for when the interview was cancelled, if applicable
     cancellation_reason = Column(TEXT, nullable=True)  # Reason for cancellation, if applicable
-    
+    transcript_url = Column(TEXT, nullable=True)  # URL to access the transcript, which can be generated after the interview is completed.
+    ai_summary = Column(JSONB, nullable=True)  # To store AI-generated summary of the interview, which can be generated after the interview is completed.
+    ai_assessment = Column(JSONB, nullable=True)  # To store AI-generated assessment/feedback of the interview, which can be generated after the interview is completed.
     
     created_at = Column(
         DateTime(timezone=True),
@@ -84,3 +86,5 @@ class Interview(Base):
     
     application = relationship("Application", back_populates="interviews")
     round_config = relationship("Interview_Round_Configs", back_populates="interviews")
+    
+    assessments = relationship("InterviewAssessment", back_populates="interview")

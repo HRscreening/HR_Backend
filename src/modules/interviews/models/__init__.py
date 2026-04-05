@@ -4,7 +4,7 @@ from src.modules.interviews.models.interview_timeline_events import Interview_Ti
 from src.modules.interviews.models.panelist_model import Panelist
 from src.modules.interviews.models.interview_slots import Interview_Slot
 from src.modules.interviews.models.calendar_connections import CalendarConnection
-
+from src.modules.interviews.models.interview_assessments import InterviewAssessment
 
 __all__ = [
     "Interview",
@@ -12,5 +12,6 @@ __all__ = [
     "Interview_TimeLine_Events",
     "Panelist",
     "Interview_Slot",
-    "CalendarConnection"
+    "CalendarConnection",
+    "InterviewAssessment"
 ]

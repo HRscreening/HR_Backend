@@ -1,28 +1,46 @@
+from sqlalchemy import (
+    Column,
+    Integer,
+    String,
+    DateTime,
+    func,
+    Boolean,
+    ForeignKey,
 
-# #### `interview_assessments`
+)
+from sqlalchemy import Enum as SQLEnum, UniqueConstraint
+import uuid
+from sqlalchemy.orm import relationship
+from sqlalchemy.dialects.postgresql import JSONB,UUID,VARCHAR,TEXT
 
-# Post-interview feedback from each panelist.
-
-# | Column | Type | Constraints | Description |
-# |--------|------|-------------|-------------|
-# | `id` | UUID | PK, default uuid4 | |
-# | `interview_id` | UUID | FK → interviews.id, NOT NULL | |
-# | `panelist_email` | String(320) | NOT NULL | |
-# | `panelist_name` | String(200) | NULL | |
-# | `rating` | Enum(FeedbackRating) | NOT NULL | strong_yes, yes, neutral, no, strong_no |
-# | `technical_score` | Integer | NULL | 1–10 (optional) |
-# | `communication_score` | Integer | NULL | 1–10 (optional) |
-# | `culture_fit_score` | Integer | NULL | 1–10 (optional) |
-# | `strengths` | Text | NULL | Free text |
-# | `concerns` | Text | NULL | Free text |
-# | `notes` | Text | NULL | General notes |
-# | `recommendation` | Text | NULL | Hire / No hire / Next round |
-# | `feedback_token` | String(500) | NULL | Signed JWT for feedback form link |
-# | `token_expires_at` | DateTime | NULL | |
-# | `submitted_at` | DateTime | NULL | |
-# | `created_at` | DateTime | NOT NULL, default now | |
-
-# **Constraints**: UNIQUE(interview_id, panelist_email)
+from configs.postgress_db import Base
+from src.models.enums import InterviewStatus, InterviewAssessmentStatus
+from src.modules.interviews.models.interview_timeline_events import Interview_TimeLine_Events
 
 
-# TODO: Implement this model and related repository functions for creating/updating feedback, generating feedback tokens, etc.
+
+class InterviewAssessment(Base):
+    __tablename__ = "interview_assessments"
+
+    __table_args__ = (
+        UniqueConstraint("interview_id", "panelist_id", name="uq_interview_panelist"),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    interview_id = Column(UUID(as_uuid=True), ForeignKey("interviews.id"), nullable=False)
+    panelist_id = Column(UUID(as_uuid=True), ForeignKey("panelist.id"), nullable=False)
+
+    status = Column(SQLEnum(InterviewAssessmentStatus, name="interview_assessment_type_enum"), nullable=False,default=InterviewAssessmentStatus.REQUESTED)
+
+    response = Column(JSONB,nullable=True)  # To store the panelist's responses to the assessment form, which can include ratings, comments, and recommendations for the candidate. The structure of this JSON can be flexible to accommodate different types of assessment forms for different interview rounds.
+    final_verdict = Column(TEXT, nullable=True)  # Whether the panelist recommends moving the candidate forward or not, can be null if not submitted yet or if the panelist chose not to give a recommendation. True for recommend, False for do not recommend.
+    feedback_token = Column(TEXT, unique=True,nullable=True)
+    token_expires_at = Column(DateTime(timezone=True),nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    submitted_at = Column(DateTime(timezone=True))
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    interview = relationship("Interview", back_populates="assessments")
+    panelist = relationship("Panelist", back_populates="assessments")

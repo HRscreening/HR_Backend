@@ -71,7 +71,7 @@ class JWTService:
         
         # return user
 
-    
+    # TO be moved to interview token manager
     def create_panelist_availability_token(
     self,
         panelist_id: str,
@@ -183,7 +183,35 @@ class JWTService:
             "exp": now + timedelta(minutes=expiration_minutes),
         }
         return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
+    #  till here
     
+    
+    def encode_token(self, payload: dict):
+        return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
+    
+    def decode_token(self, token: str):
+        try:
+            decoded = jwt.decode(
+                token,
+                self.secret_key,
+                algorithms=[self.algorithm],
+            )
+            return decoded
+        except jwt.ExpiredSignatureError:
+            raise DomainError(
+                "Token has expired.",
+                status_code=401
+            )
+        except jwt.InvalidTokenError:
+            raise DomainError(
+                "Invalid token.",
+                status_code=401
+            )
+        except Exception as e:
+            raise DomainError(
+                f"Token decoding failed: {str(e)}",
+                status_code=401
+            )
     
     def encode_oauth_state(self,payload: dict):
         return jwt.encode(payload, self.secret_key,)

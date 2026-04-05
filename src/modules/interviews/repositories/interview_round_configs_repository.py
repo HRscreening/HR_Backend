@@ -31,55 +31,7 @@ class InterviewRoundConfigsRepository:
         await self.db.flush() 
         return interview_round_config
 
-    # async def bulk_create_interview_round_configs(
-    #     self,
-    #     job_id: str,
-    #     configs: List[CreateInterviewRoundConfigDTO],
-    # ) -> List[Interview_Round_Configs]:
-
-    #     created = []
-        
-    #     panelist_ids_mapped_to_round_config = []
-
-    #     for config_data in configs:
-
-    #         row = Interview_Round_Configs(
-    #             job_id=job_id,
-    #             round_number=config_data.round_number,
-    #             title=config_data.title,
-    #             interview_type=config_data.interview_type,
-    #             instructions=config_data.instructions,
-    #             duration_minutes=config_data.duration_minutes,
-    #             meet_link=str(config_data.meet_link) if config_data.meet_link else None,
-    #             start_date=config_data.start_date,
-    #             end_date=config_data.end_date,
-    #             timezone=config_data.timezone,
-    #         )
-
-    #         # attach panelists
-    #         for panel in config_data.panelists:
-    #             panelist = Panelist(
-    #                 name=panel.name,
-    #                 email=panel.email,
-    #                 role=panel.role
-    #             )
-
-    #             row.panelists.append(panelist)
-
-    #         self.db.add(row)
-    #         created.append(row)
-            
-
-
-    #     await self.db.flush(objects=created)
-        
-    #     for config, created_row in zip(configs, created):
-    #         panelist_ids_mapped_to_round_config.append({
-    #             "round_config_id": created_row.id,
-    #             "round_config_title": created_row.title,
-    #             "panelist_ids":[panel.id for panel in created_row.panelists]})
-        
-    #     return created
+    
     
     async def bulk_create_interview_round_configs(
         self,
@@ -98,7 +50,7 @@ class InterviewRoundConfigsRepository:
                 interview_type=config_data.interview_type,
                 instructions=config_data.instructions,
                 duration_minutes=config_data.duration_minutes,
-                meet_link=config_data.meet_link,
+                assessment_criterias=config_data.assessment_criterias,
                 start_date=config_data.start_date,
                 end_date=config_data.end_date,
                 timezone=config_data.timezone,
@@ -205,6 +157,19 @@ class InterviewRoundConfigsRepository:
         )
         return result.scalars().all()
     
+    
+
+    async def get_total_rounds_from_round_config(self, job_id: str) -> int:
+        """Get the total number of interview rounds configured for a job."""
+        
+        result = await self.db.execute(
+            select(func.max(Interview_Round_Configs.round_number))
+            .where(Interview_Round_Configs.job_id == job_id)
+        )
+        
+        total_rounds = result.scalar_one_or_none()
+        
+        return total_rounds if total_rounds is not None else 0
     
 
     async def delete_interview_round_config(self,round_config_id):

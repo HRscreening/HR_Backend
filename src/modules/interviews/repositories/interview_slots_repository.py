@@ -320,3 +320,26 @@ class InterviewSlotsRepository:
         )
         
         await self.db.flush()
+
+
+    async def get_slot_by_interview_id_with_panelist(self, interview_id: UUID | str)-> Optional[Interview_Slot]:
+        result = await self.db.execute(
+            select(Interview_Slot)
+            .options(selectinload(Interview_Slot.panelist)) 
+            .where(Interview_Slot.booked_interview_id == interview_id)
+        )
+        return result.scalar_one_or_none()
+    
+    
+    
+    async def get_slot_by_round_config_id_and_panelist_id_and_time(self, round_config_id: UUID, panelist_id: UUID, slot_start: datetime, slot_end: datetime) -> Optional[Interview_Slot]:
+        result = await self.db.execute(
+            select(Interview_Slot)
+            .where(
+                Interview_Slot.round_config_id == round_config_id,
+                Interview_Slot.panelist_id == panelist_id,
+                Interview_Slot.slot_start == slot_start,
+                Interview_Slot.slot_end == slot_end
+            )
+        )
+        return result.scalar_one_or_none()
