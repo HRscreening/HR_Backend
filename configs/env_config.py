@@ -22,6 +22,7 @@ COMPANY_EMAIL = os.getenv("COMPANY_EMAIL", "your_email@gmail.com")
 
 SENDER_EMAIL = os.getenv("SENDER_EMAIL", "your_email@gmail.com")
 SENDER_MAIL_PASSWORD = os.getenv("SENDER_MAIL_PASSWORD", "your_app_password")  # Use Gmail App Password
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
 
 # JWT Configuration
 SECRET_KEY = os.environ.get("SECRET_KEY", "your-secret-key")

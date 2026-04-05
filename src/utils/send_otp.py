@@ -1,34 +1,21 @@
-# can be removed if email_service file is working
-
-import smtplib
-from email.mime.text import MIMEText
-from configs.env_config import SENDER_EMAIL, SENDER_MAIL_PASSWORD
-from src.services.errors.base import DomainError 
-
+from src.modules.email_services.base import BaseEmailService
 
 async def send_otp_email(receiver_email: str, otp: int) -> int:
-    """Send OTP to the given email and return the generated OTP."""
+    """Send OTP to the given email using Resend."""
     
-    
-    print(SENDER_EMAIL, SENDER_MAIL_PASSWORD)
-    # Email Content
+    email_service = BaseEmailService()
     subject = "Your OTP Code"
     body = f"Your OTP for signup is {otp}. It is valid for 5 minutes."
 
-    msg = MIMEText(body)
-    msg['Subject'] = subject
-    msg['From'] = SENDER_EMAIL
-    msg['To'] = receiver_email
-
-    # Send Email
     try:
-        with smtplib.SMTP("smtp.gmail.com", 587) as server:
-            server.starttls()
-            server.login(SENDER_EMAIL, SENDER_MAIL_PASSWORD)
-            server.sendmail(SENDER_EMAIL, receiver_email, msg.as_string())
+        await email_service.send_email(
+            receiver_email=receiver_email,
+            subject=subject,
+            body=body,
+            content_type="text"
+        )
         print(f"OTP {otp} sent to {receiver_email}")
         return otp
     except Exception as e:
         print(f"Error sending OTP: {e}")
         raise ValueError("Failed to send OTP email")
-        # return -1
