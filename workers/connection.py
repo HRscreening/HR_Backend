@@ -23,25 +23,25 @@ QUEUE_PREFIX = os.environ.get("QUEUE_PREFIX", "")
 DEFAULT_TIMEOUT = DEFAULT_TIMEOUT_REDIS_WORKER  # 10 minutes
 
 resume_parsing_queue = Queue(
-    name=f"{QUEUE_PREFIX}resume_parsing_queue",
+    name=f"resume_parsing",
     connection=redis_conn,
     default_timeout=DEFAULT_TIMEOUT_REDIS_WORKER
 )
 
 jd_extraction_queue = Queue(
-    name=f"{QUEUE_PREFIX}jd_extraction",
+    name=f"jd_extraction",
     connection=redis_conn,
     default_timeout=60 * 20,  # JD parsing includes LLM calls
 )
 
 resume_scoring_queue = Queue(
-    name=f"{QUEUE_PREFIX}resume_scoring_queue",
+    name=f"resume_scoring",
     connection=redis_conn,
     default_timeout=60 * 20  # LLM calls are slow
 )
 
 candidate_extraction_queue = Queue(
-    name=f"{QUEUE_PREFIX}candidate_extraction_queue",
+    name=f"candidate_extraction",
     connection=redis_conn,
     default_timeout=60 * 5  # 5 mins
 )

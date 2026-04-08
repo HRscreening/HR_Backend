@@ -27,7 +27,7 @@ def main():
         print(f"Redis connection failed: {e}")
         sys.exit(1)
 
-    queue = QUEUES["resume_parsing"]
+    queue = QUEUES["resume_scoring"]
     qname = queue.name
 
     print(f"\n=== Queue: {qname} ===")
