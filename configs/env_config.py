@@ -34,8 +34,8 @@ EXPIRATION_MINUTES = int(os.environ.get("EXPIRATION_MINUTES", 300))
 # LLM API Keys
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 GEMINI_API_KEY = os.getenv("GOOGLE_API_KEY", "")
-
-
+HF_TOKEN = os.getenv("HF_TOKEN", "")
+USE_HF_API = os.getenv("USE_HF_API", "false").lower() == "true"
 # Langmith tracking
 LANGHAIN_TRACKING_ENABLED = os.getenv("LANGHAIN_TRACKING_ENABLED", "true").lower() == "true"
 LANGCHAIN_API_KEY = os.getenv("LANGCHAIN_API_KEY", "")

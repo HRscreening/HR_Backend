@@ -522,7 +522,6 @@ class JobService:
                     Application, Application.id == Score.application_id
                 ).where(Application.job_id == job_id)
             )
-
             latest_batch = await self.batch_repository.get_latest_batch_for_job(job_id)
 
             # Criteria versions overview (works even when there is no rubric)
@@ -551,13 +550,13 @@ class JobService:
             
             
             round_slots = []
-            
+
             if available_round_config:
-                for round in available_round_config:
+                for round_config in available_round_config:
                     round_slots.append({
-                        "round_config_id": round.id,
-                        "round_number": round.round_number,
-                        "slots_available": round.slots_available,
+                        "round_config_id": round_config.id,
+                        "round_number": round_config.round_number,
+                        "slots_available": round_config.slots_available,
                     })
             
             
