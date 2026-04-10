@@ -497,7 +497,7 @@ class ApplicationService:
                     
                     
                 if requested_panelist:
-                    if panelist_reminder_settings and panelist_reminder_settings.enabled and panelist_reminder_settings.form_reminder_hours:
+                    if panelist_reminder_settings and panelist_reminder_settings.enabled and panelist_reminder_settings.form_reminder_sec:
                         reminders_payload =  self._create_form_reminder_payload_for_panelist(requested_panelist, round_config, panelist_reminder_settings) if panelist_reminder_settings and panelist_reminder_settings.enabled else []
                         
                         if reminders_payload:
