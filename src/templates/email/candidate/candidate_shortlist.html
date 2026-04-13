@@ -1,0 +1,33 @@
+{% extends "email/base.html" %}
+
+{% block content %}
+<h2 style="margin:0 0 16px;font-size:22px;color:#10b981;font-weight:700;">
+  Congratulations! You've been Shortlisted
+</h2>
+
+<p style="margin:0 0 16px;font-size:16px;color:#374151;line-height:1.6;">
+  Hi {{ candidate_name }},
+</p>
+
+<p style="margin:0 0 16px;font-size:16px;color:#374151;line-height:1.6;">
+  We are thrilled to inform you that your application for the <strong>{{ job_title }}</strong> position has been shortlisted! Our team was impressed by your profile and experience.
+</p>
+
+<div style="background-color:#eff6ff;border:1px solid #3b82f6;border-radius:12px;padding:24px;margin:28px 0;">
+  <p style="margin:0;font-size:16px;color:#1e40af;line-height:1.6;font-weight:600;">
+    What happens next?
+  </p>
+  <p style="margin:8px 0 0;font-size:15px;color:#1e40af;line-height:1.6;">
+    Your profile is currently under further review by our hiring team. If you are selected for an interview, our recruitment team will reach out to you directly to coordinate the next steps and schedule a timing.
+  </p>
+</div>
+
+<p style="margin:32px 0 12px;font-size:16px;color:#374151;line-height:1.6;">
+  Thank you for your patience and interest.
+</p>
+
+<p style="margin:0;font-size:16px;color:#374151;line-height:1.6;">
+  Best regards,<br>
+  <strong>The DeskZero Team</strong>
+</p>
+{% endblock %}

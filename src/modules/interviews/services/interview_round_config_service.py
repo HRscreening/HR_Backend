@@ -236,10 +236,16 @@ class InterviewRoundConfigService:
     ):
         """Update interview round config and manage panelists in a single transaction."""
         try:
-            config = await self.interview_round_config_repository.get_interview_round_config_by_id(round_config_id)
+            config = await self.interview_round_config_repository.get_interview_round_config_by_id_with_panelist(round_config_id)
 
             if not config:
                 raise DomainError("Interview round configuration not found.", status_code=404)
+            
+            job_settings = await self.job_repository.get_job_settings(config.job_id) 
+            
+            if not job_settings:
+                raise DomainError("Job settings not found for the job.", status_code=404)
+            
 
             panelists = config_data.panelists  # ✅ keep as DTO objects
             update_data = config_data.model_dump(exclude_none=True, exclude={"panelists"})
@@ -273,7 +279,51 @@ class InterviewRoundConfigService:
                 if panelists.delete:
                     print("Deleting panelists with ids:", panelists.delete)
                     await self.panelist_repository.delete_panelists_by_ids(round_config_id,panelists.delete)
+            
+            await self.db.flush() # ✅ Flush to get updated config and new panelists in the session
+            
+            panelist_ids = [panel.id for panel in config.panelists]
+            expiry_time = self._get_expiry_time(config.end_date)
+            
+            tasks = []
+            if panelist_ids:
+                result = await self.panelist_repository.request_panelist_ids_for_availability(
+                        config.id,
+                        panelist_ids,
+                        token_expiry_in_min=expiry_time 
+                    )
+                panelists = result["requested_panelists"]
+                
+                if panelists:
+                    tasks.extend([
+                        self.panel_email_service.send_slot_availability_email(
+                            AvailableSlotsData(
+                            panelist_email=p.email,
+                            panelist_name=p.name,
+                            interview_round_title=config.title,
+                            form_link=f"{self.frontend_url}/panelist/availability?token={p.availability_token}",
+                    )           
+                        )
+                        for p in panelists
+                    ])
                     
+
+                    panelist_reminder_settings = ReminderSettingsDTO.model_validate(job_settings.panel_reminders) if job_settings and job_settings.panel_reminders else None
+                    reminders_payload = self._create_form_reminder_payload_for_panelist(panelists, config, panelist_reminder_settings) if panelist_reminder_settings and panelist_reminder_settings.enabled else []
+                    
+                    if reminders_payload:
+                        reminders = await self.reminder_repository.create_reminders(reminders_payload)
+
+                        
+                        reminder_map = {str(r.id): r for r in reminders}
+                        enqueue_payloads = [EnqueueReminderPayload(reminder_id=r.id,run_at=r.next_run_at)for r in reminders]
+                        enqueue_results = await self.email_producer.enqueue_reminder_email_task(enqueue_payloads)
+
+                        for res in enqueue_results:
+                            if res.status == "success":
+                                reminder_map[str(res.reminder_id)].worker_job_id = res.job_id
+                                
+                        self.logger.info(f"Enqueued {len(reminders)} availability reminder emails for panelists after updating round config {round_config_id}") 
             # ✅ Commit once
             await self.db.commit()
             await self.db.refresh(config)
