@@ -159,7 +159,7 @@ class InterviewRoundConfigService:
 
                             for res in enqueue_results:
                                 if res.status == "success":
-                                    reminder_map[str(res.reminder_id)].worker_job_id = res.job_id 
+                                    reminder_map[str(res.reminder_id)].worker_job_id = str(res.job_id) 
             
             await self.db.commit()
             
@@ -228,7 +228,9 @@ class InterviewRoundConfigService:
             await self.db.rollback()
             self.logger.error(f"Error deleting interview round config {round_config_id}: {str(e)}")
             raise
-
+    
+    
+    # TODO: Make it transcational safe
     async def update_interview_round_config(
         self,
         round_config_id: str,
@@ -254,35 +256,32 @@ class InterviewRoundConfigService:
             for field, value in update_data.items():
                 if hasattr(config, field):
                     setattr(config, field, value)
+                    
+                    
             new_panelists = []
+            reminder_cancelled_panelist_ids = [] #! TODO: Handle This
             if panelists is not None:
                 if panelists.add:
                     new_panelists = await self.panelist_repository.bulk_add_panelist_to_round_config(round_config_id, panelists.add)
-                    new_panlest_ids = [str(p.id) for p in new_panelists]
                     
-                    now = datetime.now(timezone.utc)
-                    remaining_seconds = (config.end_date - now).total_seconds()
 
-                    if remaining_seconds <= 0:
-                        raise DomainError("Round already expired.")
-                    
-                    token_expiry_in_min = max(1, int(remaining_seconds // 60))
-                    await self.panelist_repository.request_panelist_ids_for_availability(
-                        round_config_id,
-                        new_panlest_ids,
-                        token_expiry_in_min=token_expiry_in_min
-                    )  # Request availability immediately for new panelists with 7 days token expiry
-                
                 if panelists.edit:
                     await self.panelist_repository.bulk_update_panelists(round_config_id,panelists.edit)
+                    
+                    reminder_cancelled_panelist_ids.extend([p.id for p in panelists.edit if p.id])  # Collect IDs of updated panelists
                     
                 if panelists.delete:
                     print("Deleting panelists with ids:", panelists.delete)
                     await self.panelist_repository.delete_panelists_by_ids(round_config_id,panelists.delete)
+                   
+                    reminder_cancelled_panelist_ids += panelists.delete  # Collect IDs of deleted panelists
             
             await self.db.flush() # ✅ Flush to get updated config and new panelists in the session
             
+            await self.db.refresh(config, ["panelists"]) # ✅ Refresh to ensure we have the latest state of config and panelists
+            
             panelist_ids = [panel.id for panel in config.panelists]
+            print("\nCurrent panelist ids after update:", panelist_ids,"\n\n")
             expiry_time = self._get_expiry_time(config.end_date)
             
             tasks = []
@@ -292,9 +291,9 @@ class InterviewRoundConfigService:
                         panelist_ids,
                         token_expiry_in_min=expiry_time 
                     )
-                panelists = result["requested_panelists"]
+                requested_panelists = result["requested_panelists"]
                 
-                if panelists:
+                if requested_panelists:
                     tasks.extend([
                         self.panel_email_service.send_slot_availability_email(
                             AvailableSlotsData(
@@ -304,12 +303,12 @@ class InterviewRoundConfigService:
                             form_link=f"{self.frontend_url}/panelist/availability?token={p.availability_token}",
                     )           
                         )
-                        for p in panelists
+                        for p in requested_panelists
                     ])
                     
 
                     panelist_reminder_settings = ReminderSettingsDTO.model_validate(job_settings.panel_reminders) if job_settings and job_settings.panel_reminders else None
-                    reminders_payload = self._create_form_reminder_payload_for_panelist(panelists, config, panelist_reminder_settings) if panelist_reminder_settings and panelist_reminder_settings.enabled else []
+                    reminders_payload = self._create_form_reminder_payload_for_panelist(requested_panelists, config, panelist_reminder_settings) if panelist_reminder_settings and panelist_reminder_settings.enabled else []
                     
                     if reminders_payload:
                         reminders = await self.reminder_repository.create_reminders(reminders_payload)
@@ -321,26 +320,16 @@ class InterviewRoundConfigService:
 
                         for res in enqueue_results:
                             if res.status == "success":
-                                reminder_map[str(res.reminder_id)].worker_job_id = res.job_id
+                                reminder_map[str(res.reminder_id)].worker_job_id = str(res.job_id)
                                 
                         self.logger.info(f"Enqueued {len(reminders)} availability reminder emails for panelists after updating round config {round_config_id}") 
+           
+            
             # ✅ Commit once
             await self.db.commit()
             await self.db.refresh(config)
             
-            if new_panelists:
-                # Send availability request emails to newly added panelists
-                await asyncio.gather(*[
-                    self.panel_email_service.send_slot_availability_email(
-                        AvailableSlotsData(
-                        panelist_email=p.email,
-                        panelist_name=p.name,
-                        interview_round_title=config.title,
-                        form_link=f"{self.frontend_url}/panelist/availability?token={p.availability_token}",
-                        ))
-                    for p in new_panelists
-                ])
-
+            await asyncio.gather(*tasks)
             return config
 
         except Exception as e:
@@ -392,7 +381,7 @@ class InterviewRoundConfigService:
 
                 for res in enqueue_results:
                     if res.status == "success":
-                        reminder_map[str(res.reminder_id)].worker_job_id = res.job_id 
+                        reminder_map[str(res.reminder_id)].worker_job_id = str(res.job_id) 
                 
             await self.db.commit()
             
@@ -463,7 +452,7 @@ class InterviewRoundConfigService:
 
                 for res in enqueue_results:
                     if res.status == "success":
-                        reminder_map[str(res.reminder_id)].worker_job_id = res.job_id 
+                        reminder_map[str(res.reminder_id)].worker_job_id = str(res.job_id) 
 
             await self.db.commit()
 

@@ -21,7 +21,7 @@ from src.schemas.rubric_schemas import (
     UpdateRubricRequest,
     read_rubric_criteria,
 )
-from src.schemas.job_schemas import JobOverviewResponse,JobSettingsResposnse,Job_Details
+from src.schemas.job_schemas import Job_Details,SettingsResponse
 from src.services.errors.base import DomainError
 from src.services.errors.user_errors import JobNotFound, RubricNotFound
 from src.services.errors.pipeline_errors import (
@@ -991,17 +991,14 @@ class JobService:
         }
         
         
-    async def get_job_settings(self, job_id: str) -> dict:
+    async def get_job_info(self, job_id: str) -> dict:
         try:
             job = await self.job_repository.get_job_by_id(job_id)
             if not job:
                 raise JobNotFound(status_code=404)
-
-            settings = await self.job_repository.get_job_settings(job_id)
             
             # return settings
-            return JobSettingsResposnse(
-                    job_details=Job_Details(
+            return Job_Details(
                     title=job.title,
                     location=job.location,
                     salary=job.salary,
@@ -1011,9 +1008,22 @@ class JobService:
                     manual_rounds_count=job.manual_rounds_count,
                     job_metadata=job.job_metadata,
                     closing_reason=job.closing_reason,
-                    ),
-                    settings=settings if settings else None,
-            )
+                )
+            
+        except JobNotFound:
+            self.logger.warning("Job not found when fetching settings for job_id=%s", job_id)
+            raise
+        
+        
+    async def get_job_settings(self, job_id: str) -> dict:
+        try:
+            job = await self.job_repository.get_job_by_id(job_id)
+            if not job:
+                raise JobNotFound(status_code=404)
+
+            settings = await self.job_repository.get_job_settings(job_id)
+            return settings if settings else None
+        
         except JobNotFound:
             self.logger.warning("Job not found when fetching settings for job_id=%s", job_id)
             raise

@@ -213,8 +213,3 @@ class Job_Details(BaseModel):
     job_metadata: Optional[Dict[str, Any]]
     closing_reason: Optional[str]
     
-    
-class JobSettingsResposnse(BaseModel):
-    job_details: Job_Details
-    settings : SettingsResponse | None = None
-

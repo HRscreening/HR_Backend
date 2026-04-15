@@ -22,7 +22,7 @@ from src.modules.email_services.services import CandidateEmailService, PanelEmai
 from configs.env_config import FRONTEND_URL
 from src.modules.reminders.reminder_dtos import CreateReminderDTO
 from src.dtos.emails.panel_dto import PanelistReminderAvailabilityData,PanelistInterviewReminderData,PanelistBookingData,AvailableSlotsData,ThankYouPanelistData,PanelistSlotReleasedData,PanelistMeetingRescheduledData
-from src.dtos.emails.candidate_dto import CandidateBookingLinkReminderData,CandidateInterviewReminderData,CandidateBookingLinkData,CandidateBookingConfirmationData,CandidateRescheduleNewSlotsData
+from src.dtos.emails.candidate_dto import CandidateBookingLinkReminderData,CandidateInterviewReminderData,CandidateBookingLinkData,CandidateBookingConfirmationData,CandidateRescheduleNewSlotsData,CandidateShortlistedData
 from src.modules.reminders.model.reminder_enum import ReminderType, RecipientType, EntityType
 from datetime import timedelta
 from src.dtos.job_settings_dto import ReminderSettingsDTO,ReschedulingSettingsDTO
@@ -265,11 +265,30 @@ class ApplicationService:
             if not application:
                 raise DomainError(message="Application not found", status_code=404)
             
+            job = await self.job_repository.get_job_by_id(str(application.job_id))
+            if not job:
+                raise DomainError(message="Job not found for this application", status_code=404)
+            
             if application.current_round != 0:
                 raise DomainError(message="Cannot change status of application which is already in interview rounds, status can only be changed when application is in initial round", status_code=400)
             
+            candidate = await self.candidate_repository.get_candidate_by_id(str(application.candidate_id)) if application.candidate_id else None
+            if not candidate:
+                raise DomainError(message="Candidate not found for this application, cannot change status without candidate information, please first add candidate information to the application", status_code=404)
+            
             application.status = new_status
+            application.last_activity_at = datetime.now(timezone.utc)
+            
             await self.application_repository.db.commit()
+            
+            if new_status == ApplicationStatus.SHORTLISTED:
+                # Timeline: Application Shortlisted
+                await self.candidate_email_service.send_shortlisted_email(
+                    CandidateShortlistedData(
+                        candidate_email=candidate.email,
+                        candidate_name=candidate.full_name or candidate.email,
+                        job_title= job.title if application.job else "the job"
+                ))
             return {
                 "application_id": str(application_id),
                 "new_status": new_status.value

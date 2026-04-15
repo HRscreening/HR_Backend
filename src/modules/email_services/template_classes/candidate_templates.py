@@ -6,8 +6,25 @@ from src.dtos.emails.candidate_dto import (
     CandidateBookingConfirmationData,
     CandidateRescheduleNewSlotsData,
     CandidateBookingLinkReminderData,
-    CandidateInterviewReminderData
+    CandidateInterviewReminderData,
+    CandidateShortlistedData
 )
+
+class CandidateShortlistedTemplate(EmailTemplate):
+    def __init__(self,data: CandidateShortlistedData):
+        self.candidate_email = data.candidate_email
+        self.candidate_name = data.candidate_name
+        self.job_title = data.job_title
+        
+    def get_recipient(self):
+        return self.candidate_email
+
+    def get_subject(self):
+        return f"Congratulations! You've Been Shortlisted for {self.job_title}"
+
+    def get_body(self):
+        return render_template("email/candidate/shortlisted.html", {"candidate_name":self.candidate_name,"job_title": self.job_title})
+
 
 class CandidateBookingLinkTemplate(EmailTemplate):
     def __init__(self, data: CandidateBookingLinkData):

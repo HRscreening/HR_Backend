@@ -471,6 +471,14 @@ async def get_applications(
 
 
 
+@router.get("/job-info/{job_id}", status_code=status.HTTP_200_OK)
+async def get_job_settings(
+    job_id: UUID,
+    job_service: JobService = Depends(get_job_service)
+):
+    settings = await job_service.get_job_info(str(job_id))
+    return settings
+
 @router.get("/settings/{job_id}", status_code=status.HTTP_200_OK)
 async def get_job_settings(
     job_id: UUID,

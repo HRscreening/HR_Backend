@@ -40,3 +40,8 @@ class CandidateInterviewReminderData(BaseModel):
     scheduled_end: datetime
     meet_link: Optional[str] = None
     reschedule_link: Optional[str] = None
+
+class CandidateShortlistedData(BaseModel):
+    candidate_email: EmailStr
+    candidate_name: str
+    job_title: str

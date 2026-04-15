@@ -5,14 +5,17 @@ from src.modules.email_services.template_classes.candidate_templates import (
     CandidateBookingConfirmationTemplate,
     CandidateRescheduleNewSlotsTemplate,
     CandidateBookingLinkReminderTemplate,
-    CandidateInterviewReminderTemplate
+    CandidateInterviewReminderTemplate,
+    CandidateShortlistedTemplate
+    
 )
 from src.dtos.emails.candidate_dto import (
     CandidateBookingLinkData,
     CandidateBookingConfirmationData,
     CandidateRescheduleNewSlotsData,
     CandidateBookingLinkReminderData,
-    CandidateInterviewReminderData
+    CandidateInterviewReminderData,
+    CandidateShortlistedData
 )
 
 class CandidateEmailService(BaseEmailService):
@@ -42,6 +45,12 @@ class CandidateEmailService(BaseEmailService):
     async def send_interview_reminder_email(self,data: CandidateInterviewReminderData):
         template = CandidateInterviewReminderTemplate(data)
         await self.send_email_template(template)
+        
+    async def send_shortlisted_email(self,data: CandidateShortlistedData):
+        template = CandidateShortlistedTemplate(data)
+        await self.send_email_template(template)
+        
+        
 
 
 #TODO: Implement this later
