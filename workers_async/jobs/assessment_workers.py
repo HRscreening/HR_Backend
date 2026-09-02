@@ -2,9 +2,8 @@ import os
 from logging import Logger
 from arq import Retry
 from workers_async.context_manager import job_context
-from src.modules.reminders.reminder_service import ReminderWorkerService
 from src.modules.interviews.services.Interview_assessment_service import InterviewAssessmentWorkerService
-from workers_async.assessment_task_producer import AnalyzeTranscriptPayload
+from workers_async.producers.assessment_task_producer import AnalyzeTranscriptPayload
 from src.services.errors.base import DomainError
 
 async def transcript_analyzer_worker(ctx, payload: dict):

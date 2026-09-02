@@ -1,8 +1,8 @@
-from src.modules.email_services.base import EmailTemplate
+from src.modules.notifications.channels.email.base import EmailTemplate
 from src.utils.time_helper import TimeHelper
 from src.utils.templte_engine import render_template
 from src.dtos.emails.panel_dto import *
-
+from src.utils.time_helper import deserialize_datetime
 
 class PanelistBookingTemplate(EmailTemplate):
     def __init__(
@@ -20,10 +20,9 @@ class PanelistBookingTemplate(EmailTemplate):
         return f"Interview Scheduled: {self.data.interview_round_title}"
 
     def get_body(self):
-        interview_date, interview_time = self.time_helper.format_interview_schedule_for_email(
-            self.data.scheduled_start,
-            self.data.scheduled_end
-        )
+        start = deserialize_datetime(self.data.scheduled_start) if isinstance(self.data.scheduled_start, str) else self.data.scheduled_start
+        end = deserialize_datetime(self.data.scheduled_end) if isinstance(self.data.scheduled_end,str) else self.data.scheduled_end
+        interview_date, interview_time = self.time_helper.format_interview_schedule_for_email(start,end)
 
         return render_template("email/panel/booking.html", {
             "panelist_name": self.data.panelist_name,
@@ -93,10 +92,9 @@ class PanelistSlotReleasedTemplate(EmailTemplate):
         return f"Interview Slot Released: {self.data.interview_round_title}"
 
     def get_body(self):
-        interview_date, interview_time = self.time_helper.format_interview_schedule_for_email(
-            self.data.schedule_start,
-            self.data.schedule_end
-        )
+        start = deserialize_datetime(self.data.schedule_start) if isinstance(self.data.schedule_start, str) else self.data.schedule_start
+        end = deserialize_datetime(self.data.schedule_end) if isinstance(self.data.schedule_end,str) else self.data.schedule_end
+        interview_date, interview_time = self.time_helper.format_interview_schedule_for_email(start,end)
         return render_template("email/panel/slot_released.html", {
             "panelist_name": self.data.panelist_name,
             "candidate_name": self.data.candidate_name,
@@ -118,13 +116,18 @@ class PanelistMeetingRescheduledTemplate(EmailTemplate):
         return f"Interview Rescheduled: {self.data.interview_round_title}"
 
     def get_body(self):
+        old_start = deserialize_datetime(self.data.old_scheduled_start) if isinstance(self.data.old_scheduled_start, str) else self.data.old_scheduled_start
+        old_end = deserialize_datetime(self.data.old_scheduled_end) if isinstance(self.data.old_scheduled_end,str) else self.data.old_scheduled_end
         old_date, old_time = self.time_helper.format_interview_schedule_for_email(
-            self.data.old_scheduled_start,
-            self.data.old_scheduled_end
+            old_start,
+            old_end
         )
+        new_start = deserialize_datetime(self.data.new_scheduled_start) if isinstance(self.data.new_scheduled_start, str) else self.data.new_scheduled_start
+        new_end = deserialize_datetime(self.data.new_scheduled_end) if isinstance(self.data.new_scheduled_end,str) else self.data.new_scheduled_end
+        
         new_date, new_time = self.time_helper.format_interview_schedule_for_email(
-            self.data.new_scheduled_start,
-            self.data.new_scheduled_end
+            new_start,
+            new_end
         )
         return render_template(
             "email/panel/meeting_rescheduled.html",
@@ -175,9 +178,11 @@ class PanelistInterviewReminderTemplate(EmailTemplate):
         return f"Reminder: Upcoming Interview - {self.data.interview_round_title}"
 
     def get_body(self):
+        start = deserialize_datetime(self.data.scheduled_start) if isinstance(self.data.scheduled_start, str) else self.data.scheduled_start
+        end = deserialize_datetime(self.data.scheduled_end) if isinstance(self.data.scheduled_end,str) else self.data.scheduled_end
         interview_date, interview_time = self.time_helper.format_interview_schedule_for_email(
-            self.data.scheduled_start,
-            self.data.scheduled_end
+            start,
+            end
         )
 
         context = self.data.model_dump()

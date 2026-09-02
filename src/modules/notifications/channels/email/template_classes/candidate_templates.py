@@ -1,4 +1,4 @@
-from src.modules.email_services.base import EmailTemplate
+from src.modules.notifications.channels.email.base import EmailTemplate
 from src.utils.time_helper import TimeHelper
 from src.utils.templte_engine import render_template
 from src.dtos.emails.candidate_dto import (
@@ -9,6 +9,7 @@ from src.dtos.emails.candidate_dto import (
     CandidateInterviewReminderData,
     CandidateShortlistedData
 )
+from src.utils.time_helper import deserialize_datetime
 
 class CandidateShortlistedTemplate(EmailTemplate):
     def __init__(self,data: CandidateShortlistedData):
@@ -39,6 +40,7 @@ class CandidateBookingLinkTemplate(EmailTemplate):
     def get_body(self):
         return render_template("email/candidate/booking_link.html", self.data.model_dump())
 
+
 class CandidateBookingConfirmationTemplate(EmailTemplate):
     def __init__(self, data: CandidateBookingConfirmationData, time_helper: TimeHelper | None = None):
         self.data = data
@@ -51,16 +53,16 @@ class CandidateBookingConfirmationTemplate(EmailTemplate):
         return f"Interview Confirmed — {self.data.interview_round_title}"
 
     def get_body(self):
-        interview_date, interview_time = self.time_helper.format_interview_schedule_for_email(
-            self.data.scheduled_start,
-            self.data.scheduled_end
-        )
+        start = deserialize_datetime(self.data.scheduled_start) if isinstance(self.data.scheduled_start, str) else self.data.scheduled_start
+        end = deserialize_datetime(self.data.scheduled_end) if isinstance(self.data.scheduled_end,str) else self.data.scheduled_end
+        interview_date, interview_time = self.time_helper.format_interview_schedule_for_email(start,end)
         context = self.data.model_dump()
         context.update({
             "interview_date": interview_date,
             "interview_time": interview_time,
         })
         return render_template("email/candidate/booking_confirmation.html", context)
+
 
 class CandidateRescheduleNewSlotsTemplate(EmailTemplate):
     def __init__(self, data: CandidateRescheduleNewSlotsData, time_helper: TimeHelper | None = None):
@@ -74,10 +76,10 @@ class CandidateRescheduleNewSlotsTemplate(EmailTemplate):
         return f"Interview Schedule Updated — {self.data.interview_round_title}"
 
     def get_body(self):
-        interview_date, interview_time = self.time_helper.format_interview_schedule_for_email(
-            self.data.scheduled_start,
-            self.data.scheduled_end
-        )
+        start = deserialize_datetime(self.data.scheduled_start) if isinstance(self.data.scheduled_start, str) else self.data.scheduled_start
+        end = deserialize_datetime(self.data.scheduled_end) if isinstance(self.data.scheduled_end,str) else self.data.scheduled_end
+        
+        interview_date, interview_time = self.time_helper.format_interview_schedule_for_email(start,end)
         context = self.data.model_dump()
         context.update({
             "interview_date": interview_date,
@@ -110,10 +112,9 @@ class CandidateInterviewReminderTemplate(EmailTemplate):
         return f"Reminder: Upcoming Interview — {self.data.interview_round_title}"
 
     def get_body(self):
-        interview_date, interview_time = self.time_helper.format_interview_schedule_for_email(
-            self.data.scheduled_start,
-            self.data.scheduled_end
-        )
+        start = deserialize_datetime(self.data.scheduled_start) if isinstance(self.data.scheduled_start, str) else self.data.scheduled_start
+        end = deserialize_datetime(self.data.scheduled_end) if isinstance(self.data.scheduled_end,str) else self.data.scheduled_end
+        interview_date, interview_time = self.time_helper.format_interview_schedule_for_email(start,end)
         context = self.data.model_dump()
         context.update({
             "interview_date": interview_date,

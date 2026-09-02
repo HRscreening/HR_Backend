@@ -18,9 +18,8 @@ from src.modules.interviews.models import Interview_Slot, Panelist,Interview
 from src.modules.interviews.repositories import InterviewSlotsRepository, InterviewRoundConfigsRepository, InterviewRepository, InterviewEventRepository
 from src.utils.jwt import JWTService
 from src.models.enums import InterviewStatus
-from src.dtos.emails.panel_dto import PanelistReminderAvailabilityData,PanelistInterviewReminderData,PanelistBookingData,AvailableSlotsData,ThankYouPanelistData,PanelistSlotReleasedData,PanelistMeetingRescheduledData
-from src.dtos.emails.candidate_dto import CandidateBookingLinkReminderData,CandidateInterviewReminderData,CandidateBookingLinkData,CandidateBookingConfirmationData,CandidateRescheduleNewSlotsData
-from src.modules.email_services.services import CandidateEmailService
+from src.modules.notifications.notification_dispatcher import NotificationDispatcher
+from src.modules.interviews.services.helpers.interview_reminder import build_candidate_booking_link_notification
 logger = get_logger("SlotComputationService")
 
 
@@ -120,7 +119,7 @@ class SlotComputationService:
         round_config_repo: InterviewRoundConfigsRepository,
         interview_repo: InterviewRepository,
         event_repo: InterviewEventRepository,
-        candidate_email_service: CandidateEmailService,
+        notification_dispatcher: NotificationDispatcher,
         db: AsyncSession,
     ):
         self.slots_repo = slots_repo
@@ -129,8 +128,9 @@ class SlotComputationService:
         self.event_repo = event_repo
         self.db = db
         self.jwt_service: JWTService = JWTService()
-        self.candidate_email_service: CandidateEmailService = candidate_email_service
+        self.notification_dispatcher = notification_dispatcher
         self.frontend_url = FRONTEND_URL
+        self._pending_notifications: list = []
 
     # ─── PANEL mode entry point (called after ALL panelists submit) ─────
 
@@ -420,6 +420,7 @@ class SlotComputationService:
         )
         waiting_interviews = list(result.scalars().all())
 
+        notification_payloads = []
         for interview in waiting_interviews:
             # Get candidate email from the application
             await self.db.refresh(interview, ["application"])
@@ -432,8 +433,6 @@ class SlotComputationService:
             if not candidate:
                 continue
 
-            candidate_email = candidate.email
-
             # Calculate token expiry
             remaining_seconds = (round_config.end_date - datetime.now(timezone.utc)).total_seconds()
             token_expiry_min = max(60, int(remaining_seconds // 60))  # At least 1 hour
@@ -441,32 +440,31 @@ class SlotComputationService:
             # Generate booking token
             booking_token = self.jwt_service.create_candidate_booking_token(
                 interview_id=str(interview.id),
-                candidate_email=candidate_email,
+                candidate_email=candidate.email,
                 expiration_minutes=token_expiry_min,
             )
             interview.booking_token = booking_token
             interview.booking_token_expires_at = datetime.now(timezone.utc) + timedelta(minutes=token_expiry_min)
             interview.status = InterviewStatus.READY_TO_BOOK
 
-            # Send booking email
             booking_link = f"{self.frontend_url}/interview/book?token={booking_token}"
-            try:
-                await self.candidate_email_service.send_booking_link_email(
-                    CandidateBookingLinkData(
-                    candidate_email=candidate_email,
-                    candidate_name=candidate.full_name or candidate_email,
-                    interview_round_title=round_config.title,
+            notification_payloads.append(
+                build_candidate_booking_link_notification(
+                    candidate=candidate,
+                    config=round_config,
                     booking_link=booking_link,
-                    )
+                    application_id=str(application.id),
                 )
-            except Exception as e:
-                logger.error(f"Failed to send booking email to {candidate_email}: {e}")
+            )
 
-            # await self.event_repo.create_interview_event(
-            #     interview_id=str(interview.id),
-            #     event_type="SLOT_BOOKING_LINK_SENT",
-            #     actor="system",
-            #     details={"candidate_email": candidate_email},
-            # )
+        if notification_payloads:
+            prepared = await self.notification_dispatcher.prepare_notifications(notification_payloads)
+            self._pending_notifications.extend(prepared)
 
         await self.db.flush()
+
+    async def dispatch_pending_notifications(self) -> None:
+        """Called by caller after commit to flush any notifications prepared during compute."""
+        if self._pending_notifications:
+            await self.notification_dispatcher.dispatch_notifications(self._pending_notifications)
+            self._pending_notifications = []

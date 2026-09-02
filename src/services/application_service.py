@@ -18,8 +18,9 @@ from src.modules.interviews.repositories.interview_round_configs_repository impo
 from src.modules.interviews.repositories.interview_event_repository import InterviewEventRepository
 from src.repositories.job_repository import JobRepository
 
-from src.modules.email_services.services import CandidateEmailService, PanelEmailService
+from src.modules.notifications.channels.email.services import CandidateEmailService, PanelEmailService
 from configs.env_config import FRONTEND_URL
+from src.dtos.notification_dto import Email_Template_Keys
 from src.modules.reminders.reminder_dtos import CreateReminderDTO
 from src.dtos.emails.panel_dto import PanelistReminderAvailabilityData,PanelistInterviewReminderData,PanelistBookingData,AvailableSlotsData,ThankYouPanelistData,PanelistSlotReleasedData,PanelistMeetingRescheduledData
 from src.dtos.emails.candidate_dto import CandidateBookingLinkReminderData,CandidateInterviewReminderData,CandidateBookingLinkData,CandidateBookingConfirmationData,CandidateRescheduleNewSlotsData,CandidateShortlistedData
@@ -27,7 +28,7 @@ from src.modules.reminders.model.reminder_enum import ReminderType, RecipientTyp
 from datetime import timedelta
 from src.dtos.job_settings_dto import ReminderSettingsDTO,ReschedulingSettingsDTO
 from src.modules.reminders.reminder_repository import ReminderRepository
-from workers_async.email_tasks_producer import EmailProducer,EnqueueReminderPayload
+from workers_async.producers.email_tasks_producer import EmailProducer,EnqueueReminderPayload
 from src.utils.jwt import JWTService
 import asyncio
 
@@ -111,6 +112,7 @@ class ApplicationService:
                     recipient_id=str(panelist.id),
                     recipient_type=RecipientType.PANELIST,
                     reminder_type=ReminderType.BOOKING_LINK,
+                    template_key=Email_Template_Keys.FORM_REMINDER,
                     next_run_at= datetime.now(timezone.utc) + timedelta(seconds=reminder_sec)  #! for now doing in minutes, change to hours later       
                 ))
                 
@@ -132,6 +134,7 @@ class ApplicationService:
                     recipient_id=str(application_id),
                     recipient_type=RecipientType.CANDIDATE,
                     reminder_type=ReminderType.BOOKING_LINK,
+                    template_key=Email_Template_Keys.Candidate_BOOKING_LINK_REMINDER,
                     next_run_at= datetime.now(timezone.utc) + timedelta(seconds=reminder_sec)  #! for now doing in minutes, change to hours later       
                 ))
             return reminders_payload

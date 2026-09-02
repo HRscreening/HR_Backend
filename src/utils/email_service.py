@@ -1,4 +1,4 @@
-from src.modules.email_services.base import BaseEmailService
+from src.modules.notifications.channels.email.base import BaseEmailService
 from src.services.errors.base import DomainError
 
 

@@ -7,13 +7,12 @@ from src.modules.interviews.repositories import CalendarRepository,InterviewRepo
 
 from src.repositories.application_repository import ApplicationRepository 
 
-from src.modules.email_services.services import CandidateEmailService, PanelEmailService
 from src.models.enums import InterviewStatus, PanelMode,MeetingHostType, CalendarProvider,InterviewEventType,InterviewEventActor
 from src.utils.timeline_formatter import TimelineFormatter, timeline_formatter
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from src.repositories.job_repository import JobRepository
-from workers_async.email_tasks_producer import EmailProducer,EnqueueReminderPayload
+from workers_async.factory import AsyncProducerFactory
 from src.modules.interviews.dtos.panel_dto import CreatePanelDTO
 from src.modules.interviews.dtos.interviews_dto import MeetingDetails, Reminders
 import asyncio
@@ -21,12 +20,20 @@ from src.utils.time_helper import format_interview_time, format_interview_schedu
 from src.utils.jwt import JWTService
 from src.modules.interviews.services.calendar_service import CalendarService
 from src.modules.reminders.reminder_dtos import CreateReminderDTO
+from src.dtos.notification_dto import Email_Template_Keys
 from src.dtos.emails.panel_dto import PanelistReminderAvailabilityData,PanelistInterviewReminderData,PanelistBookingData,AvailableSlotsData,ThankYouPanelistData,PanelistSlotReleasedData,PanelistMeetingRescheduledData
 from src.dtos.emails.candidate_dto import CandidateBookingLinkReminderData,CandidateInterviewReminderData,CandidateBookingLinkData,CandidateBookingConfirmationData,CandidateRescheduleNewSlotsData
 from src.modules.reminders.model.reminder_enum import ReminderType, RecipientType, EntityType,ReminderStatus
 from datetime import timedelta
 from src.dtos.job_settings_dto import ReminderSettingsDTO,ReschedulingSettingsDTO
 from src.modules.reminders.reminder_repository import ReminderRepository
+from src.modules.interviews.services.helpers.interview_reminder import (
+    build_panelist_slot_availability_notifications,
+    build_panelist_booking_confirmation_notification,
+    build_panelist_slot_released_notification,
+    build_panelist_meeting_rescheduled_notification,
+    build_candidate_booking_confirmation_notification,
+)
 from uuid import UUID
 import pdfkit
 import tempfile
@@ -48,11 +55,9 @@ class InterviewService:
         calendar_repostiory:CalendarRepository,
         calendar_service: CalendarService,
         application_repository: ApplicationRepository ,
-        panel_email_service: PanelEmailService,
-        candidate_email_service: CandidateEmailService,
         job_repository: JobRepository,
         reminder_repository: ReminderRepository,
-        email_producer: EmailProducer,
+        notification_dispatcher,
         supabase_file_handler: SupabaseFileHandler,
         db: AsyncSession,
         time_helper: TimeHelper | None = None,
@@ -66,12 +71,10 @@ class InterviewService:
         self.slots_repository = slots_repository
         self.job_repository = job_repository
         self.reminder_repository = reminder_repository
-        self.email_producer = email_producer
+        self.notification_dispatcher = notification_dispatcher
         self.jwt_service: JWTService = JWTService()
         self.calendar_service = calendar_service
         self.application_repository = application_repository
-        self.candidate_email_service: CandidateEmailService = candidate_email_service
-        self.panel_email_service: PanelEmailService = panel_email_service
         self.timeline_formatter: TimelineFormatter = timeline_formatter
         self.frontend_url = FRONTEND_URL
         self.time_helper = time_helper or TimeHelper()
@@ -281,8 +284,8 @@ class InterviewService:
             )
         return panelist
     
-    async def _enque_panelist_interview_reminders(self, panelist, panelist_reminder_settings: ReminderSettingsDTO, interview, config, meet_link, candidate_display,slot,panelist_reschedule_link):
-        """Enqueues interview reminder emails for panelist based on their reminder settings."""
+    async def _prepare_panelist_interview_reminders(self, panelist, panelist_reminder_settings: ReminderSettingsDTO, interview, config, meet_link, candidate_display,slot,panelist_reschedule_link):
+        """Phase 1: Inserts panelist interview reminders with status=PENDING. Caller must dispatch after commit."""
         reminders_payload = []
         for reminder_hr in panelist_reminder_settings.interview_reminder_sec:
             reminders_payload.append(CreateReminderDTO(
@@ -296,30 +299,19 @@ class InterviewService:
                 scheduled_start=serialize_datetime(slot.slot_start),
                 scheduled_end=serialize_datetime(slot.slot_end),
                 meet_link=meet_link,
-                reschedule_link=panelist_reschedule_link   
+                reschedule_link=panelist_reschedule_link
             ).model_dump(mode="json"),
             recipient_id=str(panelist.id),
             recipient_type=RecipientType.PANELIST,
             reminder_type=ReminderType.INTERVIEW_UPCOMING,
-                # ! set it before the slot start time minus the reminder hours, currently in minutes for testing, change to hours later
-            next_run_at= datetime.now(timezone.utc) + timedelta(seconds=reminder_hr)  #! for now doing in minutes, change to hours later       
+            template_key=Email_Template_Keys.PANELIST_INTERVIEW_REMINDER,
+            next_run_at= datetime.now(timezone.utc) + timedelta(seconds=reminder_hr)
         ))
-            
-            
-        if reminders_payload:
-            reminders = await self.reminder_repository.create_reminders(reminders_payload)
-            
-            reminder_map = {str(r.id): r for r in reminders}
-            enqueue_payloads = [EnqueueReminderPayload(reminder_id=r.id,run_at=r.next_run_at)for r in reminders]
-            enqueue_results = await self.email_producer.enqueue_reminder_email_task(enqueue_payloads)
 
-            for res in enqueue_results:
-                if res.status == "success":
-                    reminder_map[str(res.reminder_id)].worker_job_id = res.job_id 
-            
-            self.logger.info(f"Enqueued {len(enqueue_payloads)} reminder emails for panelist {panelist.email}")
-    
-    async def _enque_candidate_interview_reminders(self, candidate_email, candidate_display, candidate_reminder_settings: ReminderSettingsDTO, interview, config, meet_link, cand_reschedule_link,candidate,slot):
+        return await self.notification_dispatcher.prepare_reminders(reminders_payload)
+
+    async def _prepare_candidate_interview_reminders(self, candidate_email, candidate_display, candidate_reminder_settings: ReminderSettingsDTO, interview, config, meet_link, cand_reschedule_link,candidate,slot):
+        """Phase 1: Inserts candidate interview reminders with status=PENDING. Caller must dispatch after commit."""
         reminders_payload = []
         for reminder_hr in candidate_reminder_settings.interview_reminder_sec:
             reminders_payload.append(CreateReminderDTO(
@@ -332,28 +324,16 @@ class InterviewService:
                 scheduled_start=serialize_datetime(slot.slot_start),
                 scheduled_end=serialize_datetime(slot.slot_end),
                 meet_link=meet_link,
-                reschedule_link=cand_reschedule_link   
+                reschedule_link=cand_reschedule_link
             ).model_dump(mode="json"),
             recipient_id=str(candidate.id or candidate_email),
             recipient_type=RecipientType.CANDIDATE,
             reminder_type=ReminderType.INTERVIEW_UPCOMING,
-            # ! set it before the slot start time minus the reminder hours, currently in minutes for testing, change to hours later
-            next_run_at= datetime.now(timezone.utc) + timedelta(seconds=reminder_hr)  #! for now doing in minutes, change to hours later       
+            template_key=Email_Template_Keys.INTERVIEW_UPCOMING,
+            next_run_at= datetime.now(timezone.utc) + timedelta(seconds=reminder_hr)
         ))
-            
-            
-        if reminders_payload:
-            reminders = await self.reminder_repository.create_reminders(reminders_payload)
-            
-            reminder_map = {str(r.id): r for r in reminders}
-            enqueue_payloads = [EnqueueReminderPayload(reminder_id=r.id,run_at=r.next_run_at)for r in reminders]
-            enqueue_results = await self.email_producer.enqueue_reminder_email_task(enqueue_payloads)
 
-            for res in enqueue_results:
-                if res.status == "success":
-                    reminder_map[str(res.reminder_id)].worker_job_id = res.job_id 
-            
-            self.logger.info(f"Enqueued {len(enqueue_payloads)} reminder emails for candidate {candidate_display} ")
+        return await self.notification_dispatcher.prepare_reminders(reminders_payload)
     
           
         
@@ -373,6 +353,7 @@ class InterviewService:
                     recipient_id=str(panelist.id),
                     recipient_type=RecipientType.PANELIST,
                     reminder_type=ReminderType.BOOKING_LINK,
+                    template_key=Email_Template_Keys.FORM_REMINDER,
                     next_run_at= datetime.now(timezone.utc) + timedelta(seconds=reminder_hr)  #! for now doing in minutes, change to hours later       
                 ))
                 
@@ -548,8 +529,7 @@ class InterviewService:
             if old_reminders:
                 self.logger.info(f"Cancelling {len(old_reminders)} old booking link reminders for interview {interview.id}")
                 old_reminder_ids = [str(r.id) for r in old_reminders]
-                await self.reminder_repository.change_reminder_status_multi(old_reminder_ids,ReminderStatus.CANCELLED)
-                await self.email_producer.cancel_jobs(old_reminder_ids)
+                await self.notification_dispatcher.cancel_reminders(old_reminder_ids)
                 
 
             # Check pool exhaustion
@@ -610,54 +590,39 @@ class InterviewService:
             candidate, candidate_display = await self._resolve_candidate_display(interview)
             
             
+            prepared_reminders = []
             if panelist_reminder_settings and panelist_reminder_settings.enabled:
-                await self._enque_panelist_interview_reminders(panelist, panelist_reminder_settings, interview, config, meet_link, candidate_display,slot,panelist_reschedule_link)
-            
+                prepared_reminders.extend(await self._prepare_panelist_interview_reminders(panelist, panelist_reminder_settings, interview, config, meet_link, candidate_display,slot,panelist_reschedule_link))
+
             if candidate_reminder_settings and candidate_reminder_settings.enabled and candidate.email:
-                await self._enque_candidate_interview_reminders(candidate.email, candidate_display, candidate_reminder_settings, interview, config, meet_link, cand_reschedule_link,candidate,slot)
-            
-            
-            
-            
-            await self.db.commit()
+                prepared_reminders.extend(await self._prepare_candidate_interview_reminders(candidate.email, candidate_display, candidate_reminder_settings, interview, config, meet_link, cand_reschedule_link,candidate,slot))
 
-            # Send confirmation email (best-effort, after commit)
-
-            try:
-                
-                if candidate:
-                    await self.candidate_email_service.send_booking_confirmation_email(
-                        CandidateBookingConfirmationData(
-                        candidate_email=candidate.email,
-                        candidate_name=candidate_display,
-                        interview_round_title=round_config.title,
-                        scheduled_start=slot.slot_start,
-                        scheduled_end=slot.slot_end,
-                        meet_link=meet_link,
-                        reschedule_link=cand_reschedule_link,
-                        )
-                    )
-            except Exception as e:
-                self.logger.error(f"Failed to send booking confirmation email: {e}")
-
-            # Notify each panelist about their specific booked slot (best-effort)
-            try:
-               
-               
-                await self.panel_email_service.send_booking_confirmation_to_panelist(
-                    PanelistBookingData(
-                    panelist_email=panelist.email,
-                    panelist_name=panelist.name,
-                    candidate_name=candidate_display,
-                    interview_round_title=round_config.title,
-                    scheduled_start=slot.slot_start,
-                    scheduled_end=slot.slot_end,
+            notification_payloads = []
+            if candidate:
+                notification_payloads.append(build_candidate_booking_confirmation_notification(
+                    candidate=candidate,
+                    interview=interview,
+                    config=round_config,
+                    slot=slot,
+                    candidate_display=candidate_display,
                     meet_link=meet_link,
-                    reschedule_link=panelist_reschedule_link
-                    )
-                )
-            except Exception as e:
-                self.logger.error(f"Failed to send panelist booking notifications: {e}")
+                    cand_reschedule_link=cand_reschedule_link,
+                    application_id=str(interview.application_id),
+                ))
+            notification_payloads.append(build_panelist_booking_confirmation_notification(
+                panelist=panelist,
+                interview=interview,
+                config=round_config,
+                slot=slot,
+                candidate_display=candidate_display,
+                meet_link=meet_link,
+                panelist_reschedule_link=panelist_reschedule_link,
+            ))
+            prepared_notifications = await self.notification_dispatcher.prepare_notifications(notification_payloads)
+
+            await self.db.commit()
+            await self.notification_dispatcher.dispatch_reminders(prepared_reminders)
+            await self.notification_dispatcher.dispatch_notifications(prepared_notifications)
 
             return {
                 "status": "booked",
@@ -794,131 +759,101 @@ class InterviewService:
             
             if all_reminders:
                 self.logger.info(f"Cancelling {len(all_reminders)} old booking link reminders for interview {interview.id}")
-                old_reminders_ids = [r.id for r in all_reminders if r.reminder_type == ReminderType.BOOKING_LINK and r.status == ReminderStatus.PENDING]
-                await self.email_producer.cancel_jobs(old_reminders_ids)
-                await self.reminder_repository.change_reminder_status_multi(old_reminders_ids, ReminderStatus.CANCELLED)
+                old_reminders_ids = [str(r.id) for r in all_reminders if r.reminder_type == ReminderType.BOOKING_LINK and r.status == ReminderStatus.PENDING]
+                await self.notification_dispatcher.cancel_reminders(old_reminders_ids)
                 
-            tasks = []
-            # Send confirmation email (best-effort, after commit)
-            try:
-                if candidate:
-                    
-                   tasks.append(self.candidate_email_service.send_booking_confirmation_email(
-                       CandidateBookingConfirmationData(
-                           
-                        candidate_email=candidate.email,
-                        candidate_name=candidate.full_name or candidate.email,
-                        interview_round_title=round_config.title,
-                        scheduled_start=new_slot.slot_start,
-                        scheduled_end=new_slot.slot_end,
-                        meet_link=meet_link,
-                        reschedule_link=cand_reschedule_link,
-                       )
-                    ))
-            except Exception as e:
-                self.logger.error(f"Failed to send booking confirmation email: {e}")
+            notification_payloads = []
+            if candidate:
+                notification_payloads.append(build_candidate_booking_confirmation_notification(
+                    candidate=candidate,
+                    interview=interview,
+                    config=round_config,
+                    slot=new_slot,
+                    candidate_display=candidate_display,
+                    meet_link=meet_link,
+                    cand_reschedule_link=cand_reschedule_link,
+                    application_id=str(interview.application_id),
+                ))
 
-            # Notify each panelist about their specific booked slot (best-effort)
-            try:
-               
+            if old_panelist.email != new_panelist.email:
+                self.logger.info(f"Panelist changed from {old_panelist.email} to {new_panelist.email}, sending notifications to both panelists about the reschedule.")
 
-                if old_panelist.email != new_panelist.email:
-                    self.logger.info(f"Panelist changed from {old_panelist.email} to {new_panelist.email}, sending notifications to both panelists about the reschedule.")
-                    
-                    
-                    # Notify old panelist about the reschedule
-                    tasks.append( self.panel_email_service.send_slot_released_to_panelist(
-                        PanelistSlotReleasedData(   
-                        panelist_email=old_panelist.email,
-                        panelist_name=old_panelist.name,
-                        candidate_name=candidate_display,
-                        interview_round_title=round_config.title,
-                        old_scheduled_start=booked_slot.slot_start,
-                        old_scheduled_end=booked_slot.slot_end,
-                        )
-                    ))
-                    
-                    await self.interview_event_repository.create_interview_event(
-                        interview_id=str(interview.id),
-                        event_type=InterviewEventType.Interview_Rescheduled.value,
-                        actor=InterviewEventActor.CANDIDATE.value,
-                        summary = (
-                            f"Candidate rescheduled the interview with new panelist {new_panelist.name}. "
-                            f"\nNew schedule: {format_interview_schedule(new_slot.slot_start, new_slot.slot_end, round_config.timezone)}"
-                        ),
-                        details={
-                            "old_slot_id": str(booked_slot.id),
-                            "old_slot_start": booked_slot.slot_start.isoformat(),
-                            "old_slot_end": booked_slot.slot_end.isoformat(),
-                            "old_panelist_email": old_panelist.email,
-                            "new_slot_id": str(new_slot.id),
-                            "new_slot_start": new_slot.slot_start.isoformat(),
-                            "new_slot_end": new_slot.slot_end.isoformat(),
-                            "new_panelist_email": new_panelist.email,
-                        },
-                    )
-                    
+                notification_payloads.append(build_panelist_slot_released_notification(
+                    panelist=old_panelist,
+                    interview=interview,
+                    config=round_config,
+                    slot=booked_slot,
+                    candidate_display=candidate_display,
+                ))
 
-                               
-                    # Notify new panelist about the reschedule and new booking
-                    tasks.append( self.panel_email_service.send_booking_confirmation_to_panelist(
-                        PanelistBookingData(
-                        panelist_email=new_panelist.email,
-                        panelist_name=new_panelist.name,
-                        candidate_name=candidate_display,
-                        interview_round_title=round_config.title,
-                        scheduled_start=new_slot.slot_start,
-                        scheduled_end=new_slot.slot_end,
-                        meet_link=meet_link,
-                        reschedule_link=panelist_reschedule_link
-                        )
-                    ))
-                else:                     
-                    await self.interview_event_repository.create_interview_event(
-                        interview_id=str(interview.id),
-                        event_type=InterviewEventType.Interview_Rescheduled.value,
-                        actor=InterviewEventActor.CANDIDATE.value,
-                       summary = (
-                            f"Candidate rescheduled the interview with panelist {new_panelist.name}. "
-                            f"\nNew schedule: {format_interview_schedule(new_slot.slot_start, new_slot.slot_end, round_config.timezone)}"
-                        ),
-                        details={
-                            "old_slot_id": str(booked_slot.id),
-                            "old_slot_start": booked_slot.slot_start.isoformat(),
-                            "old_slot_end": booked_slot.slot_end.isoformat(),
-                            "new_slot_id": str(new_slot.id),
-                            "new_slot_start": new_slot.slot_start.isoformat(),
-                            "new_slot_end": new_slot.slot_end.isoformat(),
-                        },
-                    )
-                    
-                    
-                    # sending reschuduled email to the same panelist if the panelist is same for old slot and new slot because of the time change 
-                    tasks.append( self.panel_email_service.send_meeting_rescheduled_email_to_panelist(
-                        PanelistMeetingRescheduledData(
-                        panelist_email=new_panelist.email,
-                        panelist_name=new_panelist.name,
-                        candidate_name=candidate_display,
-                        interview_round_title=round_config.title,
-                        old_scheduled_start=booked_slot.slot_start,
-                        old_scheduled_end=booked_slot.slot_end,
-                        new_scheduled_start=new_slot.slot_start,
-                        new_scheduled_end=new_slot.slot_end,
-                        new_meet_link=meet_link,
-                        reschedule_link=panelist_reschedule_link
-                    )))
+                await self.interview_event_repository.create_interview_event(
+                    interview_id=str(interview.id),
+                    event_type=InterviewEventType.Interview_Rescheduled.value,
+                    actor=InterviewEventActor.CANDIDATE.value,
+                    summary = (
+                        f"Candidate rescheduled the interview with new panelist {new_panelist.name}. "
+                        f"\nNew schedule: {format_interview_schedule(new_slot.slot_start, new_slot.slot_end, round_config.timezone)}"
+                    ),
+                    details={
+                        "old_slot_id": str(booked_slot.id),
+                        "old_slot_start": booked_slot.slot_start.isoformat(),
+                        "old_slot_end": booked_slot.slot_end.isoformat(),
+                        "old_panelist_email": old_panelist.email,
+                        "new_slot_id": str(new_slot.id),
+                        "new_slot_start": new_slot.slot_start.isoformat(),
+                        "new_slot_end": new_slot.slot_end.isoformat(),
+                        "new_panelist_email": new_panelist.email,
+                    },
+                )
 
-            except Exception as e:
-                self.logger.error(f"Failed to send panelist booking notifications: {e}")
-                
-                        
+                notification_payloads.append(build_panelist_booking_confirmation_notification(
+                    panelist=new_panelist,
+                    interview=interview,
+                    config=round_config,
+                    slot=new_slot,
+                    candidate_display=candidate_display,
+                    meet_link=meet_link,
+                    panelist_reschedule_link=panelist_reschedule_link,
+                ))
+            else:
+                await self.interview_event_repository.create_interview_event(
+                    interview_id=str(interview.id),
+                    event_type=InterviewEventType.Interview_Rescheduled.value,
+                    actor=InterviewEventActor.CANDIDATE.value,
+                    summary = (
+                        f"Candidate rescheduled the interview with panelist {new_panelist.name}. "
+                        f"\nNew schedule: {format_interview_schedule(new_slot.slot_start, new_slot.slot_end, round_config.timezone)}"
+                    ),
+                    details={
+                        "old_slot_id": str(booked_slot.id),
+                        "old_slot_start": booked_slot.slot_start.isoformat(),
+                        "old_slot_end": booked_slot.slot_end.isoformat(),
+                        "new_slot_id": str(new_slot.id),
+                        "new_slot_start": new_slot.slot_start.isoformat(),
+                        "new_slot_end": new_slot.slot_end.isoformat(),
+                    },
+                )
 
+                notification_payloads.append(build_panelist_meeting_rescheduled_notification(
+                    panelist=new_panelist,
+                    interview=interview,
+                    config=round_config,
+                    old_slot=booked_slot,
+                    new_slot=new_slot,
+                    candidate_display=candidate_display,
+                    meet_link=meet_link,
+                    panelist_reschedule_link=panelist_reschedule_link,
+                ))
+
+            prepared_notifications = await self.notification_dispatcher.prepare_notifications(notification_payloads)
+
+            prepared_reminders = []
             if candidate_reminder_settings and candidate_reminder_settings.enabled and candidate.email:
-                await self._enque_candidate_interview_reminders(candidate.email, candidate_display, candidate_reminder_settings, interview, round_config, meet_link, cand_reschedule_link,candidate,new_slot)
-            
-                
+                prepared_reminders.extend(await self._prepare_candidate_interview_reminders(candidate.email, candidate_display, candidate_reminder_settings, interview, round_config, meet_link, cand_reschedule_link,candidate,new_slot))
+
+
             if panelist_reminder_settings and panelist_reminder_settings.enabled:
-                    await self._enque_panelist_interview_reminders(new_panelist, panelist_reminder_settings, interview, round_config, meet_link, candidate_display,new_slot,panelist_reschedule_link)
+                prepared_reminders.extend(await self._prepare_panelist_interview_reminders(new_panelist, panelist_reminder_settings, interview, round_config, meet_link, candidate_display,new_slot,panelist_reschedule_link))
 
             if old_calendar_event_id:
             # Always delete the old calendar event to prevent confusion
@@ -926,14 +861,10 @@ class InterviewService:
                     await self._delete_calendar_event(old_calendar_event_id,old_panelist.email if old_panelist else None, provider=round_config.meeting_host_type)
                 except Exception as e:
                     self.logger.error(f"Failed to delete old calendar event with id {old_calendar_event_id}: {e}")
-            
+
             await self.db.commit()
-            
-            if tasks:
-                try:
-                    await asyncio.gather(*tasks, return_exceptions=True)
-                except Exception as e:
-                    self.logger.error(f"Error sending reschedule notification emails: {e}")
+            await self.notification_dispatcher.dispatch_reminders(prepared_reminders)
+            await self.notification_dispatcher.dispatch_notifications(prepared_notifications)
 
 
 
@@ -1009,40 +940,21 @@ class InterviewService:
             
             panelist_reminder_settings = ReminderSettingsDTO.model_validate(job_settings.panel_reminders) if job_settings and job_settings.panel_reminders else None
             
+            prepared_reminders = []
             if panelist_reminder_settings and panelist_reminder_settings.enabled and panelist_reminder_settings.form_reminder_hours:
-                reminders_payload = await self._create_form_reminder_payload_for_panelist(panelists, config, panelist_reminder_settings) if panelist_reminder_settings and panelist_reminder_settings.enabled else []
-                
-                if reminders_payload:
-                    reminders = await self.reminder_repository.create_reminders(reminders_payload)
-                    
-                    reminder_map = {str(r.id): r for r in reminders}
-                    enqueue_payloads = [EnqueueReminderPayload(reminder_id=r.id,run_at=r.next_run_at)for r in reminders]
-                    enqueue_results = await self.email_producer.enqueue_reminder_email_task(enqueue_payloads)
+                reminders_payload = self._create_form_reminder_payload_for_panelist(panelists, config, panelist_reminder_settings)
+                prepared_reminders = await self.notification_dispatcher.prepare_reminders(reminders_payload)
 
-                    for res in enqueue_results:
-                        if res.status == "success":
-                            reminder_map[str(res.reminder_id)].worker_job_id = res.job_id 
-            
+            notification_payloads = build_panelist_slot_availability_notifications(
+                panelists, config, self.frontend_url
+            )
+            prepared_notifications = await self.notification_dispatcher.prepare_notifications(notification_payloads)
+
             await self.db.commit()
-            
-                
-            # TODO: Enque email sending task if many panelists to avoid delays in response
-            tasks = [
-                self.panel_email_service.send_slot_availability_email(
-                    AvailableSlotsData(   
-                    panelist_email=panelist.email,
-                    panelist_name=panelist.name,
-                    interview_round_title=round_config.title,
-                    form_link=f"{self.frontend_url}/panelist/availability?token={panelist.availability_token}",
-                    )
-                )
-                for panelist in panelists
-            ]
+            await self.notification_dispatcher.dispatch_reminders(prepared_reminders)
+            await self.notification_dispatcher.dispatch_notifications(prepared_notifications)
 
-            await asyncio.gather(*tasks, return_exceptions=True)
-
-            
-            return 
+            return
         except DomainError:
             raise
 

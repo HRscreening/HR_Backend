@@ -16,6 +16,7 @@ from src.models.document_model import Document
 from src.models.waitlist_model import Waitlist
 from src.modules.interviews.models import * 
 from src.modules.reminders.model.reminder_model import Reminder
+from src.modules.notifications.model.notification_model import Notification
 __all__ = [
     "User",
     "Organization",
@@ -39,5 +40,6 @@ __all__ = [
     "Interview_Slot",
     "CalendarConnection",
     "Waitlist",
-    "Reminder"
+    "Reminder",
+    "Notification"
 ]

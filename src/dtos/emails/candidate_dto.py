@@ -12,8 +12,8 @@ class CandidateBookingConfirmationData(BaseModel):
     candidate_email: EmailStr
     candidate_name: str
     interview_round_title: str
-    scheduled_start: datetime
-    scheduled_end: datetime
+    scheduled_start: datetime | str
+    scheduled_end: datetime | str
     meet_link: Optional[str] = None
     reschedule_link: Optional[str] = None
 
@@ -21,8 +21,8 @@ class CandidateRescheduleNewSlotsData(BaseModel):
     candidate_email: EmailStr
     candidate_name: str
     interview_round_title: str
-    scheduled_start: datetime
-    scheduled_end: datetime
+    scheduled_start: datetime | str
+    scheduled_end: datetime | str
     reschedule_link: str
     reason: Optional[str] = None
 
@@ -36,8 +36,8 @@ class CandidateInterviewReminderData(BaseModel):
     candidate_email: EmailStr
     candidate_name: str
     interview_round_title: str
-    scheduled_start: datetime
-    scheduled_end: datetime
+    scheduled_start: datetime | str
+    scheduled_end: datetime | str
     meet_link: Optional[str] = None
     reschedule_link: Optional[str] = None
 

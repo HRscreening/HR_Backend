@@ -1,11 +1,11 @@
-import os
 from logging import Logger
 from arq import Retry
 from workers_async.context_manager import job_context
-from src.modules.reminders.reminder_service import ReminderWorkerService
+from src.modules.notifications.services.notification_worker import NotificationWorker
+from src.services.errors.base import DomainError
+
 
 async def send_reminder_email_worker(ctx, reminder_id: str):
-
     logger: Logger = ctx["logger"]
 
     job_try = ctx.get("job_try", 1)
@@ -14,16 +14,17 @@ async def send_reminder_email_worker(ctx, reminder_id: str):
     logger.info(f"Processing reminder {reminder_id} | try={job_try}/{max_tries}")
 
     async with job_context(ctx) as deps:
-        service : ReminderWorkerService = deps["reminder_worker_service"]
+        worker: NotificationWorker = deps["notification_worker"]
 
         try:
-            await service.send_reminder_email(reminder_id)
-
-        except Exception as e:
+            await worker.send_reminder_notification(reminder_id)
+        except DomainError as e:
+            logger.warning(f"Domain error for reminder {reminder_id}: {e}")
+            return
+        except Exception:
             logger.exception(f"Reminder failed {reminder_id}")
-
             if job_try < max_tries:
-                raise Retry(defer=job_try * 10)  # backoff
-
-            # final failure → mark in DB
-            await service.mark_failed(reminder_id, str(e))
+                raise Retry(defer=job_try * 10)
+        finally:
+            await deps["db"].commit()
+            logger.info(f"Database session committed for reminder {reminder_id}")

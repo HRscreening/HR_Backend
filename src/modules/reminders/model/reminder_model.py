@@ -16,7 +16,8 @@ class Reminder(Base):
     entity_id = Column(String, nullable=False)
 
     reminder_type = Column(SQLEnum(ReminderType, name="reminder_type_enum",values_callable=lambda obj: [e.value for e in obj],), nullable=False)
-
+    template_key = Column(String, nullable=False)   # template key to identify which email/sms template to use for the reminder notification. This should correspond to the keys defined in the template keys enum in the notification_dto.py file.
+    
     recipient_type = Column(SQLEnum(RecipientType, name="recipient_type_enum",values_callable=lambda obj: [e.value for e in obj],), nullable=False)
     recipient_id = Column(String, nullable=False)
 
@@ -29,6 +30,10 @@ class Reminder(Base):
 
     #TODO: can be removed as keeping the worker_job_id = reminder_id for now for easy tracking and management of reminders. Can be used in future for grouping of reminders if needed.
     worker_job_id = Column(String, nullable=True)
+
+    attempt_count = Column(Integer, default=0, nullable=False)
+    next_retry_at = Column(DateTime(timezone=True), nullable=True)
+    error_log = Column(JSONB, nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

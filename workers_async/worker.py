@@ -2,10 +2,12 @@
 
 import asyncio
 from workers_async.jobs.send_reminder_email_worker import send_reminder_email_worker
+from workers_async.jobs.send_notification_worker import send_notification_worker
 from workers_async.jobs.assessment_workers import transcript_analyzer_worker, request_panelist_worker, interview_post_processing_worker,interview_extraction_and_post_processsing_worker
+from workers_async.jobs.reconciler_worker import reconcile_notifications
 from workers_async.dependency import on_startup, on_shutdown
 from workers_async.connection import redis_settings
-from arq import func, run_worker
+from arq import func, cron, run_worker
 
 
 class WorkerSettings:
@@ -22,8 +24,14 @@ class WorkerSettings:
         func(request_panelist_worker, timeout=60*2, max_tries=3),
         func(interview_extraction_and_post_processsing_worker, timeout=60*10, max_tries=5),
         func(send_reminder_email_worker, timeout=60*2, max_tries=3),
-        func(interview_post_processing_worker, timeout=60*5, max_tries=3)
+        func(send_notification_worker, timeout=60*2, max_tries=3),
+        func(interview_post_processing_worker, timeout=60*5, max_tries=3),
     ]
+
+    cron_jobs = [
+        cron(reconcile_notifications, minute=set(range(0, 60, 5)), run_at_startup=False),
+    ]
+
 if __name__ == "__main__":
     print("Starting Assessment Worker...")
     asyncio.run(run_worker(WorkerSettings))

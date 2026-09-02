@@ -1,4 +1,4 @@
-from src.modules.email_services.base import BaseEmailService
+from src.modules.notifications.channels.email.base import BaseEmailService
 
 async def send_otp_email(receiver_email: str, otp: int) -> int:
     """Send OTP to the given email using Resend."""

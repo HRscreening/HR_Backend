@@ -642,6 +642,7 @@ def pre_screen_and_score_service_sync(
         # Extract candidate info
         from src.pipelines.extract_candidate_info import extract_candidate_info_sync
         candidate_infos: dict[str, CandidateInfoSchema] = {}
+        # !Sequential candidate info extraction — one blocking Gemini call per resume in a for-loop
         for r in selected_resume_objs:
             try:
                 ci = extract_candidate_info_sync(r.parsed_text or "")

@@ -23,6 +23,7 @@ class RecipientType(str, Enum):
 
 class ReminderStatus(str, Enum):
     PENDING = "Pending"
+    QUEUED = "Queued"
     COMPLETED = "Completed"
     CANCELLED = "Cancelled"
     FAILED = "Failed"

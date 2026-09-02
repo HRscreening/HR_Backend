@@ -6,7 +6,7 @@ from configs.env_config import SENDER_EMAIL, RESEND_API_KEY
 from src.services.errors.base import DomainError
 from configs.log_config import get_logger
 from abc import ABC, abstractmethod
-
+from datetime import datetime
 # Configure Resend
 resend.api_key = RESEND_API_KEY
 
@@ -23,6 +23,11 @@ class EmailTemplate(ABC):
     @abstractmethod
     def get_recipient(self) -> str:
         pass
+    
+    @staticmethod
+    def deserialize_datetime(dt_str: str)-> datetime:
+        from src.utils.time_helper import deserialize_datetime
+        return deserialize_datetime(dt_str)
 
 
 class BaseEmailService:

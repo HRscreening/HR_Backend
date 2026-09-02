@@ -19,7 +19,7 @@ from src.modules.interviews.repositories.interview_assessment_repository import 
 from src.modules.interviews.repositories.panelist_repository import PanelistRepository
 
 from src.modules.reminders.reminder_repository import ReminderRepository
-from src.dependency.services.helpers.helper_services import *
+from src.modules.notifications.repositories.notification_repository import NotificationRepository
 
 from src.repositories.jd_repository import JDRepository
 from src.repositories.form_config_repository import FormConfigRepository
@@ -83,3 +83,6 @@ def get_form_config_repository(db: AsyncSession = Depends(get_db)):
 
 def get_interview_assessment_repository(db: AsyncSession = Depends(get_db)):
     return InterviewAssessmentRepository(db)
+
+def get_notification_repository(db: AsyncSession = Depends(get_db)):
+    return NotificationRepository(db)

@@ -712,6 +712,7 @@ class JobService:
             # Upload every file to Supabase NOW, before returning or enqueuing.
             # Workers download from Supabase — no dependency on local disk state after this point.
             storage_paths: list[str] = []
+            #! N files = N blocking round-trips before returning 202
             for local_path in saved_paths:
                 filename = os.path.basename(local_path)
                 storage_path = save_file_from_path(
@@ -743,6 +744,8 @@ class JobService:
                 job.id,
                 len(storage_paths),
             )
+            
+            # ! Critical to enqueue the background task AFTER committing the batch to ensure the worker can see the batch record when it starts processing.
             background_tasks.add_task(
                 enqueue_resumes_parsing,
                 storage_paths=storage_paths,

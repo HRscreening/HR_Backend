@@ -1,5 +1,5 @@
 from fastapi import Depends
-from src.modules.email_services.services import *
+from src.modules.notifications.channels.email.services import *
 
 
 def get_candidate_email_service():

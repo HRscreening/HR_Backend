@@ -13,13 +13,12 @@ from datetime import datetime, timezone, timedelta
 from configs.env_config import FRONTEND_URL,COMPANY_EMAIL,FireFlies_Bot
 from src.repositories.application_repository import ApplicationRepository
 
-from src.modules.email_services.services import PanelEmailService, CandidateEmailService
 from collections import defaultdict
 
 from src.modules.interviews.dtos.interviews_dto import MeetingDetails, Reminders
 from src.modules.interviews.dtos.panel_dto import AvailableSlot,EditSlotsPayload,RescheduleSlotsPayload
 from src.repositories.job_repository import JobRepository
-from workers_async.email_tasks_producer import EmailProducer,EnqueueReminderPayload
+from workers_async.factory import AsyncProducerFactory
 from src.modules.reminders.reminder_repository import ReminderRepository
 
 from datetime import datetime, timezone, date
@@ -27,12 +26,23 @@ from uuid import UUID
 from typing import Optional
 from src.utils.time_helper import format_interview_time, format_interview_schedule,serialize_datetime, time_helper
 from src.utils.jwt import JWTService
-import asyncio
 from src.dtos.job_settings_dto import ReminderSettingsDTO,ReschedulingSettingsDTO
 from src.modules.reminders.reminder_dtos import CreateReminderDTO
 from src.dtos.emails.panel_dto import PanelistReminderAvailabilityData,PanelistInterviewReminderData,PanelistBookingData,AvailableSlotsData,ThankYouPanelistData,PanelistSlotReleasedData,PanelistMeetingRescheduledData
-from src.dtos.emails.candidate_dto import CandidateBookingLinkReminderData,CandidateInterviewReminderData,CandidateBookingLinkData,CandidateBookingConfirmationData,CandidateRescheduleNewSlotsData
+from src.dtos.emails.candidate_dto import CandidateBookingLinkReminderData,CandidateInterviewReminderData,CandidateBookingLinkData
 from src.modules.reminders.model.reminder_enum import ReminderType, RecipientType, EntityType,ReminderStatus
+from src.dtos.notification_dto import CreateNotificationDTO, Email_Template_Keys
+from src.modules.notifications.model.notification_enum import (
+    EntityType as NotificationEntityType,
+    RecipientType as NotificationRecipientType,
+    NotificationChannel,
+)
+from src.modules.interviews.services.helpers.interview_reminder import (
+    build_panelist_thanks_for_availability_notification,
+    build_candidate_booking_link_notification,
+    build_candidate_reschedule_notification,
+)
+from src.modules.notifications.notification_dispatcher import NotificationDispatcher
 from datetime import timedelta
 from zoneinfo import ZoneInfo
 # Most of the methods needs optimization,but basic functionality is ready. Will iterate and optimize in next passes. 
@@ -44,7 +54,7 @@ def get_current_utc_time():
 
 
 class PanelistService:
-    def __init__(self, 
+    def __init__(self,
         interview_round_config_repository:InterviewRoundConfigsRepository,
         interview_event_repository:InterviewEventRepository,
         interview_repository:InterviewRepository,
@@ -53,18 +63,15 @@ class PanelistService:
         calendar_repository: CalendarRepository,
         application_repository:ApplicationRepository,
         calendar_service: CalendarService,
-        panel_email_service: PanelEmailService,
-        candidate_email_service: CandidateEmailService,
         job_repository: JobRepository,
-        email_producer: EmailProducer,
         reminder_repository: ReminderRepository,
-
+        notification_dispatcher : NotificationDispatcher,
         db: AsyncSession):
-        
-        
+
+
         self.db = db
         self.frontend_url = FRONTEND_URL
-        self.interview_event_repository = interview_event_repository 
+        self.interview_event_repository = interview_event_repository
         self.interview_round_config_repository = interview_round_config_repository
         self.interview_repository = interview_repository
         self.panelist_repository = panelist_repository
@@ -72,13 +79,11 @@ class PanelistService:
         self.calendar_repository = calendar_repository
         self.application_repository = application_repository
         self.calendar_service = calendar_service
-        self.panel_email_service : PanelEmailService = panel_email_service
-        self.candidate_email_service : CandidateEmailService = candidate_email_service
         self.jwt_service : JWTService = JWTService()
         self.job_repository = job_repository
-        self.email_producer = email_producer
         self.reminder_repository = reminder_repository
-        self.logger = get_logger("PanelistService") 
+        self.notification_dispatcher = notification_dispatcher
+        self.logger = get_logger("PanelistService")
     
     def _validate_and_extract_token_payload(
         self,
@@ -159,7 +164,7 @@ class PanelistService:
                 round_config_repo=self.interview_round_config_repository,
                 interview_repo=self.interview_repository,
                 event_repo=self.interview_event_repository,
-                candidate_email_service=self.candidate_email_service,
+                notification_dispatcher=self.notification_dispatcher,
                 db=self.db,
             )
 
@@ -222,6 +227,7 @@ class PanelistService:
                     recipient_id=str(cand["id"]),
                     recipient_type=RecipientType.CANDIDATE,
                     reminder_type=ReminderType.BOOKING_LINK,
+                    template_key=Email_Template_Keys.Candidate_BOOKING_LINK_REMINDER,
                     next_run_at= datetime.now(timezone.utc) + timedelta(minutes=reminder_sec)  #! for now doing in minutes, change to hours later       
                 ))
         return reminders_payload
@@ -238,8 +244,8 @@ class PanelistService:
 
 
        
-    async def _enque_panelist_interview_reminders(self, panelist, panelist_reminder_settings: ReminderSettingsDTO, interview, config, meet_link, candidate_display,slot,panelist_reschedule_link):
-        """Enqueues interview reminder emails for panelist based on their reminder settings."""
+    async def _prepare_panelist_interview_reminders(self, panelist, panelist_reminder_settings: ReminderSettingsDTO, interview, config, meet_link, candidate_display,slot,panelist_reschedule_link):
+        """Phase 1: Inserts panelist interview reminders with status=PENDING. Caller must dispatch after commit."""
         reminders_payload = []
         for reminder_sec in panelist_reminder_settings.interview_reminder_sec:
             reminders_payload.append(CreateReminderDTO(
@@ -253,24 +259,19 @@ class PanelistService:
                 scheduled_start=serialize_datetime(slot.slot_start),
                 scheduled_end=serialize_datetime(slot.slot_end),
                 meet_link=meet_link,
-                reschedule_link=panelist_reschedule_link   
+                reschedule_link=panelist_reschedule_link
             ).model_dump(mode="json"),
             recipient_id=str(panelist.id),
             recipient_type=RecipientType.PANELIST,
             reminder_type=ReminderType.INTERVIEW_UPCOMING,
-                # ! set it before the slot start time minus the reminder hours, currently in minutes for testing, change to hours later
-            next_run_at= datetime.now(timezone.utc) + timedelta(seconds=reminder_sec)  #! for now doing in minutes, change to hours later       
+            template_key=Email_Template_Keys.PANELIST_INTERVIEW_REMINDER,
+            next_run_at= datetime.now(timezone.utc) + timedelta(seconds=reminder_sec)
         ))
-            
-            
-        if reminders_payload:
-            reminders = await self.reminder_repository.create_reminders(reminders_payload)
-            enqueue_payloads = [EnqueueReminderPayload(reminder_id=r.id,run_at=r.next_run_at)for r in reminders]
-            enqueue_results = await self.email_producer.enqueue_reminder_email_task(enqueue_payloads)
-            
-            self.logger.info(f"Enqueued {len(enqueue_payloads)} reminder emails for panelist {panelist.email}")
-    
-    async def _enque_candidate_interview_reminders(self, candidate_email, candidate_display, candidate_reminder_settings: ReminderSettingsDTO, interview, config, meet_link, cand_reschedule_link,candidate,slot):
+
+        return await self.notification_dispatcher.prepare_reminders(reminders_payload)
+
+    async def _prepare_candidate_interview_reminders(self, candidate_email, candidate_display, candidate_reminder_settings: ReminderSettingsDTO, interview, config, meet_link, cand_reschedule_link,candidate,slot):
+        """Phase 1: Inserts candidate interview reminders with status=PENDING. Caller must dispatch after commit."""
         reminders_payload = []
         for reminder_sec in candidate_reminder_settings.interview_reminder_sec:
             reminders_payload.append(CreateReminderDTO(
@@ -283,22 +284,16 @@ class PanelistService:
                 scheduled_start=serialize_datetime(slot.slot_start),
                 scheduled_end=serialize_datetime(slot.slot_end),
                 meet_link=meet_link,
-                reschedule_link=cand_reschedule_link   
+                reschedule_link=cand_reschedule_link
             ).model_dump(mode="json"),
             recipient_id=str(candidate.id or candidate_email),
             recipient_type=RecipientType.CANDIDATE,
             reminder_type=ReminderType.INTERVIEW_UPCOMING,
-            # ! set it before the slot start time minus the reminder hours, currently in minutes for testing, change to hours later
-            next_run_at= datetime.now(timezone.utc) + timedelta(seconds=reminder_sec)  #! for now doing in minutes, change to hours later       
+            template_key=Email_Template_Keys.INTERVIEW_UPCOMING,
+            next_run_at= datetime.now(timezone.utc) + timedelta(seconds=reminder_sec)
         ))
-            
-            
-        if reminders_payload:
-            reminders = await self.reminder_repository.create_reminders(reminders_payload)
-            enqueue_payloads = [EnqueueReminderPayload(reminder_id=r.id,run_at=r.next_run_at)for r in reminders]
-            enqueue_results = await self.email_producer.enqueue_reminder_email_task(enqueue_payloads)
-            
-            self.logger.info(f"Enqueued {len(enqueue_payloads)} reminder emails for candidate {candidate_display} ")
+
+        return await self.notification_dispatcher.prepare_reminders(reminders_payload)
     
     
             
@@ -590,43 +585,40 @@ class PanelistService:
             
             if old_reminders:
                 old_reminder_ids = [str(r.id) for r in old_reminders]
-                await self.email_producer.cancel_jobs(old_reminder_ids)
-                await self.reminder_repository.change_reminder_status_multi(old_reminder_ids, ReminderStatus.CANCELLED)
-                
-                
-            if reminders_payload:
-                reminders = await self.reminder_repository.create_reminders(reminders_payload)
-                enqueue_payloads = [EnqueueReminderPayload(reminder_id=r.id,run_at=r.next_run_at)for r in reminders]
-                enqueue_results = await self.email_producer.enqueue_reminder_email_task(enqueue_payloads)
-                        
-                self.logger.info(f"Enqueued {len(enqueue_payloads)} reminder emails for candidates for round_config {round_config_id}")
-                
-            
-            self.logger.info(f"Sending booking links to {len(cand_interview_data)} waiting candidates for round_config {round_config_id}")
-            await self.db.commit()
-            
-            await self.panel_email_service.send_thanks_for_submitting_availability_email(
-                ThankYouPanelistData(
-                    
-                panelist_email=panelist.email,
-                panelist_name=panelist.name,
-                interview_round_title=round_config.title,
-                edit_slots_link=f"{self.frontend_url}/panelist/edit-slots?token={edit_token}",
-                validity_period=f"{round_config.end_date.astimezone().strftime('%Y-%m-%d %H:%M %Z')}",
-                )
-            )
-            
-            # Notify Waiting Candidates
+                await self.notification_dispatcher.cancel_reminders(old_reminder_ids)
 
-            await asyncio.gather(*[
-                self.candidate_email_service.send_booking_link_email(
-                    CandidateBookingLinkData(
-                    candidate_email=data["candidate_email"],
-                    candidate_name=data["candidate_full_name"],
-                    interview_round_title=round_config.title,
-                    booking_link=f"{self.frontend_url}/interview/book?token={data["booking_token"]}",
-                )) for data in cand_interview_data
-            ])
+            prepared_reminders = await self.notification_dispatcher.prepare_reminders(reminders_payload or [])
+
+            notification_payloads = [
+                build_panelist_thanks_for_availability_notification(
+                    panelist=panelist,
+                    config=round_config,
+                    edit_slots_link=f"{self.frontend_url}/panelist/edit-slots?token={edit_token}",
+                    validity_period=f"{round_config.end_date.astimezone().strftime('%Y-%m-%d %H:%M %Z')}",
+                )
+            ]
+            for data in cand_interview_data:
+                notification_payloads.append(CreateNotificationDTO(
+                    entity_type=NotificationEntityType.INTERVIEW,
+                    entity_id=str(data["id"]),
+                    recipient_type=NotificationRecipientType.CANDIDATE,
+                    recipient_id=str(data["application_id"]),
+                    channel=NotificationChannel.EMAIL,
+                    template_key=Email_Template_Keys.Candidate_BOOKING_LINK,
+                    payload=CandidateBookingLinkData(
+                        candidate_email=data["candidate_email"],
+                        candidate_name=data["candidate_full_name"],
+                        interview_round_title=round_config.title,
+                        booking_link=f"{self.frontend_url}/interview/book?token={data['booking_token']}",
+                    ).model_dump(),
+                ))
+            prepared_notifications = await self.notification_dispatcher.prepare_notifications(notification_payloads)
+
+            self.logger.info(f"Enqueued booking links to {len(cand_interview_data)} waiting candidates for round_config {round_config_id}")
+            await self.db.commit()
+            await self.notification_dispatcher.dispatch_reminders(prepared_reminders)
+            await self.notification_dispatcher.dispatch_notifications(prepared_notifications)
+            await slot_computation_service.dispatch_pending_notifications()
             
 
             
@@ -733,23 +725,29 @@ class PanelistService:
             
             if old_reminders:
                 old_reminder_ids = [str(r.id) for r in old_reminders]
-                await self.email_producer.cancel_jobs(old_reminder_ids)
-                await self.reminder_repository.change_reminder_status_multi(old_reminder_ids, ReminderStatus.CANCELLED)
-                
-            
+                await self.notification_dispatcher.cancel_reminders(old_reminder_ids)
+
+            notification_payloads = [
+                CreateNotificationDTO(
+                    entity_type=NotificationEntityType.INTERVIEW,
+                    entity_id=str(data["id"]),
+                    recipient_type=NotificationRecipientType.CANDIDATE,
+                    recipient_id=str(data["application_id"]),
+                    channel=NotificationChannel.EMAIL,
+                    template_key=Email_Template_Keys.Candidate_BOOKING_LINK,
+                    payload=CandidateBookingLinkData(
+                        candidate_email=data["candidate_email"],
+                        candidate_name=data["candidate_full_name"],
+                        interview_round_title=round_config.title,
+                        booking_link=f"{self.frontend_url}/interview/book?token={data['booking_token']}",
+                    ).model_dump(),
+                )
+                for data in cand_interview_data
+            ]
+            prepared_notifications = await self.notification_dispatcher.prepare_notifications(notification_payloads)
+
             await self.db.commit()
-            
-            
-            await asyncio.gather(*[
-                self.candidate_email_service.send_booking_link_email(
-                    CandidateBookingLinkData(
-                    candidate_email=data["candidate_email"],
-                    candidate_name=data["candidate_full_name"],
-                    interview_round_title=round_config.title,
-                    booking_link=f"{self.frontend_url}/interview/book?token={data["booking_token"]}",
-                )) for data in cand_interview_data
-            ])
-            
+            await self.notification_dispatcher.dispatch_notifications(prepared_notifications)
 
         except DomainError:
             await self.db.rollback()
@@ -850,12 +848,10 @@ class PanelistService:
             if existing_reminders:
                 existing_reminder_ids = [str(r.id) for r in existing_reminders]
                 try:
-                    await self.email_producer.cancel_jobs(existing_reminder_ids)
+                    await self.notification_dispatcher.cancel_reminders(existing_reminder_ids)
                 except Exception as e:
                     self.logger.error(f"Error cancelling reminder email jobs for interview {interview.id}: {str(e)}")
                     raise DomainError("An error occurred while rescheduling the interview. Please try again later.")
-                
-                await self.reminder_repository.change_reminder_status_multi(existing_reminder_ids, ReminderStatus.CANCELLED)
             
             
             
@@ -991,8 +987,9 @@ class PanelistService:
                 expiration_minutes=remaining_time
             )
             
+            prepared_reminders = []
             if panelist_reminder_settings and panelist_reminder_settings.enabled:
-                await self._enque_panelist_interview_reminders(
+                prepared_reminders.extend(await self._prepare_panelist_interview_reminders(
                     panelist=panelist,
                     panelist_reminder_settings=panelist_reminder_settings,
                     interview=interview,
@@ -1001,10 +998,10 @@ class PanelistService:
                     candidate_display=candidate.full_name,
                     slot=payload.reschedule_slot,
                     panelist_reschedule_link=f"{self.frontend_url}/panelist/reschedule?token={panelist_reschedule_token}"
-                )
-                
+                ))
+
             if candidate_reminder_settings and candidate_reminder_settings.enabled:
-                await self._enque_candidate_interview_reminders(
+                prepared_reminders.extend(await self._prepare_candidate_interview_reminders(
                     candidate_email=candidate.email,
                     candidate_display=candidate.full_name,
                     candidate_reminder_settings=candidate_reminder_settings,
@@ -1014,33 +1011,34 @@ class PanelistService:
                     cand_reschedule_link=f"{self.frontend_url}/interview/reschedule?token={reschedule_token}",
                     candidate=candidate,
                     slot=payload.reschedule_slot
-                    
+
+                ))
+
+            prepared_notifications = await self.notification_dispatcher.prepare_notifications([
+                build_candidate_reschedule_notification(
+                    candidate=candidate,
+                    interview=interview,
+                    config=round_config,
+                    new_slot=payload.reschedule_slot,
+                    candidate_display=candidate.full_name,
+                    cand_reschedule_link=f"{self.frontend_url}/interview/reschedule?token={reschedule_token}",
+                    application_id=str(interview.application_id),
+                    reason="The panelist has rescheduled the interview.",
                 )
-                
+            ])
+
             await self.db.commit()
-            
+            await self.notification_dispatcher.dispatch_reminders(prepared_reminders)
+            await self.notification_dispatcher.dispatch_notifications(prepared_notifications)
+
             await self._delete_calendar_event(
                 calendar_event_id=old_calendar_event_id,
                 host_email=panelist.email,
                 refresh_token=calendar_refresh_token
             )
-            
+
             # TODO: stop candidate receiving reminders for old slot
 
-            await self.candidate_email_service.send_interview_rescheduled_email(
-                CandidateRescheduleNewSlotsData(
-                    
-                candidate_email=candidate.email,
-                candidate_name=candidate.full_name,
-                interview_round_title=round_config.title,
-                reschedule_link=f"{self.frontend_url}/interview/reschedule?token={reschedule_token}",
-                scheduled_start=current_slot.slot_start,
-                scheduled_end=current_slot.slot_end,
-                reason="The panelist has rescheduled the interview.",
-                )
-            )
-        
-            
             return {
                 "message": "Interview rescheduled successfully. The candidate has been notified to pick a new slot."
             }

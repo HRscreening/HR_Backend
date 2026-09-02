@@ -2,14 +2,17 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, update, delete
 from sqlalchemy.orm import selectinload,  aliased
-
+from datetime import datetime, timezone
 
 from typing import Optional, List
 
-from src.modules.reminders.model.reminder_model import Reminder 
-from src.modules.reminders.model.reminder_enum import ReminderType, ReminderStatus,RecipientType,EntityType 
+from src.modules.reminders.model.reminder_model import Reminder
+from src.modules.reminders.model.reminder_enum import ReminderType, ReminderStatus,RecipientType,EntityType
 from configs.log_config import get_logger
 from src.modules.reminders.reminder_dtos import CreateReminderDTO
+
+
+
 class ReminderRepository:
     def __init__(self, db: AsyncSession):
         self.db = db
@@ -26,6 +29,7 @@ class ReminderRepository:
                 recipient_id=dto.recipient_id,
                 recipient_type=dto.recipient_type,
                 reminder_type=dto.reminder_type,
+                template_key=dto.template_key,
                 next_run_at=dto.next_run_at,
                 worker_job_id=dto.worker_job_id,
                 payload=dto.payload,
@@ -134,7 +138,7 @@ class ReminderRepository:
 
         result = await self.db.execute(
             update(Reminder)
-            .where(Reminder.id.in_(reminder_ids))  
+            .where(Reminder.id.in_(reminder_ids))
             .values(status=new_status)
             .returning(Reminder)
         )
@@ -142,3 +146,52 @@ class ReminderRepository:
         updated_reminders = result.fetchall()
 
         return [row[0] for row in updated_reminders] if updated_reminders else []
+
+    async def update_status(
+        self,
+        reminder_id: UUID,
+        status: ReminderStatus,
+        worker_job_id: str | None = None,
+        error_log: dict | None = None,
+        attempt_count: int | None = None,
+        next_retry_at: datetime | None = None
+    ) -> Optional[Reminder]:
+        values = {"status": status}
+        if worker_job_id is not None:
+            values["worker_job_id"] = worker_job_id
+        if error_log is not None:
+            values["error_log"] = error_log
+        if attempt_count is not None:
+            values["attempt_count"] = attempt_count
+        if next_retry_at is not None:
+            values["next_retry_at"] = next_retry_at
+
+        result = await self.db.execute(
+            update(Reminder)
+            .where(Reminder.id == reminder_id)
+            .values(**values)
+            .returning(Reminder)
+        )
+        updated = result.fetchone()
+        return updated[0] if updated else None
+
+    async def get_pending_for_dispatch(self, limit: int = 100) -> List[Reminder]:
+        result = await self.db.execute(
+            select(Reminder)
+            .where(Reminder.status == ReminderStatus.PENDING)
+            .limit(limit)
+        )
+        return result.scalars().all()
+
+    async def get_failed_for_retry(self, limit: int = 100) -> List[Reminder]:
+        now = datetime.now(timezone.utc)
+        result = await self.db.execute(
+            select(Reminder)
+            .where(
+                Reminder.status == ReminderStatus.FAILED,
+                Reminder.attempt_count < 3,
+                (Reminder.next_retry_at.is_(None)) | (Reminder.next_retry_at <= now)
+            )
+            .limit(limit)
+        )
+        return result.scalars().all()

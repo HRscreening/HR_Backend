@@ -8,13 +8,14 @@ from src.modules.interviews.repositories.panelist_repository import PanelistRepo
 from src.modules.interviews.repositories.interview_round_configs_repository import InterviewRoundConfigsRepository
 from src.repositories.job_repository import JobRepository
 
-from workers_async.email_tasks_producer import EmailProducer,EnqueueReminderPayload
-from workers_async.assessment_task_producer import AssessmentTaskProducer,AnalyzeTranscriptPayload
+from workers_async.producers.assessment_task_producer import AssessmentTaskProducer,AnalyzeTranscriptPayload
+from workers_async.factory import AsyncProducerFactory
+from src.dtos.async_producers_dtos import Async_Producer_Keys
 
 from src.modules.reminders.reminder_repository import ReminderRepository
 from datetime import datetime, timezone
-from src.modules.email_services.services import PanelEmailService
 from uuid import UUID
+from src.dtos.notification_dto import Email_Template_Keys
 from src.modules.reminders.reminder_dtos import CreateReminderDTO
 from src.modules.reminders.model.reminder_enum import ReminderType, RecipientType, EntityType, ReminderStatus
 from datetime import timedelta
@@ -38,39 +39,44 @@ from src.models.enums import ApplicationStatus, InterviewStatus,InterviewEventAc
 from src.dtos.job_settings_dto import ReminderSettingsDTO,ReschedulingSettingsDTO
 from src.dtos.emails.panel_dto import AvailableSlotsData,PanelistReminderAvailabilityData
 from src.dtos.emails.candidate_dto import CandidateBookingLinkReminderData,CandidateBookingLinkData
+from src.modules.interviews.services.helpers.interview_reminder import (
+    build_panelist_slot_availability_notifications,
+    build_candidate_booking_link_notification,
+    build_panelist_feedback_request_notification,
+)
 from src.utils.jwt import JWTService
-from src.modules.email_services.services import EmailService, PanelEmailService
 from src.modules.interviews.services.helpers.fireflies import FirefliesHelper
 from src.utils.supabase_file_handler import SupabaseFileHandler
 
 class BaseInterviewAssessmentService:
-    def __init__(self, 
+    def __init__(self,
         interview_round_config_repository:InterviewRoundConfigsRepository,
         interview_event_repository:InterviewEventRepository,
-        panelist_repository: PanelistRepository, 
-        email_service: EmailService,
+        panelist_repository: PanelistRepository,
         interview_assessment_repository: InterviewAssessmentRepository,
         job_repository: JobRepository,
-        email_producer: EmailProducer,
+        producer_factory: AsyncProducerFactory,
         reminder_repository: ReminderRepository,
         interview_repository: InterviewRepository,
         slot_repository : InterviewSlotsRepository,
         interview_token_manager_factory: InterviewTokenManagerFactory,
+        notification_dispatcher,
         db: AsyncSession,
         ):
-        
+
         self.db = db
-        self.interview_event_repository = interview_event_repository 
+        self.interview_event_repository = interview_event_repository
         self.interview_round_config_repository = interview_round_config_repository
         self.panelist_repository = panelist_repository
-        self.email_service : EmailService = email_service
         self.job_repository = job_repository
         self.interview_assessment_repository = interview_assessment_repository
-        self.email_producer = email_producer
+        self.producer_factory = producer_factory
+        self.assessment_task_producer: AssessmentTaskProducer = producer_factory.get_producer(Async_Producer_Keys.ASSESSMENT_TASK_PRODUCER)
         self.reminder_repository = reminder_repository
         self.interview_repository = interview_repository
         self.slot_repository = slot_repository
         self.interview_token_manager_factory = interview_token_manager_factory
+        self.notification_dispatcher = notification_dispatcher
         self.frontend_url = FRONTEND_URL
         
         
@@ -93,37 +99,36 @@ class BaseInterviewAssessmentService:
         
 
 class InterviewAssessmentService:
-    def __init__(self, 
+    def __init__(self,
         interview_round_config_repository:InterviewRoundConfigsRepository,
         interview_event_repository:InterviewEventRepository,
-        panelist_repository: PanelistRepository, 
-        panel_email_service: PanelEmailService,
+        panelist_repository: PanelistRepository,
         interview_assessment_repository: InterviewAssessmentRepository,
         job_repository: JobRepository,
-        email_producer: EmailProducer,
-        assessment_task_producer: AssessmentTaskProducer,
+        producer_factory: AsyncProducerFactory,
         reminder_repository: ReminderRepository,
+        notification_dispatcher,
         interview_repository: InterviewRepository,
         slot_repository : InterviewSlotsRepository,
         interview_token_manager_factory: InterviewTokenManagerFactory,
         db: AsyncSession,
         ):
-        
+
         self.db = db
-        self.interview_event_repository = interview_event_repository 
+        self.interview_event_repository = interview_event_repository
         self.interview_round_config_repository = interview_round_config_repository
         self.panelist_repository = panelist_repository
         self.job_repository = job_repository
         self.interview_assessment_repository = interview_assessment_repository
-        self.email_producer = email_producer
+        self.producer_factory = producer_factory
+        self.assessment_task_producer: AssessmentTaskProducer = producer_factory.get_producer(Async_Producer_Keys.ASSESSMENT_TASK_PRODUCER)
         self.reminder_repository = reminder_repository
+        self.notification_dispatcher = notification_dispatcher
         self.interview_repository = interview_repository
         self.slot_repository = slot_repository
-        
+
         self.interview_token_manager_factory = interview_token_manager_factory
-        self.assessment_task_producer = assessment_task_producer
-        
-        self.panel_email_service : PanelEmailService = panel_email_service
+
         self.frontend_url = FRONTEND_URL
         
         self.transcript_enqueing_max_retries = 3
@@ -290,7 +295,7 @@ class InterviewAssessmentService:
             
             if pending_reminders:
                 pending_ids = [str(r.id) for r in pending_reminders]
-                await self.email_producer.cancel_jobs(pending_ids)
+                await self.notification_dispatcher.cancel_reminders(pending_ids)
             
             interview_assessment.status = InterviewAssessmentStatus.SUBMITTED
             interview_assessment.submitted_at = datetime.now(timezone.utc)
@@ -382,9 +387,9 @@ class InterviewAssessmentService:
            
             
             form_link = f"{self.frontend_url}/interview/assessment?token={token}"
-            
+
+            reminders_payload = []
             if feedback_reminder_settings and feedback_reminder_settings.enabled:
-                reminders_payload = []
                 for reminder_sec in feedback_reminder_settings.form_reminder_sec:
                     reminders_payload.append(CreateReminderDTO(
                     entity_id=str(interview.id),
@@ -399,43 +404,27 @@ class InterviewAssessmentService:
                     ).model_dump(mode="json"),
                     recipient_id=str(panelist.id or candidate.email),
                     recipient_type=RecipientType.PANELIST,
-                    reminder_type=ReminderType.FEEDBACK_PENDING,
-                    # ! set it before the slot start time minus the reminder hours, currently in minutes for testing, change to hours later
-                    next_run_at= datetime.now(timezone.utc) + timedelta(seconds=reminder_sec)  #! for now doing in minutes, change to hours later       
+                    reminder_type=ReminderType.FEEDBACK_PENDING,                    template_key=Email_Template_Keys.PANELIST_FEEDBACK_REMINDER,                    next_run_at= datetime.now(timezone.utc) + timedelta(seconds=reminder_sec)
                 ))
-                    
-                    
-                if reminders_payload:
-                    reminders = await self.reminder_repository.create_reminders(reminders_payload)
-                    
-                    reminder_map = {str(r.id): r for r in reminders}
-                    enqueue_payloads = [EnqueueReminderPayload(reminder_id=r.id,run_at=r.next_run_at)for r in reminders]
-                    enqueue_results = await self.email_producer.enqueue_reminder_email_task(enqueue_payloads)
 
-                    for res in enqueue_results:
-                        if res.status == "success":
-                            reminder_map[str(res.reminder_id)].worker_job_id = res.job_id 
-                    
-                    self.logger.info(f"Enqueued {len(enqueue_payloads)} reminders for interview assessment feedback for interview_id {interview_id} and panelist_id {panelist.id}")
-            
+            prepared_reminders = await self.notification_dispatcher.prepare_reminders(reminders_payload)
 
-            task = [self.panel_email_service.send_panelist_feedback_request_email(
-                        PanelistFeedbackData(
-                        panelist_email=panelist.email,
-                        panelist_name=panelist.name,
-                        candidate_name=candidate_display,
-                        interview_round_title=round_config.title,
-                        form_link=form_link,
-                        form_valid_till=round_config.end_date
-                        )
-                    )]
-            
-            await asyncio.gather(*task,return_exceptions=True)
-            
+            notification_payload = build_panelist_feedback_request_notification(
+                panelist=panelist,
+                interview=interview,
+                config=round_config,
+                candidate_display=candidate_display,
+                form_link=form_link,
+                form_valid_till=round_config.end_date,
+            )
+            prepared_notifications = await self.notification_dispatcher.prepare_notifications([notification_payload])
+
             self.logger.info(f"Requested interview assessment for interview_id {interview_id} from panelist_id {panelist.id}")
             await self.db.commit()
-           
-            return {"message": "Assessment requested successfully."}    
+            await self.notification_dispatcher.dispatch_reminders(prepared_reminders)
+            await self.notification_dispatcher.dispatch_notifications(prepared_notifications)
+
+            return {"message": "Assessment requested successfully."}
 
         except Exception as e:
             self.logger.error(f"Error requesting interview assessment for interview_id {interview_id}: {str(e)}")
@@ -549,11 +538,10 @@ class InterviewAssessmentWorkerService(BaseInterviewAssessmentService):
     def __init__(self,
         interview_round_config_repository:InterviewRoundConfigsRepository,
         interview_event_repository:InterviewEventRepository,
-        panelist_repository: PanelistRepository, 
-        email_service: EmailService,
+        panelist_repository: PanelistRepository,
         interview_assessment_repository: InterviewAssessmentRepository,
         job_repository: JobRepository,
-        email_producer: EmailProducer,
+        producer_factory: AsyncProducerFactory,
         reminder_repository: ReminderRepository,
         interview_repository: InterviewRepository,
         slot_repository : InterviewSlotsRepository,
@@ -561,28 +549,27 @@ class InterviewAssessmentWorkerService(BaseInterviewAssessmentService):
         jwt_service: JWTService,
         interview_token_manager_factory: InterviewTokenManagerFactory,
         fireflies_helper: FirefliesHelper,
-        assessment_task_producer: AssessmentTaskProducer,
         supabase_file_handler: SupabaseFileHandler,
+        notification_dispatcher,
         db: AsyncSession):
-        
+
         super().__init__(
             interview_round_config_repository,
             interview_event_repository,
             panelist_repository,
-            email_service,
             interview_assessment_repository,
             job_repository,
-            email_producer,
+            producer_factory,
             reminder_repository,
             interview_repository,
             slot_repository,
             interview_token_manager_factory,
+            notification_dispatcher,
             db
         )
         self.application_repository = application_repository
         self.fireflies_helper = fireflies_helper
         self.jwt_service = jwt_service
-        self.assessment_task_producer = assessment_task_producer
         self.supabase_file_handler = supabase_file_handler
         self.logger = get_logger("Interview_Assessment_Worker_Service")
         
@@ -606,6 +593,7 @@ class InterviewAssessmentWorkerService(BaseInterviewAssessmentService):
                     recipient_id=str(panelist.id),
                     recipient_type=RecipientType.PANELIST,
                     reminder_type=ReminderType.BOOKING_LINK,
+                    template_key=Email_Template_Keys.FORM_REMINDER,
                     next_run_at= datetime.now(timezone.utc) + timedelta(seconds=reminder_sec)  #! for now doing in minutes, change to hours later       
                 ))
                 
@@ -627,6 +615,7 @@ class InterviewAssessmentWorkerService(BaseInterviewAssessmentService):
                     recipient_id=str(application_id),
                     recipient_type=RecipientType.CANDIDATE,
                     reminder_type=ReminderType.BOOKING_LINK,
+                    template_key=Email_Template_Keys.Candidate_BOOKING_LINK_REMINDER,
                     next_run_at= datetime.now(timezone.utc) + timedelta(seconds=reminder_sec)  #! for now doing in minutes, change to hours later       
                 ))
             return reminders_payload
@@ -701,9 +690,9 @@ class InterviewAssessmentWorkerService(BaseInterviewAssessmentService):
            
             
             form_link = f"{self.frontend_url}/interview/assessment?token={token}"
-            
+
+            reminders_payload = []
             if feedback_reminder_settings and feedback_reminder_settings.enabled:
-                reminders_payload = []
                 for reminder_sec in feedback_reminder_settings.form_reminder_sec:
                     reminders_payload.append(CreateReminderDTO(
                     entity_id=str(interview.id),
@@ -719,46 +708,31 @@ class InterviewAssessmentWorkerService(BaseInterviewAssessmentService):
                     recipient_id=str(panelist.id or candidate.email),
                     recipient_type=RecipientType.PANELIST,
                     reminder_type=ReminderType.FEEDBACK_PENDING,
-                    # ! set it before the slot start time minus the reminder hours, currently in minutes for testing, change to hours later
-                    next_run_at= datetime.now(timezone.utc) + timedelta(seconds=reminder_sec)  #! for now doing in minutes, change to hours later       
+                    next_run_at= datetime.now(timezone.utc) + timedelta(seconds=reminder_sec)
                 ))
-                    
-                    
-                if reminders_payload:
-                    reminders = await self.reminder_repository.create_reminders(reminders_payload)
-                    
-                    reminder_map = {str(r.id): r for r in reminders}
-                    enqueue_payloads = [EnqueueReminderPayload(reminder_id=r.id,run_at=r.next_run_at)for r in reminders]
-                    enqueue_results = await self.email_producer.enqueue_reminder_email_task(enqueue_payloads)
 
-                    for res in enqueue_results:
-                        if res.status == "success":
-                            reminder_map[str(res.reminder_id)].worker_job_id = res.job_id 
-                    
-                    self.logger.info(f"Enqueued {len(enqueue_payloads)} reminders for interview assessment feedback for interview_id {interview_id} and panelist_id {panelist.id}")
-            
+            prepared_reminders = await self.notification_dispatcher.prepare_reminders(reminders_payload)
 
-            task = [self.email_service.panel.send_panelist_feedback_request_email(
-                        PanelistFeedbackData(
-                        panelist_email=panelist.email,
-                        panelist_name=panelist.name,
-                        candidate_name=candidate_display,
-                        interview_round_title=round_config.title,
-                        form_link=form_link,
-                        form_valid_till=round_config.end_date
-                        )
-                    )]
-            
-            await asyncio.gather(*task,return_exceptions=True)
-            
+            notification_payload = build_panelist_feedback_request_notification(
+                panelist=panelist,
+                interview=interview,
+                config=round_config,
+                candidate_display=candidate_display,
+                form_link=form_link,
+                form_valid_till=round_config.end_date,
+            )
+            prepared_notifications = await self.notification_dispatcher.prepare_notifications([notification_payload])
+
             self.logger.info(f"Requested interview assessment for interview_id {interview_id} from panelist_id {panelist.id}")
             await self.db.commit()
-           
-            return {"message": "Assessment requested successfully."}    
+            await self.notification_dispatcher.dispatch_reminders(prepared_reminders)
+            await self.notification_dispatcher.dispatch_notifications(prepared_notifications)
+
+            return {"message": "Assessment requested successfully."}
 
         except Exception as e:
             self.logger.error(f"Error requesting interview assessment for interview_id {interview_id}: {str(e)}")
-            raise 
+            raise
 
         
     async def analyze_interview_transcript(self,interview_id:str):
@@ -862,35 +836,22 @@ class InterviewAssessmentWorkerService(BaseInterviewAssessmentService):
                                     
                     
                     
+                panelist_prepared = []
+                panelist_notifications_prepared = []
                 if requested_panelist:
                     if panelist_reminder_settings and panelist_reminder_settings.enabled and panelist_reminder_settings.form_reminder_hours:
-                        reminders_payload =  self._create_form_reminder_payload_for_panelist(requested_panelist, round_config, panelist_reminder_settings) if panelist_reminder_settings and panelist_reminder_settings.enabled else []
-                        
-                        if reminders_payload:
-                            reminders = await self.reminder_repository.create_reminders(reminders_payload)
-                            
-                            reminder_map = {str(r.id): r for r in reminders}
-                            enqueue_payloads = [EnqueueReminderPayload(reminder_id=r.id,run_at=r.next_run_at)for r in reminders]
-                            enqueue_results = await self.email_producer.enqueue_reminder_email_task(enqueue_payloads)
+                        reminders_payload = self._create_form_reminder_payload_for_panelist(requested_panelist, round_config, panelist_reminder_settings)
+                        panelist_prepared = await self.notification_dispatcher.prepare_reminders(reminders_payload)
 
-                            for res in enqueue_results:
-                                if res.status == "success":
-                                    reminder_map[str(res.reminder_id)].worker_job_id = res.job_id 
-                    
-
-                    await asyncio.gather(*[
-                            self.email_service.panel.send_slot_availability_email(
-                                AvailableSlotsData(
-                                panelist_email=panelist.email,
-                                panelist_name=panelist.name,
-                                interview_round_title=round_config.title,
-                                form_link=f"{self.frontend_url}/panelist/availability?token={panelist.availability_token}",
-                                ))
-                            for panelist in requested_panelist
-                        ])
-                    self.logger.info(f"Sent slot availability email to panelists for round_config_id={round_config.id} and application_id={application_id}")
+                    notification_payloads = build_panelist_slot_availability_notifications(
+                        requested_panelist, round_config, self.frontend_url
+                    )
+                    panelist_notifications_prepared = await self.notification_dispatcher.prepare_notifications(notification_payloads)
+                    self.logger.info(f"Prepared slot availability notifications for panelists for round_config_id={round_config.id} and application_id={application_id}")
                 await self.db.commit()
-                
+                await self.notification_dispatcher.dispatch_reminders(panelist_prepared)
+                await self.notification_dispatcher.dispatch_notifications(panelist_notifications_prepared)
+
                 return {
                     "new_round": round_number,
                     "message":"Application moved to round successfully.Panelists have been requested for availability and booking link will be sent to candidate once slot will be available."
@@ -919,36 +880,22 @@ class InterviewAssessmentWorkerService(BaseInterviewAssessmentService):
                 booking_link = f"{self.frontend_url}/interview/book?token={booking_token}"
                 
                 reminders_payload = self._create_booking_reminder_payload_candidate(candidate,round_config,candidate_reminder_settings,booking_link,application.id) if candidate_reminder_settings and candidate_reminder_settings.enabled else []
-            
-                if reminders_payload:
-                    reminders = await self.reminder_repository.create_reminders(reminders_payload)
-                    
-                    reminder_map = {str(r.id): r for r in reminders}
-                    enqueue_payloads = [EnqueueReminderPayload(reminder_id=r.id,run_at=r.next_run_at)for r in reminders]
-                    enqueue_results = await self.email_producer.enqueue_reminder_email_task(enqueue_payloads)
 
-                    for res in enqueue_results:
-                        if res.status == "success":
-                            reminder_map[str(res.reminder_id)].worker_job_id = res.job_id 
-                            
-                    self.logger.info(f"Enqueued {len(enqueue_payloads)} reminder emails for candidates {candidate.full_name or candidate.email} for round_config {round_config.id}")
-                    
-                
-                
+                candidate_prepared = await self.notification_dispatcher.prepare_reminders(reminders_payload or [])
+
+                candidate_notification = build_candidate_booking_link_notification(
+                    candidate=candidate,
+                    config=round_config,
+                    booking_link=booking_link,
+                    application_id=str(application.id),
+                )
+                candidate_notifications_prepared = await self.notification_dispatcher.prepare_notifications([candidate_notification])
+
                 await self.db.commit()
-                
-                try:
-                    await self.email_service.candidate.send_booking_link_email(
-                            CandidateBookingLinkData(
-                            candidate_email=candidate.email,
-                            candidate_name=candidate.full_name or candidate.email,
-                            interview_round_title=round_config.title,
-                            booking_link=booking_link,
-                            ))
-                except Exception as e:
-                    self.logger.error(f"Failed to send booking link email: {e}")
+                await self.notification_dispatcher.dispatch_reminders(candidate_prepared)
+                await self.notification_dispatcher.dispatch_notifications(candidate_notifications_prepared)
 
-                self.logger.info(f"Slots available: Sent booking link to candidate for interview_id={new_interview.id}")
+                self.logger.info(f"Slots available: Enqueued booking link for candidate for interview_id={new_interview.id}")
                 
                 
                     

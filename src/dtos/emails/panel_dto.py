@@ -7,8 +7,8 @@ class PanelistBookingData(BaseModel):
     panelist_name: Optional[str]
     candidate_name: str
     interview_round_title: str
-    scheduled_start: datetime
-    scheduled_end: datetime
+    scheduled_start: datetime | str
+    scheduled_end: datetime | str
     meet_link: Optional[str] = None
     reschedule_link: Optional[str] = None
     
@@ -31,8 +31,8 @@ class PanelistSlotReleasedData(BaseModel):
     panelist_name: str | None
     candidate_name: str
     interview_round_title: str
-    schedule_start: datetime
-    schedule_end: datetime
+    schedule_start: datetime | str
+    schedule_end: datetime | str
     
     
 class PanelistMeetingRescheduledData(BaseModel):
@@ -40,10 +40,10 @@ class PanelistMeetingRescheduledData(BaseModel):
     panelist_name: str | None
     candidate_name: str
     interview_round_title: str
-    old_scheduled_start: datetime
-    old_scheduled_end: datetime
-    new_scheduled_start: datetime
-    new_scheduled_end: datetime
+    old_scheduled_start: datetime | str
+    old_scheduled_end: datetime| str
+    new_scheduled_start: datetime | str
+    new_scheduled_end: datetime | str
     meet_link: str | None = None
     reschedule_link: str | None = None
     
@@ -62,8 +62,8 @@ class PanelistInterviewReminderData(BaseModel):
     candidate_name: str
     interview_round_title: str
 
-    scheduled_start: datetime
-    scheduled_end: datetime
+    scheduled_start: datetime | str
+    scheduled_end: datetime | str
 
     meet_link: str | None = None
     reschedule_link: str | None = None
