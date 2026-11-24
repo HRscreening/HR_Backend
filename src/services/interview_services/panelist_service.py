@@ -15,7 +15,6 @@ from src.utils.jwt import jwt_service,JWTService
 from src.models.enums import PanelistResponseStatus, PanelMode, CalendarProvider,MeetingHostType,InterviewEventActor,InterviewEventType
 from src.models import Interview_Slot
 from datetime import datetime, timezone, timedelta
-<<<<<<< HEAD
 from src.services.interview_services.calendar_service import CalendarService
 from src.dtos.interviews_dtos.panel_dto import AvailableSlot,EditSlotsPayload,RescheduleSlotsPayload
 from src.repositories.interview_respositories.calendar_repository import CalendarRepository
@@ -34,12 +33,6 @@ from src.utils.time_helper import format_interview_time, format_interview_schedu
 def get_current_utc_time():
     return datetime.now(timezone.utc)
 
-=======
-from src.dtos.interviews_dtos.panel_dto import AvailableSlot,UpdatedSlots
-from src.repositories.interview_respositories.calendar_repository import CalendarRepository
-from models.enums import InterviewStatus
-from src.repositories.application_repository import ApplicationRepository
->>>>>>> 803653a (_)
 
 
 # Most of the methods needs optimization,but basic functionality is ready. Will iterate and optimize in next passes. 
@@ -52,10 +45,7 @@ class PanelistService:
         slots_repository:InterviewSlotsRepository,
         calendar_repository: CalendarRepository,
         application_repository:ApplicationRepository,
-<<<<<<< HEAD
         calendar_service: CalendarService,
-=======
->>>>>>> 803653a (_)
         db: AsyncSession):
         
         
@@ -69,10 +59,7 @@ class PanelistService:
         self.calendar_repository = calendar_repository
         self.application_repository = application_repository
         self.panel_email_service : PanelEmailService = panel_email_service
-<<<<<<< HEAD
         self.calendar_service = calendar_service
-=======
->>>>>>> 803653a (_)
         self.candidate_email_service : CandidateEmailService = candidate_email_service
         self.jwt_service : JWTService = jwt_service
     
@@ -179,7 +166,6 @@ class PanelistService:
                 event_repo=self.interview_event_repository,
                 db=self.db,
             )
-<<<<<<< HEAD
 
     def _group_slots_by_date(self,slots: list[Interview_Slot]) -> list[dict]:
         """Group slots by local date, ordered by date then start time."""
@@ -229,12 +215,6 @@ class PanelistService:
     # TODO: Mark Panels Token Expired while checking JWT
     async def get_panelist_form_details(self, availability_token: str):
 
-=======
-        
-    # TODO: Mark Panels Token Expired while checking JWT
-    async def get_panelist_form_details(self, availability_token: str,is_editing: bool = False):
-        
->>>>>>> 803653a (_)
         availability_token = availability_token.replace("Bearer ", "")
         
         panelist_id, round_config_id,token_type = self._validate_and_extract_token_payload(availability_token)
@@ -282,7 +262,6 @@ class PanelistService:
         # TODO : Add this also later
         # if round_config.Panel_owner:
         
-<<<<<<< HEAD
         
         
         if round_config.meeting_host_type == MeetingHostType.PANELIST:
@@ -302,14 +281,6 @@ class PanelistService:
                 
         all_slots = await self.slots_repository.get_slots_by_panelist_id(round_config.id, panelist.id)
 
-=======
-        if not calendar_connection:
-            return {
-                "status": "no_calendar",
-                "provider": CalendarProvider.GOOGLE, # should fetch from round_config.calendar_provider, but currenltly config have no such field TODO: Add
-            }
-        
->>>>>>> 803653a (_)
         res_data = {
             "status": "open",
             "data": {
@@ -321,126 +292,20 @@ class PanelistService:
             },
         }
         
-<<<<<<< HEAD
 
         res_data["data"]["existing_slots"] = self._group_slots_by_date(all_slots)
         res_data["data"]["is_editing"] = len(all_slots) > 0  # frontend uses this to switch mode
                 
                 
      
-=======
-        if is_editing:
-            existing_slots = await self.slots_repository.get_slots_by_panelist_id(round_config.id,panelist.id)
-            res_data["data"]["existing_slots"] = [
-                {
-                    "start_time": slot.start_time,
-                    "end_time": slot.end_time,
-                }
-                for slot in existing_slots
-            ]
-            
-        
->>>>>>> 803653a (_)
 
         # ⭐ Form is open → return details
         return res_data
 
 
 
-<<<<<<< HEAD
     async def get_panelist_reschedule_form_details(self, rescheduling_token: str):
         rescheduling_token = rescheduling_token.replace("Bearer ", "")
-=======
-
-    async def get_panelist_reschedule_form_details(self, rescheduling_token: str):
-        
-        rescheduling_token = rescheduling_token.replace("Bearer ", "")
-        
-        panelist_id, round_config_id , interview_id = self._validate_and_extract_reschedule_token_payload(rescheduling_token)
-
-        round_config = await self.interview_round_config_repository.get_interview_round_config_by_id(round_config_id)
-
-        if not round_config:
-            raise DomainError(
-                "Interview round configuration not found for the provided token"
-            )
-
-        panelist = await self.panelist_repository.get_panelist_by_round_config_and_panelist_id(
-            round_config_id=round_config.id,
-            panelist_id=panelist_id,
-        )
-
-        if not panelist:
-            raise DomainError("Panelist not found for the provided token")
-        
-        if str(panelist.round_config_id) != str(round_config_id):
-            raise DomainError("Panelist does not belong to the interview round configuration in the token")
-        
-        
-        if panelist.rescheduling_token != rescheduling_token:
-            raise DomainError(
-                "Invalid or outdated rescheduling link.",
-                status_code=400
-            )
-
-
-        # TODO : Add this also later
-        # if round_config.Panel_owner:
-        # TODO : Remove or condn after making default calendar provider dynamic
-        calendar_connection = await self.calendar_repository.get_calendar_connection_by_email_and_provider(
-            provider_email=panelist.email,provider= CalendarProvider.GOOGLE
-            )
-        
-        if not calendar_connection:
-            return {
-                "status": "no_calendar",
-                "provider": CalendarProvider.GOOGLE.value, # should fetch from round_config.calendar_provider, but currenltly config have no such field TODO: Add
-            }
-            
-        current_slot = await self.slots_repository.get_slot_by_interview_id_with_round_config_id_with_panelist_id(interview_id)
-        
-        
-        if current_slot.start_datetime < datetime.now(timezone.utc) + timedelta(hours=1):
-            return {
-                "status": "too_late",
-                "message": "Rescheduling is only allowed at least 1 hour before the scheduled interview time.",
-            }
-            
-        if current_slot.is_booked == False:
-            return {
-                "status": "not_booked",
-                "message": "The current slot is not booked. No need to reschedule.",
-            }
-            
-        if current_slot.is_expired:
-            return {
-                "status": "expired",
-                "message": "The current interview slot has already passed. Rescheduling is not possible.",
-            }
-        
-
-        res_data = {
-                "status": "open",
-                "data": {
-                    "title": round_config.title,
-                    "start_date": round_config.start_date,
-                    "end_date": round_config.end_date,
-                    "duration_minutes": round_config.duration_minutes,
-                    "interview_type": round_config.interview_type,
-                    "current_slot": {          # ✅ string key
-                        "id": current_slot.id,
-                        "start_time": current_slot.slot_start,
-                        "end_time": current_slot.slot_end,
-                    }
-                },
-            }
-        
-        # ⭐ Form is open → return details
-        return res_data
-    
-    
-
->>>>>>> 803653a (_)
         
         panelist_id, round_config_id, interview_id = self._validate_and_extract_reschedule_token_payload(rescheduling_token)
 
@@ -572,7 +437,6 @@ class PanelistService:
                 ]
 
             panelist.response_status = PanelistResponseStatus.SUBMITTED
-<<<<<<< HEAD
             
             now = get_current_utc_time()
             expiry_time = round_config.end_date
@@ -589,10 +453,6 @@ class PanelistService:
             panelist.edit_token_expires_at = expiry_time  # Edit token expires at the end of availability window  
             panelist.availability_token = None  # Invalidate the token after submission
             panelist.token_expires_at = None  # Clear token expiry
-=======
-            # ! We are keeping the token valid even after submission, because it can be used for editing availability later. We will just check the response_status to allow/disallow edits.
-            # panelist.availability_token = ""  # Invalidate the token after submission
->>>>>>> 803653a (_)
             
             await self.db.flush()
 
@@ -631,93 +491,10 @@ class PanelistService:
                 panelist_email=panelist.email,
                 panelist_name=panelist.name,
                 interview_round_title=round_config.title,
-<<<<<<< HEAD
                 edit_slots_link=f"{self.frontend_url}/panelist/edit-slots?token={edit_token}",
                 validity_period=f"{round_config.end_date.astimezone().strftime('%Y-%m-%d %H:%M %Z')}",
             )
             
-=======
-                edit_slots_link=f"{self.frontend_url}/panelist/edit-slots?token={availability_token}",
-            )
-            
-        except Exception as e:
-            await self.db.rollback()
-            self.logger.error(f"Error submitting panelist availability: {str(e)}")
-            raise DomainError("An error occurred while submitting your availability. Please try again later.")
-    
-    
-    
-    async def update_panelist_availability(self, availability_token: str, new_slots: list[AvailableSlot]):
-        """Allows panelists to edit their availability after initial submission. Only applicable for SEQUENTIAL panel mode."""
-        try:
-            
-            if not new_slots:
-                raise DomainError(
-                    "New slots must be provided for updating availability.",
-                    status_code=400
-                )
-            
-            availability_token = availability_token.replace("Bearer ", "")
-            
-            panelist_id, round_config_id = self._validate_and_extract_token_payload(availability_token)
-
-            panelist = await self.panelist_repository.get_panelist_by_round_config_and_panelist_id(
-                round_config_id=round_config_id,
-                panelist_id=panelist_id,
-            )
-            
-            if not panelist:
-                raise DomainError("Panelist not found for the provided token")
-            
-            
-            round_config = await self.interview_round_config_repository.get_interview_round_config_by_id(
-                round_config_id=round_config_id
-            )
-            if not round_config:
-                raise DomainError("Interview round configuration not found for the provided token")
-            
-            if round_config.panel_mode != PanelMode.SEQUENTIAL:
-                raise DomainError("Availability can only be updated for SEQUENTIAL panel mode.")
-
-            if panelist.response_status != PanelistResponseStatus.SUBMITTED:
-                raise DomainError(
-                    "You can only update availability after the initial submission.",
-                    status_code=400
-                )
-            
-
-            
-            new_slots_json = [  
-                    slot.model_dump(mode="json")
-                    for slot in new_slots
-                ]
-
-            
-            await self.db.flush()
-
-
-            # ─── Slot computation based on panel_mode ─────────────────────
-            slot_computation_service = self._get_slot_computation_service()
-            
-            # ! deleting all existing slots for the panelist and recomputing based on new availability. This is simpler than trying to diff and update existing slots, given the complexity of the logic and edge cases (e.g. what if a previously available slot got booked by a candidate in the meantime?).
-            
-            deleted_count = await self.slots_repository.delete_unbooked_slots_by_panelist_id(round_config_id, panelist_id)
-
-            self.logger.info(f"Deleted {deleted_count} unbooked slots for panelist {panelist.email} in round_config {round_config_id} before updating availability.")
-            
-            success = await slot_computation_service.compute_single_panelist_slots(
-                round_config_id=round_config_id,
-                panelist_id=panelist_id,
-                panelist_email=panelist.email,
-                available_slots_json=new_slots_json,  # only consider new slots for SEQUENTIAL updates,
-                notify_waiting_candidates=False,  # notify candidates in waiting list about newly available slots after update
-            )
-            if not success:
-                self.logger.warning(f"No computable slots from panelist {panelist.email} for round_config {round_config_id}")
-        
-            await self.db.commit()
-            
->>>>>>> 803653a (_)
         except Exception as e:
             await self.db.rollback()
             self.logger.error(f"Error submitting panelist availability: {str(e)}")
@@ -817,7 +594,6 @@ class PanelistService:
      
         
         
-<<<<<<< HEAD
     async def reschedule_slots(self, rescheduling_token: str, payload: RescheduleSlotsPayload):
         """Allows panelists to reschedule a booked interview slot. Only applicable for SEQUENTIAL panel mode."""
         try:
@@ -825,17 +601,6 @@ class PanelistService:
             if not payload.reschedule_slot:
                 raise DomainError(
                     "A new slot must be provided for rescheduling.",
-=======
-        
-        
-    async def reschedule_interview(self, rescheduling_token: str, new_slots: list[AvailableSlot]):
-        """Allows panelists to reschedule a booked interview slot. Only applicable for SEQUENTIAL panel mode."""
-        try:
-            
-            if not new_slots:
-                raise DomainError(
-                    "At least one new slot must be provided for rescheduling.",
->>>>>>> 803653a (_)
                     status_code=400
                 )
             
@@ -860,26 +625,13 @@ class PanelistService:
             
             if str(panelist.round_config_id) != str(round_config_id):
                 raise DomainError("Panelist does not belong to the interview round configuration in the token")
-<<<<<<< HEAD
                         
 
             current_slot = await self.slots_repository.get_slot_by_interview_id_with_round_config_id_with_panelist_id(interview_id,round_config.id,panelist.id)
-=======
-            
-            
-            if panelist.rescheduling_token != rescheduling_token:
-                raise DomainError(
-                    "Invalid or outdated rescheduling link.",
-                    status_code=400
-                )
-
-            current_slot = await self.slots_repository.get_slot_by_interview_id_with_round_config_id_with_panelist_id(interview_id)
->>>>>>> 803653a (_)
             
             if not current_slot:
                 raise DomainError("Current interview slot not found for rescheduling.")
             
-<<<<<<< HEAD
             if current_slot.id != payload.reschedule_slot.id:
                 raise DomainError("The slot provided for rescheduling does not match the currently booked slot.")
             
@@ -889,22 +641,11 @@ class PanelistService:
             # ! Handle reminders too.
 
 
-=======
-            await self.slots_repository.release_slot(current_slot.id)
-            
-            new_slots_json = [  
-                    slot.model_dump(mode="json")
-                    for slot in new_slots
-                ]
-
-            
->>>>>>> 803653a (_)
             await self.db.flush()
 
 
             # ─── Slot computation based on panel_mode ─────────────────────
             slot_computation_service = self._get_slot_computation_service()
-<<<<<<< HEAD
 
             if payload.add:
                 await slot_computation_service.compute_slots_for_new_ranges(
@@ -921,23 +662,6 @@ class PanelistService:
                 )
                 
             # update the application too
-=======
-            
-            success = await slot_computation_service.compute_single_panelist_slots(
-                round_config_id=round_config_id,
-                panelist_id=panelist_id,
-                panelist_email=panelist.email,
-                available_slots_json=new_slots_json,  # only consider new slots for SEQUENTIAL updates,
-                notify_waiting_candidates=False,  # notify candidates in waiting list about newly available slots after update
-            )
-            
-            if not success:
-                self.logger.warning(f"No computable slots from panelist {panelist.email} for round_config {round_config_id}")
-        
-
-            # update the application too
-            
->>>>>>> 803653a (_)
             interview = await self.interview_repository.get_interview_by_id(interview_id)
             
             application = await self.application_repository.get_application_by_interview_id(interview_id)
@@ -947,13 +671,9 @@ class PanelistService:
             if not candidate or not candidate.email:
                 raise DomainError("Candidate email not found for this application", status_code=400)
 
-<<<<<<< HEAD
             
             now = get_current_utc_time()
             remaining_seconds = (round_config.end_date - now).total_seconds()
-=======
-            remaining_seconds = (round_config.end_date - datetime.now(timezone.utc)).total_seconds()
->>>>>>> 803653a (_)
             token_expiry_min = max(60, int(remaining_seconds // 60))
 
             booking_token = self.jwt_service.create_candidate_booking_token(
@@ -962,7 +682,6 @@ class PanelistService:
                 expiration_minutes=token_expiry_min,
             )
             
-<<<<<<< HEAD
             
             
             #! currently creating new meeting but ideally should update will apply it later need to make db fields to store meeting id from calendar provider to update the same meeting instead of creating new one.
@@ -1055,35 +774,6 @@ class PanelistService:
                 scheduled_start=current_slot.slot_start,
                 scheduled_end=current_slot.slot_end,
                 reason="The panelist has rescheduled the interview.",
-=======
-            # update interview
-            interview.scheduled_start = None
-            interview.scheduled_end = None
-            interview.meet_link = None
-            interview.booking_token = booking_token
-            interview.booking_token_expires_at = datetime.now(timezone.utc) + timedelta(minutes=token_expiry_min)
-            interview.status = InterviewStatus.READY_TO_BOOK
-
-            await self.interview_event_repository.create_interview_event(
-                interview_id=str(interview.id),
-                event_type="INTERVIEW_RESCHEDULED_BY_PANELIST",
-                actor="system",
-                details={"candidate_email": candidate.email},
-            )
-            
-        
-            await self.db.commit()
-            
-            # TODO: stop candidate receiving reminders for old slot
-            
-            # 
-            await self.candidate_email_service.send_interview_rescheduled_email(
-                candidate_email=candidate.email,
-                candidate_name=candidate.name,
-                interview_round_title=round_config.title,
-                reschedule_link=f"{self.frontend_url}/candidate/book-slot?token={booking_token}",
-                reason="The panelist has rescheduled the interview. Please select a new slot for your interview.",
->>>>>>> 803653a (_)
             )
         
             
