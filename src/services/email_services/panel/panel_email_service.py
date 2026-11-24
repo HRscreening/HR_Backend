@@ -52,6 +52,7 @@ class PanelEmailService(BaseEmailService):
         interview_round_title: str,
         scheduled_start: datetime,
         scheduled_end: datetime,
+        reschedule_link: str | None = None,
         meet_link: str | None = None,
         reschedule_link: str | None = None
     ):
@@ -71,6 +72,7 @@ class PanelEmailService(BaseEmailService):
             interview_round_title=interview_round_title,
             interview_date=interview_date,
             interview_time=interview_time,
+            reschedule_link=reschedule_link,
             meet_link=meet_link,
             reschedule_link=reschedule_link
         )
@@ -176,5 +178,19 @@ class PanelEmailService(BaseEmailService):
         except Exception as e:
             self.logger.error(f"Failed to send thanks for submitting availability email to {panelist_email}: {str(e)}")
 
+
+    async def send_thanks_for_submitting_availability_email(self, panelist_email: str, panelist_name: str, interview_round_title: str,edit_slots_link:str,validity_period:str):
+        subject = f"Thank you for submitting your availability for {interview_round_title}"
+        body = self.panelist_email_templates.get_panelist_thank_you_availability_template(
+            panelist_name=panelist_name,
+            interview_round_title=interview_round_title,
+            edit_slots_link=edit_slots_link,
+            validity_period=validity_period
+        )
+        try:
+            await self.send_email(receiver_email=panelist_email, subject=subject, body=body)
+            self.logger.info(f"Sent thanks for submitting availability email to {panelist_email} with subject '{subject}'")
+        except Exception as e:
+            self.logger.error(f"Failed to send thanks for submitting availability email to {panelist_email}: {str(e)}")
 
 panel_email_service = PanelEmailService()

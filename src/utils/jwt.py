@@ -113,6 +113,25 @@ class JWTService:
 
         return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
     
+    def create_panelist_reschedule_token(
+    self,
+        panelist_id: str,
+        expiration_minutes: int,
+        round_config_id: str,
+        interview_id: str,
+    ) -> str:
+
+        now = datetime.now(timezone.utc)
+
+        payload = {
+            "panelist_id": panelist_id,
+            "round_config_id": round_config_id,
+            "interview_id": interview_id,
+            "iat": now,
+            "exp": now + timedelta(minutes=expiration_minutes),
+        }
+
+        return jwt.encode(payload, self.secret_key, algorithm=self.algorithm)
     
     def create_candidate_booking_token(
     self,

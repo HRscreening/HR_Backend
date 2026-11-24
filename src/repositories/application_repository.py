@@ -106,7 +106,11 @@ class ApplicationRepository:
         return 0
     
     
+<<<<<<< HEAD
             
+=======
+        
+>>>>>>> 803653a (_)
     async def get_application_by_interview_id(
         self,
         interview_id: str

@@ -62,6 +62,41 @@ def _cta_button(url: str, label: str) -> str:
 
 
 class PanelEmailTemplates:
+    @staticmethod
+    def get_panelist_thank_you_availability_template(
+        panelist_name: str | None,
+        interview_round_title: str,
+        edit_slots_link: str,
+        validity_period: str | None = None,
+    ) -> str:
+        """HTML email thanking panelist for submitting availability, with link to edit/add slots for a limited time."""
+
+        greeting = panelist_name if panelist_name else "Sir/Madam"
+
+        validity_text = (
+            f"<p style=\"margin:0 0 16px;font-size:14px;color:#ef4444;line-height:1.7;\">\n"
+            f"Note: You can edit or add new slots using the button below for a limited time: <strong>{validity_period}</strong>.\n"
+            f"</p>" if validity_period else ""
+        )
+
+        content = f"""
+            <p style=\"margin:0 0 16px;font-size:15px;color:#374151;line-height:1.7;\">
+            Dear <strong>{greeting}</strong>,
+            </p>
+            <p style=\"margin:0 0 16px;font-size:15px;color:#374151;line-height:1.7;\">
+            Thank you for submitting your availability for the <strong style=\"color:#4f46e5;\">{interview_round_title}</strong> round.
+            </p>
+            <p style=\"margin:0 0 8px;font-size:15px;color:#374151;line-height:1.7;\">
+            If you wish to edit or add new slots, please use the button below:
+            </p>
+            {_cta_button(edit_slots_link, "Edit/Add Slots &rarr;")}
+            {validity_text}
+            <p style=\"margin:24px 0 0;font-size:15px;color:#374151;line-height:1.7;\">
+            We appreciate your support and cooperation.<br/>
+            <strong>HR Team</strong>
+            </p>"""
+
+        return _base_html(content)
     """HTML email templates for panelist communications."""
 
     @staticmethod
@@ -210,7 +245,11 @@ class PanelEmailTemplates:
         interview_date: str,
         interview_time: str,
         meet_link: str | None,
+<<<<<<< HEAD
         reschedule_link: str,
+=======
+        reschedule_link: str | None,
+>>>>>>> 803653a (_)
     ) -> str:
         """HTML email notifying a panelist that a candidate has booked a slot."""
 
@@ -271,11 +310,19 @@ class PanelEmailTemplates:
             <p style="margin:24px 0 0;font-size:15px;color:#374151;line-height:1.7;">
             Thank you,<br/>
             <strong>HR Team</strong>
+<<<<<<< HEAD
             </p>
             
             <br/>     
             If you need to reschedule, please use the following link:<br/>
             <a href="{reschedule_link}" style="color:#4f46e5;text-decoration:none;">Reschedule Interview</a>
+=======
+            
+            <p> style="margin:24px 0 0;font-size:14px;color:#6b7280;line-height:1.7;">
+            If you need to reschedule, please use the following link:<br/>
+            <a href="{reschedule_link}" style="color:#4f46e5;text-decoration:none;">Reschedule Interview</a>
+            </p>
+>>>>>>> 803653a (_)
             </p>"""
 
         return _base_html(content)

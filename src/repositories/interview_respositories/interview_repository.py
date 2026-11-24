@@ -3,7 +3,7 @@ from sqlalchemy import select,func
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.models import Interview
+from src.models import Interview,Application
 
 from typing import Optional,List
 from src.dtos.interviews_dtos.interview_event_dto import CreateInterviewEventDTO

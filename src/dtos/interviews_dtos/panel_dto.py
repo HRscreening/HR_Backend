@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # from pydantic import BaseModel, Field, EmailStr, model_validator, field_validator
 # from typing import List, Optional,Dict
 # from src.models.enums import InterviewType
@@ -44,6 +45,12 @@
 from pydantic import BaseModel, EmailStr, field_validator, model_validator
 from typing import List
 from datetime import datetime, date, timezone
+=======
+from pydantic import BaseModel, Field, EmailStr, model_validator, field_validator
+from typing import List, Optional,Dict
+from src.models.enums import InterviewType
+from datetime import datetime,date,timezone
+>>>>>>> 803653a (_)
 from uuid import UUID
 
 
@@ -80,6 +87,7 @@ class SlotTime(BaseModel):
 class AvailableSlot(BaseModel):
     date: date
     time: List[SlotTime]
+<<<<<<< HEAD
 
 
 # ── Edit submission  (PATCH /panel/edit-slots) ────────────────────────────────
@@ -137,3 +145,16 @@ class RescheduleSlotsPayload(BaseModel):
     #     if not self.add:
     #         raise ValueError("At least one new slot must be provided for rescheduling.")
     #     return self
+=======
+    
+class EditedAvailableSlot(BaseModel):
+    id: UUID | str   # or str depending on your DB
+    date: date
+    time: List[SlotTime]
+    
+    
+class UpdatedSlots(BaseModel):
+    edited_slots: List[EditedAvailableSlot]
+    new_slots: List[AvailableSlot]
+    
+>>>>>>> 803653a (_)

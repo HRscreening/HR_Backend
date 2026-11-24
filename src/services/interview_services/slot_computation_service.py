@@ -171,6 +171,7 @@ class SlotComputationService:
         )
 
     # ─── SEQUENTIAL mode entry point (called per-panelist on each submit) ─
+    
 
     async def compute_single_panelist_slots(
         self,
@@ -178,7 +179,11 @@ class SlotComputationService:
         panelist_id: str,
         panelist_email: str,
         available_slots_json: list[dict],
+<<<<<<< HEAD
         notify_waiting_candidates: bool = True,
+=======
+        notify_waiting_candidates:bool = True,
+>>>>>>> 803653a (_)
     ) -> bool:
         """
         SEQUENTIAL mode entry point. Called immediately when ONE panelist submits.

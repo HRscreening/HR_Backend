@@ -196,6 +196,7 @@ def get_google_calendar_oauth_service():
 def get_oauth_service(
     google_calendar_service: GoogleCalendarOAuthService = Depends(get_google_calendar_oauth_service),
     calendar_repository: CalendarRepository = Depends(get_calendar_repository),
+<<<<<<< HEAD
     db: AsyncSession = Depends(get_db),
 ):
     return OAuthService(
@@ -217,6 +218,13 @@ def get_interview_round_config_service(
         panelist_repository=panelist_repository,
         db=db,
     )
+=======
+    slots_repository: InterviewSlotsRepository = Depends(get_interview_slots_repository),
+    application_repository: ApplicationRepository = Depends(get_application_repository),
+    db: AsyncSession = Depends(get_db)
+):
+    return PanelistService(interview_round_config_repository=interview_round_config_repository,interview_event_repository=interview_event_repository,calendar_repository=calendar_repository,interview_repository=interview_repository,panelist_repository=panelist_repository,slots_repository=slots_repository,application_repository=application_repository, db=db)
+>>>>>>> 803653a (_)
 
 
 def get_interview_service(

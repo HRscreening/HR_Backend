@@ -440,12 +440,33 @@ class InterviewService:
 
             # Notify each panelist about their specific booked slot (best-effort)
             try:
+<<<<<<< HEAD
                
                 reschedule_token = self.jwt_service.create_panelist_reschedule_token(
                     panelist_id=str(pannelist.id),
                     round_config_id=str(round_config.id),
                     interview_id=str(interview.id),
                     expiration_minutes=int((expiry_time - datetime.now(timezone.utc)).total_seconds() / 60))
+=======
+                candidate_display = "Candidate"
+                try:
+                    await self.db.refresh(interview, ["application"])
+                    app = interview.application
+                    if app:
+                        await self.db.refresh(app, ["candidate"])
+                        if app.candidate:
+                            candidate_display = app.candidate.full_name or app.candidate.email
+                except Exception:
+                    pass
+                
+                rescdule_token = self.jwt_service.create_panelist_reschedule_token(
+                    panelist_id=str(pannelist.id),
+                    round_config_id=str(round_config.id),
+                    interview_id=str(interview.id),
+                    expiration_minutes=remaining_time
+                )
+
+>>>>>>> 803653a (_)
 
                 await self.panel_email_service.send_booking_confirmation_to_panelist(
                     panelist_email=pannelist.email,
@@ -455,7 +476,11 @@ class InterviewService:
                     scheduled_start=slot.slot_start,
                     scheduled_end=slot.slot_end,
                     meet_link=meet_link,
+<<<<<<< HEAD
                     reschedule_link=f"{self.frontend_url}/panelist/reschedule?token={reschedule_token}"
+=======
+                    reschedule_link=f"{self.frontend_url}/panelist/reschedule?token={rescdule_token}"
+>>>>>>> 803653a (_)
                 )
             except Exception as e:
                 self.logger.error(f"Failed to send panelist booking notifications: {e}")
@@ -613,8 +638,18 @@ class InterviewService:
                         },
                     )
                     
+<<<<<<< HEAD
 
                                
+=======
+                    reschedule_token = self.jwt_service.create_panelist_reschedule_token(
+                        panelist_id=str(new_panelist.id),
+                        round_config_id=str(round_config.id),
+                        interview_id=str(interview.id),
+                        expiration_minutes=remaining_time
+                    )
+                                            
+>>>>>>> 803653a (_)
                     # Notify new panelist about the reschedule and new booking
                     await self.panel_email_service.send_booking_confirmation_to_panelist(
                         panelist_email=new_panelist.email,

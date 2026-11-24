@@ -102,4 +102,24 @@ class CandidateEmailService(BaseEmailService):
             self.logger.error(f"Failed to send interview rescheduling email to {candidate_email}: {e}")
             raise
 
+    async def send_interview_rescheduled_email(
+        self,
+        candidate_email: str,
+        candidate_name: str,
+        interview_round_title: str,
+        reschedule_link: str,
+    ):
+        subject = f"Interview Rescheduling — {interview_round_title}"
+        body = self.templates.get_reschedule_new_slots_email_template(
+            candidate_name=candidate_name,
+            interview_round_title=interview_round_title,
+            reschedule_link=reschedule_link,
+        )
+        try:
+            await self.send_email(receiver_email=candidate_email, subject=subject, body=body)
+            self.logger.info(f"Sent interview rescheduling email to {candidate_email}")
+        except Exception as e:
+            self.logger.error(f"Failed to send interview rescheduling email to {candidate_email}: {e}")
+            raise
+
 candidate_email_service = CandidateEmailService()

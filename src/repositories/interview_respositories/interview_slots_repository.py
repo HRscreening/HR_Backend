@@ -32,6 +32,7 @@ class InterviewSlotsRepository:
     
     
 
+<<<<<<< HEAD
     # async def get_slots_grouped_by_panelist(
     #     self, round_config_id: UUID
     # ) -> dict[str, list[Interview_Slot]]:
@@ -50,6 +51,21 @@ class InterviewSlotsRepository:
     #     for slot in result.scalars().all():
     #         grouped[slot.panelist_id].append(slot)
     #     return dict(grouped)
+=======
+    async def get_slots_by_panelist_id(self, round_config_id: UUID, panelist_id: str)-> list[Interview_Slot]:
+        """All unbooked slots for a round config and panelist (SEQUENTIAL mode)."""
+        result = await self.db.execute(
+            select(Interview_Slot)
+            .where(
+                Interview_Slot.round_config_id == round_config_id,
+                Interview_Slot.is_booked == False,
+                Interview_Slot.panelist_id == panelist_id,
+                Interview_Slot.slot_start > datetime.now(timezone.utc), 
+            )
+            .order_by(Interview_Slot.slot_start)
+        )
+        return list(result.scalars().all())
+>>>>>>> 803653a (_)
     
     async def get_slots_grouped_by_panelist(
         self, round_config_id: UUID
@@ -153,6 +169,16 @@ class InterviewSlotsRepository:
         )
         return result.scalar_one_or_none()
 
+    async def get_slot_by_interview_id_with_round_config_id_with_panelist_id(self, slot_id: UUID,round_config_id,panelist_id) -> Interview_Slot:
+        result = await self.db.execute(
+            select(Interview_Slot).where(
+                Interview_Slot.id == slot_id,
+                Interview_Slot.round_config_id == round_config_id,
+                Interview_Slot.panelist_id == panelist_id,
+                )
+        )
+        return result.scalar_one_or_none()
+
     async def count_remaining(self, round_config_id: UUID) -> int:
         """Count unbooked slots in the shared pool. Used to auto-reset slots_available."""
         result = await self.db.execute(
@@ -238,7 +264,11 @@ class InterviewSlotsRepository:
         slot.booked_interview_id = None
         slot.booked_at = None
         
+<<<<<<< HEAD
         if slot.slot_start < utc_now():
+=======
+        if slot.slot_start < datetime.now(timezone.utc):
+>>>>>>> 803653a (_)
             slot.is_expired = True  # mark as expired if past start time, to prevent re-booking of stale slots
         
         await self.db.flush()
@@ -253,6 +283,19 @@ class InterviewSlotsRepository:
         await self.db.flush()
         return result.rowcount
 
+    async def delete_unbooked_slots_by_panelist_id(self, round_config_id: UUID, panelist_id: str) -> int:
+        """Delete unbooked slots for a specific panelist (used when a panelist edits availability in SEQUENTIAL mode)."""
+        result = await self.db.execute(
+            delete(Interview_Slot)
+            .where(
+                Interview_Slot.round_config_id == round_config_id,
+                Interview_Slot.panelist_id == panelist_id,
+                Interview_Slot.is_booked == False,
+                Interview_Slot.slot_start < datetime.now(timezone.utc),  # also delete past slots to prevent stale availability
+            )
+        )
+        await self.db.flush()
+        return result.rowcount
 
     # Useful for one-to-one interview-slot relationships, and for checking if an interview has a booked slot and its details.
     async def get_booked_slot_for_interview(self, interview_id: UUID) -> Interview_Slot:

@@ -62,6 +62,36 @@ def _cta_button(url: str, label: str) -> str:
 class CandidateEmailTemplates:
 
     @staticmethod
+    def get_reschedule_new_slots_email_template(
+        candidate_name: str,
+        interview_round_title: str,
+        reschedule_link: str,
+        reason: str | None = None,
+    ) -> str:
+        """
+        Email to inform candidate that their meeting has been rescheduled and they need to pick new slots.
+        """
+        reason_text = (
+            f"<p style=\"margin:0 0 12px;font-size:14px;color:#ef4444;line-height:1.6;\">Reason: {reason}</p>"
+            if reason else ""
+        )
+        content = f"""
+<h2 style=\"margin:0 0 16px;font-size:18px;color:#1f2937;\">
+  Interview Rescheduled: Action Required
+</h2>
+<p style=\"margin:0 0 12px;font-size:15px;color:#374151;line-height:1.6;\">
+  Hi {candidate_name},
+</p>
+<p style=\"margin:0 0 12px;font-size:15px;color:#374151;line-height:1.6;\">
+  Due to unforeseen circumstances, your <strong>{interview_round_title}</strong> interview needs to be rescheduled. Please select a new time slot from the updated list of available slots.
+</p>
+{reason_text}
+{_cta_button(reschedule_link, "Book New Slot")}
+<p style=\"margin:0 0 8px;font-size:13px;color:#6b7280;line-height:1.5;\">
+  We apologize for the inconvenience.</p>"""
+        return _base_html(content)
+
+    @staticmethod
     def get_booking_link_email_template(
         candidate_name: str,
         interview_round_title: str,
